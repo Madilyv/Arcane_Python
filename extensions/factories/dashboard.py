@@ -133,20 +133,22 @@ async def edit_clan_menu(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
-    # Figure out the tag (either passed in or from the dropdown)
-    # tag = kwargs.get("tag") or (ctx.interaction.values or [None])[0]
-    # If the user selected from the dropdown, .values will be non‐empty:
-    # if ctx.interaction.values:
-    #     tag = ctx.interaction.values[0]
-    # else:
-    #     # button click (including “Back”): action_id is your tag
-    #     tag = action_id
-    # pull out any select‐menu values if they exist, otherwise fall
-    # back to our action_id (button clicks and modal callbacks)
-    # --- your existing logic to figure out tag ---
-    values = getattr(ctx.interaction, "values", None)
-    tag = kwargs.get("tag")
-    print(tag)
+    # Determine tag from one of three sources:
+    # 1) a select‐menu value,
+    # 2) an explicit kwarg,
+    # 3) or the action_id itself (for buttons/back)
+    # 1) If we explicitly passed tag via kwargs (your __wrapped__ calls), use that
+    if kwargs.get("tag"):
+        tag = kwargs["tag"]
+    else:
+        # 2) If this was a select-menu submission, grab the selected value
+        values = getattr(ctx.interaction, "values", None)
+        if values:
+            tag = values[0]
+        else:
+            # 3) Otherwise (button presses, Back, etc), action_id is already the tag
+            tag = action_id
+    print("editing tag:", repr(tag))
 
     # 1) If no tag yet, show dropdown
     if not tag:
