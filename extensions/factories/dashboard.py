@@ -143,12 +143,10 @@ async def edit_clan_menu(
     #     tag = action_id
     # pull out any select‐menu values if they exist, otherwise fall
     # back to our action_id (button clicks and modal callbacks)
+    # --- your existing logic to figure out tag ---
     values = getattr(ctx.interaction, "values", None)
-    if values:
-        tag = values[0]
-    else:
-        tag = action_id
-
+    tag = kwargs.get("tag")
+    print(tag)
 
     # 1) If no tag yet, show dropdown
     if not tag:
@@ -183,12 +181,15 @@ async def edit_clan_menu(
 
     raw = await mongo.clans.find_one({"tag": tag})
     if not raw:
+        # the decorator wrapper will catch this and send the ephemeral error
         return await ctx.respond("❌ Couldn’t find that clan!", ephemeral=True)
+
     db_clan = Clan(data=raw)
+
     guild_id = ctx.interaction.guild_id
     channel_link = f"https://discord.com/channels/{guild_id}/"
 
-    container = [Container(
+    components = [Container(
         accent_color=RED_ACCENT,
         components=[
             Text(content=f"## ✏️ **Editing {db_clan.name}** (`{db_clan.tag}`)"),
@@ -303,18 +304,20 @@ async def edit_clan_menu(
                     ),
                 ]
             ),
-            Text(content=f"**Clan Thread:** {db_clan.thread_id or '⚠️ Data Missing'}"),
+            Text(content=(
+                f"**Clan Thread:** {f'<#{db_clan.thread_id}>' if db_clan.thread_id else '⚠️ Data Missing'}"
+            )),
 
             #Thread is Auto Thread Create
             ActionRow(
                 components=[
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
-                        custom_id=f"edit_clan:thread_id_{db_clan.tag}",
+                        custom_id=f"edit_thread:thread_id_{db_clan.tag}",
                         label="Add Clan Thread",
                     )
-                ]),
-
+                ]
+            ),
             Separator(divider=True, spacing=hikari.SpacingType.SMALL),
             ActionRow(
                 components=[
@@ -333,118 +336,116 @@ async def edit_clan_menu(
             Media(items=[MediaItem(media="assets/Red_Footer.png")]),
         ],
     )]
-    return container
+    return components
 
 @register_action("edit_clan_action_menu", no_return=True)
 @lightbulb.di.with_di
 async def on_edit_action(
-        ctx: lightbulb.components.MenuContext,
+        ctx: MenuContext,
         action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
     choice = ctx.interaction.values[0]
     print(choice)
 
 ##### Update Each Select Menu
-@register_action("edit_clan", ephemeral=True)
+@register_action("edit_clan", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def on_edit_clan_field(
-    ctx: lightbulb.components.MenuContext,
+    ctx: MenuContext,
     action_id: str,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
-    # 1) parse out the field & tag
+
+    values = getattr(ctx.interaction, "values", None)
+    # If there are no values, this wasn’t a select menu—skip it
+    if not values:
+        return
+
+    # 1) Persist your change
     field, tag = action_id.rsplit("_", 1)
-
-    # 2) grab the new value
-    raw = ctx.interaction.values[0]
-    value = int(raw) if raw.isdigit() else raw
-
-    # 3) write it back to Mongo
-    await mongo.clans.update_one({"tag": tag}, {"$set": {field: value}})
-
-    # 4) regenerate your menu, passing through the same tag
-    new_components = await edit_clan_menu(
-        ctx=ctx,
-        action_id=action_id,
+    raw_val = ctx.interaction.values[0]
+    try:
+        selected = int(raw_val)
+    except ValueError:
+        selected = raw_val
+    await mongo.clans.update_one({"tag": tag}, {"$set": {field: selected}})
+    print(f"this Is the tag:{tag}")
+    # 2) Bypass the decorator wrapper:
+    #    call the undecorated handler to get your components back
+    new_components = await edit_clan_menu.__wrapped__(
+        ctx,
+        action_id=tag,
         mongo=mongo,
         tag=tag
     )
 
-    return new_components
+    # 3) Edit the original response with that fresh list
+    await ctx.interaction.edit_initial_response(components=new_components)
+
+
 
 ##### END Update Each Select Menu
 
 ################CLAN THREAD
 
-@register_action("add_clan_thread", no_return=True)
+@register_action("edit_thread", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
-async def add_clan_thread(
+async def on_edit_thread_field(
     ctx: MenuContext,
-    action_id: str,
+    action_id: str,                       # e.g. "edit_thread:thread_id_LYUQG8CL"
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     mongo: MongoClient   = lightbulb.di.INJECTED,
     **kwargs
 ):
-    tag = action_id
-    raw = await mongo.clans.find_one({"tag": tag})
-    clan_name = raw["name"]
+    print("hi")
+    # 1) Parse field & tag
+    full_field, tag = action_id.rsplit("_", 1)
+    _, field = full_field.split(":", 1)  # field == "thread_id"
 
-    guild_id  = ctx.interaction.guild_id
+    # 2) Create or fetch the thread
+    guild_id = ctx.interaction.guild_id
     PARENT_CH = 1133096989748363294
 
-    # 1) Active threads under that category/channel
-    active_threads = await bot.rest.fetch_active_threads(guild_id)
-    threads = [t for t in active_threads if t.parent_id == PARENT_CH]
+    active   = await bot.rest.fetch_active_threads(guild_id)
+    p_arch   = await bot.rest.fetch_public_archived_threads(PARENT_CH)
+    pr_arch  = await bot.rest.fetch_private_archived_threads(PARENT_CH)
+    threads  = [t for t in active if t.parent_id == PARENT_CH] + p_arch + pr_arch
 
-    # 2) Archived threads
-    public_archived  = await bot.rest.fetch_public_archived_threads(PARENT_CH)
-    private_archived = await bot.rest.fetch_private_archived_threads(PARENT_CH)
-    threads.extend(public_archived)
-    threads.extend(private_archived)
+    raw      = await mongo.clans.find_one({"tag": tag})
+    clan_name = raw["name"]
 
-    # 3) Check for an existing thread
     for thr in threads:
         if thr.name == clan_name:
-            # persist the existing thread ID
-            await mongo.clans.update_one(
-                {"tag": tag},
-                {"$set": {"thread_id": thr.id}}
-            )
-            thread_url = f"https://discord.com/channels/{guild_id}/{PARENT_CH}/{thr.id}"
-            return await ctx.respond(
-                f"🧵 A thread called **{clan_name}** already exists: {thread_url}",
-                ephemeral=True,
-            )
+            new_id = thr.id
+            break
+    else:
+        new_thr = await bot.rest.create_thread(
+            channel=PARENT_CH,
+            name=clan_name,
+            auto_archive_duration=1440,
+        )
+        new_id = new_thr.id
 
-    # 4) Otherwise create one
-    new_thr = await bot.rest.create_thread(
-        channel=PARENT_CH,
-        name=clan_name,
-        auto_archive_duration=1440,
-    )
+    # 3) Persist the new thread_id
+    await mongo.clans.update_one({"tag": tag}, {"$set": {field: new_id}})
 
-    await mongo.clans.update_one(
-        {"tag": tag},
-        {"$set": {"thread_id": new_thr.id}}
-    )
+    # 4) Confirm to user
+    thread_url = f"https://discord.com/channels/{guild_id}/{PARENT_CH}/{new_id}"
+    await ctx.respond(f"✅ Thread for **{clan_name}** set: {thread_url}", ephemeral=True)
 
-    thread_url = f"https://discord.com/channels/{guild_id}/{PARENT_CH}/{new_thr.id}"
-    await ctx.respond(
-        f"✅ Created thread for **{clan_name}**: {thread_url}",
-        ephemeral=True,
-    )
-
-    # 4) regenerate your menu, passing through the same tag
-    new_components = await edit_clan_menu(
+    # 5) Rebuild the edit menu
+    new_components = await edit_clan_menu.__wrapped__(
         ctx=ctx,
-        action_id=action_id,
+        action_id=tag,
         mongo=mongo,
         tag=tag
     )
-    # 5) now edit the original ephemeral message
     await ctx.interaction.edit_initial_response(components=new_components)
+
+
 
 
 
@@ -568,7 +569,6 @@ async def update_general_info_panel(
     if not raw:
         # you can still early‐respond on error
         await ctx.respond("❌ Clan not found!", ephemeral=True)
-        return
 
     db_clan = Clan(data=raw)
     components = [
@@ -652,7 +652,7 @@ async def update_general_info_panel(
 @lightbulb.di.with_di
 async def on_edit_general(
     ctx: MenuContext,
-    action_id: str,                # e.g. "type_KABRID", "status_KABRID", ...
+    action_id: str,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
