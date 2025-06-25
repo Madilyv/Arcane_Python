@@ -1,32 +1,14 @@
 import lightbulb
-import pymongo
-import hikari
-import coc
-from PIL import Image
-from io import BytesIO
-import requests
+
 
 from hikari.impl import (
-    MessageActionRowBuilder as ActionRow,
-    TextSelectMenuBuilder as TextSelectMenu,
-    SelectMenuBuilder as SelectMenu,
-    SelectOptionBuilder as SelectOption,
     ContainerComponentBuilder as Container,
-    SectionComponentBuilder as Section,
-    InteractiveButtonBuilder as Button,
     TextDisplayComponentBuilder as Text,
-    SeparatorComponentBuilder as Separator,
-    ThumbnailComponentBuilder as Thumbnail,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
-    ModalActionRowBuilder as ModalActionRow
 )
-from lightbulb import channel
-from lightbulb.components import MenuContext, ModalContext
-from utils.emoji import EmojiType
-from extensions.autocomplete import clan_types
-from utils.constants import RED_ACCENT ,CLAN_TYPES ,TH_LEVELS ,CLAN_STATUS ,TH_ATTRIBUTE
-from utils.emoji import emojis
+
+from utils.constants import RED_ACCENT
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.classes import Clan
@@ -65,5 +47,9 @@ async def view_clan_list(
     await ctx.respond(components=components, ephemeral=True)
 
     return (await dashboard_page(ctx=ctx))
+
+
+
+
 
 
