@@ -349,6 +349,12 @@ async def on_edit_action(
     choice = ctx.interaction.values[0]
     print(choice)
 
+@register_action("", no_return=True)
+@lightbulb.di.with_di
+async def debug_all(ctx: MenuContext, action_id: str, **_):
+    print("🔍 dispatch key:", ctx.interaction.custom_id.split(":",1)[0])
+    return []
+
 ##### Update Each Select Menu
 @register_action("edit_clan", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
@@ -358,7 +364,7 @@ async def on_edit_clan_field(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
-
+    print("i am here")
     values = getattr(ctx.interaction, "values", None)
     # If there are no values, this wasn’t a select menu—skip it
     if not values:
@@ -400,10 +406,9 @@ async def on_edit_thread_field(
     mongo: MongoClient   = lightbulb.di.INJECTED,
     **kwargs
 ):
-    print("hi")
-    # 1) Parse field & tag
-    full_field, tag = action_id.rsplit("_", 1)
-    _, field = full_field.split(":", 1)  # field == "thread_id"
+
+    # 1) Parse the field name and the tag
+    field, tag = action_id.rsplit("_", 1)
 
     # 2) Create or fetch the thread
     guild_id = ctx.interaction.guild_id
