@@ -20,3 +20,5 @@ pendulum
 coc.py
 
 Pillow
+
+requests

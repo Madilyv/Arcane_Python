@@ -41,7 +41,7 @@ class RecruitQuestions(
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         await ctx.defer(ephemeral=False)
-        components = await dashboard_page(action_id=str(ctx.interaction.id))
+        components = await dashboard_page()
         await ctx.respond(components=components, ephemeral=True)
 
 

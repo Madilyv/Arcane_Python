@@ -14,10 +14,17 @@ from utils.constants import RED_ACCENT
 from hikari.events.interaction_events import ComponentInteractionCreateEvent
 loader = lightbulb.Loader()
 
-registered_functions: dict[str, tuple[Callable[..., None], bool, bool, bool]] = {}
+registered_functions: dict[str, tuple[Callable[..., None], bool, bool, bool, str | None]] = {}
 
 
-def register_action(name: str, user_only: bool = False, no_return: bool = False, is_modal: bool = False, ephemeral: bool = False):
+def register_action(
+        name: str,
+        user_only: bool = False,
+        no_return: bool = False,
+        is_modal: bool = False,
+        ephemeral: bool = False,
+        group: str | None = None
+):
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         sig   = inspect.signature(func)
         hints = get_type_hints(func)
@@ -39,7 +46,12 @@ def register_action(name: str, user_only: bool = False, no_return: bool = False,
             # call the original, with converted values
             return await func(*bound.args, **bound.kwargs)
 
-        registered_functions[name] = (wrapper, user_only, no_return, is_modal, ephemeral)
+        nonlocal name, group
+        if group:
+            registered_functions[group] = (None, None, None, None, None, True)
+
+        registered_functions[name] = (wrapper, user_only, no_return, is_modal, ephemeral, group)
+
         return wrapper
 
     return decorator
@@ -57,8 +69,19 @@ async def component_handler(
         ctx: lightbulb.components.MenuContext | lightbulb.components.ModalContext,
         mongo: MongoClient = lightbulb.di.INJECTED,
 ):
+    import cProfile, pstats
+    profiler = cProfile.Profile()
+    profiler.enable()
+
     command_name, action_id = ctx.interaction.custom_id.split(":")
-    function, owner_only, no_return, is_modal, ephemeral = registered_functions.get(command_name)
+
+    function, owner_only, no_return, is_modal, ephemeral, group = registered_functions.get(command_name)
+
+    if group:
+        if not ctx.interaction.values:
+            return
+        function, owner_only, no_return, is_modal, ephemeral, group = registered_functions.get(ctx.interaction.values[0])
+
     if not is_modal:
         await ctx.defer(edit=True)
 
@@ -70,6 +93,10 @@ async def component_handler(
 
     if not no_return:
         await ctx.respond(components=components, edit=True, ephemeral=ephemeral)
+
+    profiler.disable()
+    stats = pstats.Stats(profiler).sort_stats("cumtime")
+    stats.print_stats(20)
 
 @loader.listener(hikari.events.ComponentInteractionCreateEvent)
 async def component_interaction(
