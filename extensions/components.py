@@ -70,7 +70,6 @@ async def component_handler(
         mongo: MongoClient = lightbulb.di.INJECTED,
 ):
     command_name, action_id = ctx.interaction.custom_id.split(":")
-
     function, owner_only, no_return, is_modal, ephemeral, group = registered_functions.get(command_name)
 
     if group:

@@ -24,7 +24,6 @@ from utils.emoji import emojis
 from utils.mongo import MongoClient
 from utils.classes import Clan
 
-
 # Main Clan Dashboard Management
 @lightbulb.di.with_di
 async def dashboard_page(
