@@ -10,7 +10,7 @@ from utils.startup import load_cogs
 load_dotenv()
 
 # Create a GatewayBot instance
-bot = hikari.GatewayBot(os.getenv("DISCORD_TOKEN"), logs="DEBUG")
+bot = hikari.GatewayBot(os.getenv("DISCORD_TOKEN"), logs="TRACE_HIKARI")
 
 
 client = lightbulb.client_from_app(bot)

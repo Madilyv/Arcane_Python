@@ -69,10 +69,6 @@ async def component_handler(
         ctx: lightbulb.components.MenuContext | lightbulb.components.ModalContext,
         mongo: MongoClient = lightbulb.di.INJECTED,
 ):
-    import cProfile, pstats
-    profiler = cProfile.Profile()
-    profiler.enable()
-
     command_name, action_id = ctx.interaction.custom_id.split(":")
 
     function, owner_only, no_return, is_modal, ephemeral, group = registered_functions.get(command_name)
@@ -94,9 +90,7 @@ async def component_handler(
     if not no_return:
         await ctx.respond(components=components, edit=True, ephemeral=ephemeral)
 
-    profiler.disable()
-    stats = pstats.Stats(profiler).sort_stats("cumtime")
-    stats.print_stats(20)
+
 
 @loader.listener(hikari.events.ComponentInteractionCreateEvent)
 async def component_interaction(
