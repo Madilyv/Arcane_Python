@@ -55,6 +55,10 @@ async def view_clan_list(
                     "### Current Clan List\n\n"
                     f"{clan_list}"
                 )),
+                Media(
+                    items=[
+                        MediaItem(media="assets/Red_Footer.png"),
+                    ])
             ]
         )
     ]

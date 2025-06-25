@@ -84,6 +84,10 @@ async def dashboard_page(
                                     value="manage_fwa_data"),
                             ]),
                     ]),
+                Media(
+                    items=[
+                        MediaItem(media="assets/Red_Footer.png")
+                    ]),
             ]
         )
     ]
