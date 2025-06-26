@@ -605,47 +605,61 @@ async def update_emoji_modal(
     **kwargs
 ):
     tag = action_id
+    raw = await mongo.clans.find_one({"tag": tag})
+    db_clan = Clan(data=raw)
+    clan_name = db_clan.name.replace(" ", "")
+
+    # helper to pull your modal field values
     def get_val(cid: str) -> str:
         for row in ctx.interaction.components:
             for comp in row:
                 if comp.custom_id == cid:
                     return comp.value
         return ""
+
     new_emoji_url = get_val("emoji_url")
-    print(f"My value is: {new_emoji_url}")
-    emoji = ""
-    print(tag)
+
     if new_emoji_url:
+        old_mention = db_clan.emoji or ""
+        match = re.search(r":(\d+)>$", old_mention)
+        if match:
+            old_id = int(match.group(1))
+            application = await bot.rest.fetch_my_user()
+            try:
+                await bot.rest.delete_application_emoji(
+                    application=application.id,
+                    emoji=old_id
+                )
+            except hikari.NotFoundError:
+                pass
+
         def resize_and_compress_image(image_content, max_size=(128, 128), max_kb=256):
             image = Image.open(BytesIO(image_content))
-            print("Hi I am here")
             image.thumbnail(max_size)
 
             buffer = BytesIO()
-            image.save(buffer, format='PNG', optimize=True)
-            buffer_size = buffer.tell() / 1024
-
-            if buffer_size > max_kb:
+            image.save(buffer, format="PNG", optimize=True)
+            if buffer.tell() / 1024 > max_kb:
                 buffer = BytesIO()
-                image.save(buffer, format='PNG', optimize=True, quality=85)
-
+                image.save(buffer, format="PNG", optimize=True, quality=85)
             return buffer.getvalue()
 
-        image_resp = requests.get(new_emoji_url)
-        image_resp.raise_for_status()
-        desired_resized_data = resize_and_compress_image(image_resp.content)
+        resp = requests.get(new_emoji_url)
+        resp.raise_for_status()
+        img_data = resize_and_compress_image(resp.content)
 
         application = await bot.rest.fetch_my_user()
-        emoji = await bot.rest.create_application_emoji(
+        new_emoji = await bot.rest.create_application_emoji(
             application=application.id,
-            name=f"{tag.replace('#', '')}",
-            image=desired_resized_data
-        )
-        emoji = emoji.mention
-        await mongo.clans.update_one(
-            {"tag": tag},
-            {"$set": {"emoji": emoji}}
+            name=clan_name,
+            image=img_data
         )
 
-    new_components = await clan_edit_menu(ctx=ctx, mongo=mongo, tag=tag)
-    await ctx.edit_response(components=new_components)
+        await mongo.clans.update_one(
+            {"tag": tag},
+            {"$set": {"emoji": new_emoji.mention}}
+        )
+
+    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    new_components = await clan_edit_menu(ctx, action_id=tag, mongo=mongo, tag=tag)
+    await ctx.interaction.edit_initial_response(components=new_components)
