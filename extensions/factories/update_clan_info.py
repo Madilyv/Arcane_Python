@@ -63,6 +63,7 @@ async def update_clan_information(
                     accessory=Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         label="Add a Clan",
+                        emoji=1387844836916199466,
                         custom_id="add_clan_page:",
                     ),
                 ),
@@ -78,6 +79,7 @@ async def update_clan_information(
                     accessory=Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         label="Edit a Clan",
+                        emoji=1387850342473011481,
                         custom_id="choose_clan_select:",
                     ),
                 ),
@@ -93,6 +95,7 @@ async def update_clan_information(
                     accessory=Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         label="Remove a Clan",
+                        emoji=1387844866008027229,
                         custom_id="remove_clan_select:",
                     ),
                 ),
@@ -607,7 +610,7 @@ async def update_emoji_modal(
     tag = action_id
     raw = await mongo.clans.find_one({"tag": tag})
     db_clan = Clan(data=raw)
-    clan_name = db_clan.name.replace(" ", "")
+    clan_name = db_clan.name.replace(" ", "_")
 
     # helper to pull your modal field values
     def get_val(cid: str) -> str:

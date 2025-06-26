@@ -1,7 +1,6 @@
 import hikari
 import lightbulb
-from hikari.emojis import Emoji
-from extensions.factories.emoji import steal_from_guild
+import aiohttp
 
 loader = lightbulb.Loader()
 
@@ -9,37 +8,45 @@ loader = lightbulb.Loader()
 class StealEmoji(
     lightbulb.SlashCommand,
     name="steal",
-    description="Steal a custom emoji from another guild into this server",
+    description="Steal a custom emoji into your bot application, deleting any old one of the same name.",
+    default_member_permissions=hikari.Permissions.CREATE_GUILD_EXPRESSIONS
 ):
+    # required argument
     emoji = lightbulb.string(
         "emoji",
-        "The custom emoji to steal (e.g. <:some_name:1234567890>)",
+        "The emoji to steal (e.g. <:some_name:1234567890>)"
     )
+    # now optional
     new_name = lightbulb.string(
         "new_name",
-        "What to call the new emoji in this server",
+        "What to call it in your application",
+        default=None
     )
 
     @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        if ctx.guild_id is None:
-            return await ctx.respond(
-                "❌ This command must be used in a server.",
-                flags=hikari.MessageFlag.EPHEMERAL,
-            )
-
-        # parse the raw input into a Hikari Emoji
-        source: Emoji = hikari.emojis.Emoji.parse(self.emoji)
-        created_name = self.new_name
-
+    async def invoke(
+        self, ctx: lightbulb.Context,
+        bot: hikari.GatewayBot
+    ) -> None:
+        await ctx.defer()
         try:
-            created = await steal_from_guild(
-                app=ctx.bot,                        # ← use ctx.bot here
-                target_guild_id=ctx.guild_id,
-                source_emoji=source,
-                new_name=created_name,
-            )
-        except Exception as e:
-            return await ctx.respond(f"❌ Failed to steal emoji: {e}", flags=hikari.MessageFlag.EPHEMERAL)
+            source: hikari.CustomEmoji = hikari.emojis.Emoji.parse(self.emoji)
+        except Exception:
+            await ctx.respond("❌ Invalid emoji format—make sure it looks like `<:name:id>`.")
+            return
 
-        await ctx.respond(f"✅ Stole `:{created.name}:` (ID {created.id}) successfully!")
+        # download the image bytes
+        emoji_bytes = await source.read()
+        # if new_name is None or empty, use the original emoji's name
+        emoji_name = self.new_name or source.name
+
+        # re-upload with your bot’s application
+        created = await bot.rest.create_application_emoji(
+            application=bot.get_me().id,
+            name=emoji_name,
+            image=emoji_bytes,
+        )
+
+        await ctx.respond(
+            f"✅ Stole and created `:{created.name}:` (ID {created.id}) in your application!"
+        )
