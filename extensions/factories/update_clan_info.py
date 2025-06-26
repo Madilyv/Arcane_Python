@@ -49,9 +49,6 @@ async def update_clan_information(
                 Text(content=(
                     "### Update Clan Information\n\n"
                     "Select an action below to manage clan information in our database.\n\n"
-                    f"{emojis.white_arrow_right}**Edit a Clan:** Modify details of an existing clan.\n"
-                    f"{emojis.white_arrow_right}**Add a Clan:** Add a new clan with all relevant information.\n"
-                    f"{emojis.white_arrow_right}**Remove a Clan:** Delete a clan and all its associated information.\n"
                 )),
 
                 Section(
@@ -64,7 +61,7 @@ async def update_clan_information(
                         )
                     ],
                     accessory=Button(
-                        style=hikari.ButtonStyle.SUCCESS,
+                        style=hikari.ButtonStyle.SECONDARY,
                         label="Add a Clan",
                         custom_id="add_clan_page:",
                     ),
@@ -79,12 +76,26 @@ async def update_clan_information(
                         )
                     ],
                     accessory=Button(
-                        style=hikari.ButtonStyle.SUCCESS,
+                        style=hikari.ButtonStyle.SECONDARY,
                         label="Edit a Clan",
                         custom_id="choose_clan_select:",
                     ),
                 ),
-
+                Section(
+                    components=[
+                        Text(
+                            content=(
+                                f"{emojis.white_arrow_right}"
+                                "**Remove a Clan:** Delete a clan and all its associated information."
+                            )
+                        )
+                    ],
+                    accessory=Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        label="Remove a Clan",
+                        custom_id="remove_clan_select:",
+                    ),
+                ),
                 Media(
                     items=[
                         MediaItem(media="assets/Red_Footer.png"),
@@ -193,6 +204,42 @@ async def add_clan_modal(
         ephemeral=True
     )
 
+#REMOVE CLAN STUFF
+@register_action("remove_clan_select", ephemeral=True)
+@lightbulb.di.with_di
+async def remove_clan_select(
+        ctx: lightbulb.components.MenuContext,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    clans = await mongo.clans.find().to_list(length=None)
+    clans = [Clan(data=data) for data in clans]
+    options = [
+        SelectOption(label=c.name, value=c.tag, description=c.tag)
+        for c in clans
+    ]
+
+    components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+
+                Text(content="✏️ **Which clan would you like to edit?**"),
+                ActionRow(
+                    components=[
+                        TextSelectMenu(
+                            custom_id=f"clan_edit_menu:",
+                            placeholder="Select a clan to edit…",
+                            max_values=1,
+                            options=options,
+                        )
+                    ]
+                ),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ],
+        )
+    ]
+    return components
 
 #EDIT CLAN STUFF
 @register_action("choose_clan_select", ephemeral=True)
@@ -565,7 +612,7 @@ async def update_emoji_modal(
                     return comp.value
         return ""
     new_emoji_url = get_val("emoji_url")
-
+    print(f"My value is: {new_emoji_url}")
     emoji = ""
     print(tag)
     if new_emoji_url:
