@@ -1,7 +1,10 @@
+from logging import exception
+
 import lightbulb
 import hikari
 import coc
 import requests
+import re
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -28,6 +31,10 @@ from utils.classes import Clan
 from utils.emoji import emojis
 from utils.mongo import MongoClient
 from extensions.factories import dashboard_page
+from extensions.factories import update_clan_info_general
+
+IMG_RE = re.compile(r"^https?://\S+\.(?:png|jpe?g|gif|webp)$", re.IGNORECASE)
+
 
 @register_action("update_clan_information", group="clan_database")
 @lightbulb.di.with_di
@@ -87,7 +94,7 @@ async def update_clan_information(
     ]
     await ctx.respond(components=components, ephemeral=True)
 
-    return (await dashboard_page(ctx=ctx))
+    return await dashboard_page(ctx=ctx)
 
 
 
@@ -375,8 +382,13 @@ async def clan_edit_menu(
                 components=[
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
-                        custom_id=f"update_logo:{db_clan.tag}",  # <-- note colon!
-                        label="Update Clan Logo & Emoji",
+                        custom_id=f"update_logo:{db_clan.tag}",
+                        label="Update Logo",
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"update_emoji:{db_clan.tag}",
+                        label="Update Emoji",
                     ),
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
@@ -458,16 +470,11 @@ async def on_edit_thread_field(
 @lightbulb.di.with_di
 async def update_logo_button(
         ctx: lightbulb.components.MenuContext,
-        action_id: str,       # this is your clan tag
+        action_id: str,
         **kwargs
 ):
     tag = action_id
 
-    emoji_input = ModalActionRow().add_text_input(
-        "logo_emoji", "New Clan Emoji",
-        placeholder="https://…/logo.png",
-        required=True,
-    )
     logo_input = ModalActionRow().add_text_input(
         "logo_url", "Logo Image URL",
         placeholder="https://…/logo.png",
@@ -475,9 +482,9 @@ async def update_logo_button(
     )
 
     await ctx.respond_with_modal(
-        title="Update Clan Logo & Emoji",
+        title=f"Update Logo & Emoji for {tag}",
         custom_id=f"update_logo_modal:{tag}",
-        components=[emoji_input, logo_input],
+        components=[logo_input],
     )
 
 
@@ -491,6 +498,7 @@ async def update_logo_modal(
         **kwargs
 ):
     tag = action_id
+
     def get_val(cid: str) -> str:
         for row in ctx.interaction.components:
             for comp in row:
@@ -498,25 +506,80 @@ async def update_logo_modal(
                     return comp.value
         return ""
 
-    new_emoji_url = get_val("logo_emoji")
     new_logo_url  = get_val("logo_url")
+
+    if new_logo_url:
+        if not IMG_RE.match(new_logo_url):
+            return await ctx.respond(
+                "⚠️ `logo_url` must be a direct link to a .png/.jpg/.gif/.webp image.",
+                ephemeral=True
+            )
+
+    # Persist both
+    await mongo.clans.update_one(
+        {"tag": tag},
+        {"$set": {"logo": new_logo_url}}
+    )
+
+    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    new_components = await clan_edit_menu(ctx, action_id=tag, mongo=mongo, tag=tag)
+    await ctx.interaction.edit_initial_response(components=new_components)
+
+
+@register_action("update_emoji", no_return=True, is_modal=True)
+@lightbulb.di.with_di
+async def update_emoji_button(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,   # this is your clan tag
+    **kwargs
+):
+    tag = action_id
+
+    # only one input now
+    emoji_input = ModalActionRow().add_text_input(
+        "emoji_url", "New Clan Emoji URL",
+        placeholder="https://…/emoji.png",
+        required=True,
+    )
+
+    await ctx.respond_with_modal(
+        title=f"Update Emoji for {tag}",
+        custom_id=f"update_emoji_modal:{tag}",
+        components=[emoji_input],
+    )
+
+@register_action("update_emoji_modal", no_return=True, is_modal=True)
+@lightbulb.di.with_di
+async def update_emoji_modal(
+    ctx: lightbulb.components.ModalContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **kwargs
+):
+    tag = action_id
+    def get_val(cid: str) -> str:
+        for row in ctx.interaction.components:
+            for comp in row:
+                if comp.custom_id == cid:
+                    return comp.value
+        return ""
+    new_emoji_url = get_val("emoji_url")
 
     emoji = ""
     if new_emoji_url:
         def resize_and_compress_image(image_content, max_size=(128, 128), max_kb=256):
             image = Image.open(BytesIO(image_content))
-
-            # Resize image
+            print("Hi I am here")
             image.thumbnail(max_size)
 
-            # Save to a bytes buffer
             buffer = BytesIO()
             image.save(buffer, format='PNG', optimize=True)
-            buffer_size = buffer.tell() / 1024  # Size in KB
+            buffer_size = buffer.tell() / 1024
 
             if buffer_size > max_kb:
                 buffer = BytesIO()
-                image.save(buffer, format='PNG', optimize=True, quality=85)  # Adjust quality as needed
+                image.save(buffer, format='PNG', optimize=True, quality=85)
 
             return buffer.getvalue()
 
@@ -531,16 +594,17 @@ async def update_logo_modal(
             image=resize_and_compress_image(image_content=desired_resized_data)
         )
         emoji = emoji.mention
+        print(emoji)
+        await mongo.clans.update_one(
+            {"tag": tag},
+            {"$set": {"emoji": emoji}}
+        )
 
-    # Persist
-    await mongo.clans.update_one(
-        {"tag": tag},
-        {"$set": {"emoji": emoji, "logo": new_logo_url}}
-    )
-
-    await ctx.defer()
-    new_components = await edit_clan_menu(ctx, action_id=tag, mongo=mongo, tag=tag)
+    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    new_components = await clan_edit_menu(ctx, action_id=tag, mongo=mongo, tag=tag)
     await ctx.interaction.edit_initial_response(components=new_components)
-    await ctx.interaction.create_followup(
-        content=f"✅ Clan **{tag}** updated! Emoji & logo saved.",
+
+    await ctx.respond(
+        content=f"✅ Clan **{tag}** updated! Emoji saved.",
+        flags=hikari.MessageFlag.EPHEMERAL,
     )
