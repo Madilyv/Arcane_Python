@@ -27,6 +27,12 @@ class Emojis:
         self.blank = EmojiType("<:Blank:1035193835225096356>")
         self.white_arrow_right = EmojiType("<:aa_a_w:1036081848633282691>")
         self.purple_arrow_right = EmojiType("<:aa_a_p:1033739074604896257>")
+        self.add = EmojiType("<:Add:1387844836916199466>")
+        self.remove = EmojiType("<:Remove:1387844866008027229>")
+        self.edit = EmojiType("<:Edit:1387850342473011481>")
+        self.view = EmojiType("<:View:1387842874053234808>")
+        self.confirm = EmojiType("<:Confirm:1387845018139754517>")
+        self.cancel = EmojiType("<:Cancel:1387845041845698652>")
 
 emojis = Emojis()
 

@@ -63,7 +63,7 @@ async def update_clan_information(
                     accessory=Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         label="Add a Clan",
-                        emoji=1387844836916199466,
+                        emoji=emojis.add.partial_emoji,
                         custom_id="add_clan_page:",
                     ),
                 ),
@@ -79,7 +79,7 @@ async def update_clan_information(
                     accessory=Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         label="Edit a Clan",
-                        emoji=1387850342473011481,
+                        emoji=emojis.edit.partial_emoji,
                         custom_id="choose_clan_select:",
                     ),
                 ),
@@ -95,7 +95,7 @@ async def update_clan_information(
                     accessory=Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         label="Remove a Clan",
-                        emoji=1387844866008027229,
+                        emoji=emojis.remove.partial_emoji,
                         custom_id="remove_clan_select:",
                     ),
                 ),
@@ -202,10 +202,10 @@ async def add_clan_modal(
         "thread_id": 0,
         "type": ""
     })
-    await ctx.respond(
-        content=f"✅ Got it! Clan Tag is `{clan.tag}`. Name is {clan.name}",
-        ephemeral=True
-    )
+
+    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    new_components = await clan_edit_menu(ctx, action_id=clan.tag, mongo=mongo, tag=clan.tag)
+    await ctx.interaction.edit_initial_response(components=new_components)
 
 #REMOVE CLAN STUFF
 @register_action("remove_clan_select", ephemeral=True)
@@ -231,7 +231,7 @@ async def remove_clan_select(
                 ActionRow(
                     components=[
                         TextSelectMenu(
-                            custom_id=f"clan_edit_menu:",
+                            custom_id=f"clan_remove_menu:",
                             placeholder="Select a clan to edit…",
                             max_values=1,
                             options=options,
@@ -243,6 +243,78 @@ async def remove_clan_select(
         )
     ]
     return components
+
+@register_action("clan_remove_menu", ephemeral=True)
+@lightbulb.di.with_di
+async def clan_remove_menu(
+        ctx: lightbulb.components.MenuContext,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    tag = kwargs.get("tag") or ctx.interaction.values[0]
+
+    raw = await mongo.clans.find_one({"tag": tag})
+    db_clan = Clan(data=raw)
+
+    components = [Container(
+        accent_color=RED_ACCENT,
+        components=[
+            Text(content=f"## ✏️ **Remove {db_clan.name} from Database** (`{db_clan.tag}`)"),
+            Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+
+            # General Clan Info
+            Text(content=f"Are you positive you want to delete **{db_clan.name}** from our system forever?"),
+            Text(content="This is not reversible!"),
+
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"remove_clan:confirm_{db_clan.tag}",
+                        label="Yes, Delete Forever!",
+                        emoji=emojis.confirm.partial_emoji,
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"remove_clan:cancel_{db_clan.tag}",
+                        label="Cancel Deletion",
+                        emoji=emojis.cancel.partial_emoji,
+                    ),
+                ]
+            ),
+
+            # Clan Roles
+            Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+        ],
+    )]
+    return components
+
+@register_action("remove_clan", ephemeral=True)
+@lightbulb.di.with_di
+async def on_remove_clan_field(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    field, tag = action_id.rsplit("_", 1)
+    raw = await mongo.clans.find_one({"tag": tag})
+    db_clan = Clan(data=raw)
+
+    await mongo.clans.delete_one({"tag": tag})
+
+    components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content=f"Welp, `{db_clan.name}` has been deleted forever! <:SadTrash:1387846121094774854>"),
+                Text(content="Hopefully you didn't make an oopsie..."),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ]
+        )
+    ]
+    return components
+
 
 #EDIT CLAN STUFF
 @register_action("choose_clan_select", ephemeral=True)

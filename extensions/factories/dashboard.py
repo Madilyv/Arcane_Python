@@ -66,18 +66,22 @@ async def dashboard_page(
                             placeholder="Make a Selection...",
                             options=[
                                 SelectOption(
+                                    emoji=emojis.view.partial_emoji,
                                     label="View Clan List",
                                     description="View all clans & their IDs",
                                     value="view_clan_list"),
                                 SelectOption(
+                                    emoji=emojis.edit.partial_emoji,
                                     label="Update Clan Information",
                                     description="Edit or Manage Clan Details",
                                     value="update_clan_information"),
                                 SelectOption(
+                                    emoji=1387884570501710015,
                                     label="Clan Points",
                                     description="Track & Update Clan Points",
                                     value="clan_points"),
                                 SelectOption(
+                                    emoji=1387882523358527608,
                                     label="Manage FWA Data",
                                     description="Update FWA Links & Images",
                                     value="manage_fwa_data"),
