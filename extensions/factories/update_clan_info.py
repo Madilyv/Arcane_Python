@@ -567,6 +567,7 @@ async def update_emoji_modal(
     new_emoji_url = get_val("emoji_url")
 
     emoji = ""
+    print(tag)
     if new_emoji_url:
         def resize_and_compress_image(image_content, max_size=(128, 128), max_kb=256):
             image = Image.open(BytesIO(image_content))
@@ -590,21 +591,14 @@ async def update_emoji_modal(
         application = await bot.rest.fetch_my_user()
         emoji = await bot.rest.create_application_emoji(
             application=application.id,
-            name=f"{tag}",
-            image=resize_and_compress_image(image_content=desired_resized_data)
+            name=f"{tag.replace('#', '')}",
+            image=desired_resized_data
         )
         emoji = emoji.mention
-        print(emoji)
         await mongo.clans.update_one(
             {"tag": tag},
             {"$set": {"emoji": emoji}}
         )
 
-    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
-    new_components = await clan_edit_menu(ctx, action_id=tag, mongo=mongo, tag=tag)
-    await ctx.interaction.edit_initial_response(components=new_components)
-
-    await ctx.respond(
-        content=f"✅ Clan **{tag}** updated! Emoji saved.",
-        flags=hikari.MessageFlag.EPHEMERAL,
-    )
+    new_components = await clan_edit_menu(ctx=ctx, mongo=mongo, tag=tag)
+    await ctx.edit_response(components=new_components)
