@@ -1,3 +1,5 @@
+import random
+
 
 class Clan:
     def __init__(self, data: dict):
@@ -19,3 +21,31 @@ class Clan:
         self.th_requirements: int = data.get("th_requirements")
         self.thread_id = data.get("thread_id")
         self.type: str = data.get("type")
+        self.points: int = data.get("points")
+
+class Auction:
+    def __init__(self, data: dict):
+        self._data = data
+        self.player_tag: str = data.get("player_tag")
+        self.is_finalized: bool = data.get("is_finalized")
+        self.winner: int = data.get("winner")
+        self.amount: int = data.get("amount")
+        self.bids: list[Bid] = [Bid(d) for d in data.get("bids", [])]
+
+    @property
+    def winning_bid(self):
+        if not self.bids:
+            return None
+        highest_bid = max(self.bids, key=lambda b: b.placed_by)
+        highest_bids = [b for b in self.bids if b.amount == highest_bid]
+        if len(highest_bids) >= 2:
+            return random.choice(highest_bids)
+        return highest_bids[0]
+
+
+class Bid:
+    def __init__(self, data):
+        self._data = data
+        self.clan_tag: str = data.get("clan_tag")
+        self.placed_by: int = data.get("placed_by")
+        self.amount: int = data.get("amount")
