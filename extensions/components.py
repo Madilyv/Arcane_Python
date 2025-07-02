@@ -81,7 +81,8 @@ async def component_handler(
         await ctx.defer(edit=True)
 
     kw = await mongo.button_store.find_one({"_id": action_id}, {"_id" : 0})
-    kw = kw or {} | {"color" : RED_ACCENT, "action_id" : action_id, "ctx": ctx}
+    kw = kw or {} 
+    kw = kw | {"color" : RED_ACCENT, "action_id" : action_id, "ctx": ctx}
     if not kw:
         return
     components = await function(**kw)
