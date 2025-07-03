@@ -16,9 +16,12 @@ from hikari.impl import (
     ThumbnailComponentBuilder as Thumbnail,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
+    LinkButtonBuilder as LinkButton
 )
-from lightbulb.components import LinkButton
+#from lightbulb.components import LinkButton
 from utils.constants import RED_ACCENT
+from utils.constants import GOLD_ACCENT
+from utils.constants import BLUE_ACCENT
 from utils.emoji import emojis
 from extensions.components import register_action
 
@@ -349,34 +352,28 @@ async def on_age_button(
         Container(
             accent_color=RED_ACCENT,
             components=[
+                Text(content="To help us match you with the right clan and events, let’s set your timezone.\n\n"),
+                Section(
+                    components=[
+                        Text(
+                            content=(
+                                f"{emojis.white_arrow_right}"
+                                "**Find Your Time Zone**"
+                            )
+                        )
+                    ],
+                    accessory=LinkButton(
+                        url="https://zones.arilyn.cc/",
+                        label="Get My Time Zone 🌐",
+                    ),
+                ),
                 Text(
                     content=(
-                        "To help us match you with the right clan and events, let’s set your timezone.\n\n"
-                        "**Check your zone here:** [Time Zone Map](https://zones.arilyn.cc/)\n"
-                        "**Example format:** `America/New_York`\n\n"
+                        "**Example format:** `America/New_York`\n"
+                        "*Please don't just type GMT+1 or EST; use the link to get the correct format.*\n\n"
                         "Then simply type your timezone in chat, quick and easy!"
                     )
                 ),
-                # Section(
-                #     components=[
-                #         Text(
-                #             content=(
-                #                 f"{emojis.white_arrow_right}"
-                #                 "**Check your zone here:**"
-                #             )
-                #         )
-                #     ],
-                #     accessory=LinkButton(
-                #         url="https://zones.arilyn.cc/",
-                #         label="**Check your zone here:**",
-                #         emoji=None,
-                #         disabled=False
-                #     ),
-                # ),
-                # LinkButton(
-                #     url="https://zones.arilyn.cc/",
-                #     label="**Check your zone here:**",
-                # ),
                 Media(
                     items=[
                         MediaItem(media="assets/Red_Footer.png"),
@@ -388,6 +385,199 @@ async def on_age_button(
         components=components,
         channel=ctx.channel_id
     )
+
+### FWA Questions Section
+@register_action("fwa_questions", no_return=True)
+@lightbulb.di.with_di
+async def fwa_questions(
+    user_id: int,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **kwargs
+):
+
+    ctx: lightbulb.components.MenuContext = kwargs.get("ctx")
+    choice = ctx.interaction.values[0]
+    user = await bot.rest.fetch_member(ctx.guild_id, user_id)
+
+    if choice == "get_war_weight":
+        components = [
+            Text(content=f"⚖️ **War Weight Check** · {user.mention}"),
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(content=(
+                        "We need your **current war weight** to ensure fair matchups. Please:\n\n"
+                        f"{emojis.red_arrow_right} **Post** a Friendly Challenge in-game.\n"
+                        f"{emojis.red_arrow_right} **Scout** that challenge you posted\n"
+                        f"{emojis.red_arrow_right} **Tap** on your Town Hall, then hit **Info**.\n"
+                        f"{emojis.red_arrow_right} **Upload** a screenshot of the Town Hall info popup here.\n\n"
+                        "*See the example below for reference.*"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1751550804/TH_Weight.png"),
+                        ]
+                    ),
+                    Text(content=f"_Requested by {ctx.user.display_name}_")
+                ]
+            )
+        ]
+    elif choice == "heard_of_lazy_cwl":
+        components = [
+            Text(content=f"🛋️ **Lazy CWL Overview** · {user.mention}"),
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(content=(
+                        "Have you ever heard of **Lazy CWL** before? 🤔\n\n"
+                        "**Lazy CWL** is our laid-back twist on Clan War Leagues,\n"
+                        "designed for fun, flexibility, and zero stress.\n\n"
+                        f"{emojis.white_arrow_right} **Have you played lazy CWL?**\n"
+                        f"{emojis.white_arrow_right} **If so, what's your experience or understanding of it?**\n\n"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Gold_Footer.png")
+                        ]),
+                    Text(content=f"_Requested by {ctx.user.display_name}_")
+                ]
+            )
+        ]
+    elif choice == "lazy_cwl_explanation":
+        components = [
+            Text(content=f"🛋️ **Lazy CWL Deep Dive** · {user.mention}"),
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=(
+                        "**What is Lazy CWL?**\n"
+                        "We partner with **Warriors United** to run CWL in a laid-back, flexible way,\n"
+                        "perfect if you’d otherwise go inactive during league week. \n"
+                        "No stress over attacks or donations; just jump in when you can."
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Blue_Footer.png")
+                        ]),
+                ]
+            ),
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=(
+                        "**How It Works**\n"
+                        f"{emojis.red_arrow_right} **Brand-New Clans**\n"
+                        f"{emojis.blank}{emojis.white_arrow_right} Created each CWL season. Old clans reused in lower leagues.\n\n"
+                        f"{emojis.red_arrow_right} **FWA Season Transition**\n"
+                        f"{emojis.blank}{emojis.white_arrow_right} During the last **FWA War**, complete both attacks and **join your assigned CWL Clan** before the war ends.\n"
+                        f"{emojis.blank}{emojis.white_arrow_right} Announcements will be posted to guide you.\n\n"
+                        f"{emojis.red_arrow_right} **League Search**\n"
+                        f"{emojis.blank}{emojis.white_arrow_right} Once everyone is in their assigned CWL Clan, we will start the search.\n"
+                        f"{emojis.blank}{emojis.white_arrow_right} After the search begins, **return to your Home FWA Clan**  immediately.\n"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Blue_Footer.png")
+                        ]),
+                ]
+            ),
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=(
+                        "**Participation & Rewards**\n"
+                        f"{emojis.red_arrow_right} **Bonus Medals**\n"
+                        f"{emojis.blank}{emojis.white_arrow_right} Medals are awarded through a lottery system.\n\n"
+                        f"{emojis.red_arrow_right} **Participation Requirement**\n"
+                        f"{emojis.blank}{emojis.white_arrow_right} Follow Lazy CWL Rules and complete **at least 4+ attacks (60%)**\n"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Blue_Footer.png")
+                        ]),
+                    Text(content=f"_Requested by {ctx.user.display_name}_")
+                ]
+            ),
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=(
+                        "**How to Sign Up**\n"
+                        "If you **WANT to participate** in CWL, signing up is **mandatory!**\n\n"
+                        f"{emojis.red_arrow_right} Sign up for **each CWL season** in <#1133030890189094932> or channel name #LazyCwl-Sign-ups , visible after joining the clan.\n\n"
+                        f"{emojis.red_arrow_right} **Last-minute signups are strongly discouraged** and may not be accepted. We run several Lazy CWL clans, and proper planning is crucial.\n\n"
+                    )),
+                    Section(
+                        components=[
+                            Text(
+                                content=(
+                                    f"{emojis.white_arrow_right}"
+                                    "**More Info**"
+                                )
+                            )
+                        ],
+                        accessory=LinkButton(
+                            url="https://docs.google.com/document/d/13HrxwaUkenWZ4F1QNCPzdM5n5uXYcLqQYOdQzyQksuA/edit?tab=t.0",
+                            label="Deep-Dive Lazy CWL Rules",
+                        ),
+                    ),
+                    Text(content=(
+                        "**<a:Alert_01:1043947615429070858>IMPORTANT:**\n"
+                        "*Participating in CWL outside of Arcane is **__not allowed if__** you are part of our FWA Operation.*\n\n"
+                    )),
+
+                    Media(
+                        items=[
+                            MediaItem(media="https://c.tenor.com/MMuc_dX1D7AAAAAC/tenor.gif")
+                        ]),
+                    Text(content=f"_Requested by {ctx.user.display_name}_")
+                ]
+            )
+        ]
+    elif choice == "fwa_leaders_reviewing":
+        components = [
+            Text(content=f"🔎 **FWA Leadership Review** · {user.mention}"),
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(
+                        content=(
+                            "Thank you for applying! Our **FWA leadership team** is now reviewing your submission. "
+                            "This can take a little time as we adjust rosters and to accommodate your application.\n\n"
+                            "We kindly ask that you **do not ping anyone** during this time.\n"
+                            "Rest assured, we are aware of your presence and will update you as soon as possible."
+                        )
+                    ),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Gold_Footer.png")
+                        ]),
+                    Text(content=f"_Requested by {ctx.user.display_name}_")
+                ]
+            )
+        ]
+
+    await bot.rest.create_message(
+        components=components,
+        channel=ctx.channel_id
+    )
+
+    await asyncio.sleep(10)
+    action_id = ctx.interaction.custom_id.split(":", 1)[1]
+    new_components = await recruit_questions_page(
+        action_id=action_id,
+        user_id=user_id,
+        ctx=ctx,
+    )
+    await ctx.interaction.delete_initial_response()
+    await ctx.respond(
+        components=new_components,
+        ephemeral=True,
+    )
+
+
+
+
 
 async def recruit_questions_page(
     action_id: str,
@@ -439,6 +629,42 @@ async def recruit_questions_page(
                                     value="leaders_checking_you_out"),
                     ]),
                 ]),
+                ActionRow(
+                    components=[
+                        TextSelectMenu(
+                            max_values=1,
+                            custom_id=f"fwa_questions:{action_id}",
+                            placeholder="FWA Questions",
+                            options=[
+                                SelectOption(
+                                    emoji="⚖️",
+                                    label="Get War Weight",
+                                    value="get_war_weight"
+                                ),
+                                SelectOption(
+                                    emoji=1157399772018249828,
+                                    label="Heard of Lazy CWL?",
+                                    value="heard_of_lazy_cwl"
+                                ),
+                                SelectOption(
+                                    emoji=1004110859729125466,
+                                    label="Lazy CWL Explanation",
+                                    value="lazy_cwl_explanation"
+                                ),
+                                SelectOption(
+                                    emoji=1001907873170849792,
+                                    label="FWA Leaders Reviewing",
+                                    value="fwa_leaders_reviewing"
+                                ),
+                                SelectOption(
+                                    emoji=1387844788853801081,
+                                    label="FWA Bases (Upon Approval)",
+                                    value="fwa_bases_upon_approval"
+                                ),
+                            ],
+                        ),
+                    ]
+                ),
                 Text(content="-# Kings Alliance - Where Legends Are Made"),
                 Media(
                     items=[
