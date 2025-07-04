@@ -20,11 +20,7 @@ from hikari.impl import (
     LinkButtonBuilder as LinkButton
 )
 #from lightbulb.components import LinkButton
-from utils.constants import RED_ACCENT, FWA_ACTIVE_WAR_BASE
-from utils.constants import GOLD_ACCENT
-from utils.constants import BLUE_ACCENT
-from utils.constants import GREEN_ACCENT
-from utils.constants import FWA_WAR_BASE
+from utils.constants import RED_ACCENT, GOLD_ACCENT,BLUE_ACCENT,GREEN_ACCENT,FWA_WAR_BASE,FWA_ACTIVE_WAR_BASE
 from utils.emoji import emojis
 from utils.mongo import MongoClient
 from extensions.components import register_action

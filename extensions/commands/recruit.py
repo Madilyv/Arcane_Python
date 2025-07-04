@@ -18,7 +18,7 @@ class RecruitQuestions(
     description="Select a new recruit to send them recruit questions"
 ):
     user = lightbulb.user(
-        "discord_user",
+        "discord-user",
         "select a new recruit",
     )
 
