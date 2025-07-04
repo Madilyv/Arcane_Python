@@ -50,11 +50,6 @@ class Bases(
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
-        data = {
-            "_id": str(ctx.interaction.id),
-            "user_id" : self.user.id
-        }
-        fwa_obj = await get_fwa_base_object(mongo)
 
         action_id = str(uuid.uuid4())
         components = [
