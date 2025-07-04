@@ -49,3 +49,15 @@ class Bid:
         self.clan_tag: str = data.get("clan_tag")
         self.placed_by: int = data.get("placed_by")
         self.amount: int = data.get("amount")
+
+class BaseLinks:
+    def __init__(self, links_dict):
+        for th, link in links_dict.items():
+            setattr(self, th, link)
+    def __getattr__(self, name):
+        return ""
+
+class FWA:
+    def __init__(self, data):
+        self._data = data
+        self.fwa_base_links = BaseLinks(data.get("fwa_base_links", {}))

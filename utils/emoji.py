@@ -35,7 +35,24 @@ class Emojis:
         self.view = EmojiType("<:View:1387842874053234808>")
         self.confirm = EmojiType("<:Confirm:1387845018139754517>")
         self.cancel = EmojiType("<:Cancel:1387845041845698652>")
+
+        # TH Emojis
+        self.TH2 = EmojiType("<:TH_2:1387845120732172329>")
+        self.TH3 = EmojiType("<:TH_3:1387842982333644903>")
+        self.TH4 = EmojiType("<:TH_4:1387844251731103884>")
+        self.TH5 = EmojiType("<:TH_5:1387844290612559933>")
+        self.TH6 = EmojiType("<:TH_6:1387844317476819074>")
+        self.TH7 = EmojiType("<:TH_7:1387844342156099716>")
+        self.TH8 = EmojiType("<:TH_8:1387844362309992683>")
+        self.TH9 = EmojiType("<:TH_9:1387844388675387513>")
+        self.TH10 = EmojiType("<:TH_10:1387844411609845861>")
+        self.TH11 = EmojiType("<:TH_11:1387844434296836276>")
+        self.TH12 = EmojiType("<:TH_12:1387844458690904245>")
         self.TH13 = EmojiType("<:TH_13:1387844480849149983>")
+        self.TH14 = EmojiType("<:TH_14:1387844504014295101>")
+        self.TH15 = EmojiType("<:TH_15:1387844534729314344>")
+        self.TH16 = EmojiType("<:TH_16:1387844562059395193>")
+        self.TH17 = EmojiType("<:TH_17:1387844788853801081>")
 
 emojis = Emojis()
 

@@ -1,6 +1,7 @@
 import lightbulb
 import asyncio
 import hikari
+import re
 from aiohttp.web_routedef import delete
 from hikari import GatewayBot
 from hikari.api import LinkButtonBuilder
@@ -19,12 +20,15 @@ from hikari.impl import (
     LinkButtonBuilder as LinkButton
 )
 #from lightbulb.components import LinkButton
-from utils.constants import RED_ACCENT
+from utils.constants import RED_ACCENT, FWA_ACTIVE_WAR_BASE
 from utils.constants import GOLD_ACCENT
 from utils.constants import BLUE_ACCENT
 from utils.constants import GREEN_ACCENT
+from utils.constants import FWA_WAR_BASE
 from utils.emoji import emojis
+from utils.mongo import MongoClient
 from extensions.components import register_action
+from extensions.factories.fwa_bases import get_fwa_base_object
 
 @register_action("primary_questions", no_return=True)
 @lightbulb.di.with_di
@@ -388,11 +392,12 @@ async def on_age_button(
     )
 
 ### FWA Questions Section
-@register_action("fwa_questions", no_return=True)
+@register_action("fwa_questions" ,no_return=True)
 @lightbulb.di.with_di
 async def fwa_questions(
     user_id: int,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
 
@@ -557,11 +562,90 @@ async def fwa_questions(
                 ]
             )
         ]
+    elif choice == "fwa_bases_upon_approval":
+        action_id = ctx.interaction.custom_id.split(":", 1)[1]
 
-    await bot.rest.create_message(
-        components=components,
-        channel=ctx.channel_id
-    )
+        fwa = await get_fwa_base_object(mongo)
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content="## Select FWA Base Town Hall Level"),
+                    Text(content="Use the dropdown menu below to assign the appropriate Town Hall level for the recruit."),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                max_values=1,
+                                custom_id=f"th_select:{action_id}",
+                                placeholder="Select a Base...",
+                                options=[
+                                    SelectOption(
+                                        emoji=emojis.TH17.partial_emoji,
+                                        label="TH17",
+                                        value="th17"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH16.partial_emoji,
+                                        label="TH16",
+                                        value="th16"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH15.partial_emoji,
+                                        label="TH15",
+                                        value="th15"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH14.partial_emoji,
+                                        label="TH14",
+                                        value="th14"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH13.partial_emoji,
+                                        label="TH13",
+                                        value="th13"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH12.partial_emoji,
+                                        label="TH12",
+                                        value="th12"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH11.partial_emoji,
+                                        label="TH11",
+                                        value="th11"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH10.partial_emoji,
+                                        label="TH10",
+                                        value="th10"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH9.partial_emoji,
+                                        label="TH9",
+                                        value="th9"
+                                    ),
+                                ],
+                            ),
+                        ]
+                    ),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Blue_Footer.png")
+                        ]),
+                    Text(content=f"_Requested by {ctx.user.display_name}_")
+                ]
+            )
+        ]
+        await ctx.respond(
+            components=components,
+            ephemeral=True,
+        )
+
+    if choice != "fwa_bases_upon_approval":
+        await bot.rest.create_message(
+            components=components,
+            channel=ctx.channel_id
+        )
 
     await asyncio.sleep(10)
     action_id = ctx.interaction.custom_id.split(":", 1)[1]
@@ -576,6 +660,64 @@ async def fwa_questions(
         ephemeral=True,
     )
 
+@register_action("th_select" ,no_return=True)
+@lightbulb.di.with_di
+async def th_select(
+    user_id: int,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+):
+
+    ctx: lightbulb.components.MenuContext = kwargs.get("ctx")
+    choice = ctx.interaction.values[0]
+    user = await bot.rest.fetch_member(ctx.guild_id, user_id)
+    fwa = await get_fwa_base_object(mongo)
+    th_number = choice.lstrip('th')
+
+    base_link = getattr(fwa.fwa_base_links, choice)
+    components = [
+        Text(content=f"{user.mention}"),
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=f"## Town Hall {th_number}"),
+                Media(
+                    items=[
+                        MediaItem(media=FWA_WAR_BASE[choice]),
+                    ]
+                ),
+                ActionRow(
+                    components=[
+                        LinkButton(
+                            url=base_link,
+                            label="Click Me!",
+                        )
+                    ]
+                ),
+            ]
+        ),
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content="### FWA Base"),
+                Text(content=(
+                    "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
+                    "Once you have made the switch, please send us a screenshot like below to confirm the update.\n"
+                )),
+                Media(
+                    items=[
+                        MediaItem(media=FWA_ACTIVE_WAR_BASE[choice]),
+                    ]
+                ),
+                Text(content=f"_Requested by {ctx.user.display_name}_")
+            ]
+        )
+    ]
+    await bot.rest.create_message(
+        components=components,
+        channel=ctx.channel_id
+    )
 
 ### Explanation Section
 @register_action("explanations", no_return=True)
