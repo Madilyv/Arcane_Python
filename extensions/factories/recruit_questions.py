@@ -776,6 +776,109 @@ async def explanations(
     )
 
 
+### HURRY TF UP Section
+@register_action("keep_it_moving", no_return=True)
+@lightbulb.di.with_di
+async def keep_it_moving(
+    user_id: int,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **kwargs
+):
+
+    ctx: lightbulb.components.MenuContext = kwargs.get("ctx")
+    choice = ctx.interaction.values[0]
+    user = await bot.rest.fetch_member(ctx.guild_id, user_id)
+
+    if choice == "waiting_response":
+        components = [
+            Text(content=f"{user.mention}"),
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(
+                        content=(
+                            "At this rate, I’ll finish my snack and a three-course meal. Any day now... 🥪⏳\n"
+                        )),
+                    Media(
+                        items=[
+                            MediaItem(
+                                media="https://c.tenor.com/E4TulgtK2ssAAAAC/tenor.gif")
+                        ]),
+                ]
+            ),
+        ]
+    elif choice == "circles":
+        components = [
+            Text(content=f"{user.mention}"),
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(
+                        content=(
+                            "Waiting for your response like: round and round we go… Any time now! 🌀⏳\n"
+                        )),
+                    Media(
+                        items=[
+                            MediaItem(
+                                media="https://c.tenor.com/NcibGDKTKQAAAAAd/tenor.gif")
+                        ]),
+                ]
+            ),
+        ]
+    elif choice == "today":
+        components = [
+            Text(content=f"{user.mention}"),
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(
+                        content=(
+                            "Still waiting like it’s the DMV. T-t-t-today junior, the clan’s got places to be! 🕰️🚦\n"
+                        )),
+                    Media(
+                        items=[
+                            MediaItem(
+                                media="https://c.tenor.com/je0FzJYReA0AAAAd/tenor.gif")
+                        ]),
+                ]
+            ),
+        ]
+    elif choice == "chop_chop":
+        components = [
+            Text(content=f"{user.mention}"),
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(
+                        content=(
+                            "Dragging this out won’t end well for anyone. Chop-chop, before I start sharpening the knives... 🔪⏳\n"
+                        )),
+                    Media(
+                        items=[
+                            MediaItem(
+                                media="https://c.tenor.com/Q0fmnnIHcRoAAAAC/tenor.gif")
+                        ]),
+                ]
+            ),
+        ]
+    await bot.rest.create_message(
+        components=components,
+        channel=ctx.channel_id
+    )
+
+    await asyncio.sleep(10)
+    action_id = ctx.interaction.custom_id.split(":", 1)[1]
+    new_components = await recruit_questions_page(
+        action_id=action_id,
+        user_id=user_id,
+        ctx=ctx,
+    )
+    await ctx.interaction.delete_initial_response()
+    await ctx.respond(
+        components=new_components,
+        ephemeral=True,
+    )
+
 async def recruit_questions_page(
     action_id: str,
     user_id: int,
@@ -883,6 +986,37 @@ async def recruit_questions_page(
                                     emoji=1390465929632153640,
                                     label="WU FWA Partner",
                                     value="wu_fwa_partner"
+                                ),
+                            ],
+                        ),
+                    ]
+                ),
+                ActionRow(
+                    components=[
+                        TextSelectMenu(
+                            max_values=1,
+                            custom_id=f"keep_it_moving:{action_id}",
+                            placeholder="Keep It Moving",
+                            options=[
+                                SelectOption(
+                                    emoji=1318704702443094150,
+                                    label="Waiting for Response...",
+                                    value="waiting_response"
+                                ),
+                                SelectOption(
+                                    emoji=999526289738317834,
+                                    label="Going in Circles...",
+                                    value="circles"
+                                ),
+                                SelectOption(
+                                    emoji=1231080049332191305,
+                                    label="Today Jr...",
+                                    value="today"
+                                ),
+                                SelectOption(
+                                    emoji=1390616848730685500,
+                                    label="Chop Chop...",
+                                    value="chop_chop"
                                 ),
                             ],
                         ),
