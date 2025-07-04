@@ -35,6 +35,7 @@ class Emojis:
         self.view = EmojiType("<:View:1387842874053234808>")
         self.confirm = EmojiType("<:Confirm:1387845018139754517>")
         self.cancel = EmojiType("<:Cancel:1387845041845698652>")
+        self.TH13 = EmojiType("<:TH_13:1387844480849149983>")
 
 emojis = Emojis()
 
