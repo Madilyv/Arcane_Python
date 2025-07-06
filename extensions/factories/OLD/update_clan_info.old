@@ -30,7 +30,7 @@ from utils.constants import RED_ACCENT
 from utils.classes import Clan
 from utils.emoji import emojis
 from utils.mongo import MongoClient
-from extensions.factories import dashboard_page
+#from extensions.factories import dashboard_page
 from extensions.factories import update_clan_info_general
 
 IMG_RE = re.compile(r"^https?://\S+\.(?:png|jpe?g|gif|webp)$", re.IGNORECASE)

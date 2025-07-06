@@ -44,11 +44,13 @@ async def on_starting(_: hikari.StartingEvent) -> None:
     # Add every extension path here manually or with your `load_cogs()` helper
     all_extensions = [
         "extensions.components",
-         "extensions.commands.fwa.bases",
+        "extensions.commands.clan.list",
+        "extensions.commands.fwa.bases",
         "extensions.context_menus.get_message_id",
         "extensions.context_menus.get_user_id",
         "extensions.events.message.message_events",
         "extensions.events.message.task_event",
+        "extensions.commands.clan.dashboard.dashboard"
     ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)

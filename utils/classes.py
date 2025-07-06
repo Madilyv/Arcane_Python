@@ -1,4 +1,5 @@
 import random
+from utils.emoji import EmojiType
 
 
 class Clan:
@@ -7,6 +8,7 @@ class Clan:
         self.announcement_id: int = data.get("announcement_id")
         self.chat_channel_id: int = data.get("chat_channel_id")
         self.emoji: str = data.get("emoji")
+        #self.partial_emoji = EmojiType(self.emoji).partial_emoji
         self.tag: str = data.get("tag")
         self.leader_id: int = data.get("leader_id")
         self.leader_role_id: int = data.get("leader_role_id")
