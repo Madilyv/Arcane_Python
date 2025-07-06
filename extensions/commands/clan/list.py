@@ -162,7 +162,6 @@ async def on_clan_chosen(
                     accessory=Thumbnail(media=api_clan.badge.large if api_clan else db_clan.logo),
                 ),
                 Media(items=[MediaItem(media=db_clan.logo)]),
-                Text(content=f"-# Requested by {ctx.member.mention}"),
                 ActionRow(
                     components=[
                         LinkButton(
@@ -171,6 +170,8 @@ async def on_clan_chosen(
                         )
                     ]
                 ),
+                Separator(divider=True),
+                Text(content=f"-# Requested by {ctx.member.mention}"),
             ],
         ),
     ]
@@ -180,7 +181,7 @@ async def on_clan_chosen(
     await bot.rest.create_message(
         channel=ctx.channel_id,
         components=components,
-        user_mentions = True,
+        user_mentions = [user.id, db_clan.leader_id],
         role_mentions = True,
     )
 
