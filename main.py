@@ -50,7 +50,8 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.context_menus.get_user_id",
         "extensions.events.message.message_events",
         "extensions.events.message.task_event",
-        "extensions.commands.clan.dashboard.dashboard"
+        "extensions.commands.clan.dashboard.dashboard",
+        "extensions.commands.recruit.questions"
     ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)

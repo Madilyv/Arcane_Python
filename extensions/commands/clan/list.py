@@ -162,7 +162,7 @@ async def on_clan_chosen(
                     accessory=Thumbnail(media=api_clan.badge.large if api_clan else db_clan.logo),
                 ),
                 Media(items=[MediaItem(media=db_clan.logo)]),
-                Text(content=f"Command ran by {ctx.member.mention}"),
+                Text(content=f"-# Requested by {ctx.member.mention}"),
                 ActionRow(
                     components=[
                         LinkButton(
