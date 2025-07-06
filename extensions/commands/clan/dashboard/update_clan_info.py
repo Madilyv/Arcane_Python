@@ -298,23 +298,28 @@ async def on_remove_clan_field(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    field, tag = action_id.rsplit("_", 1)
-    raw = await mongo.clans.find_one({"tag": tag})
-    db_clan = Clan(data=raw)
+    # split into [“confirm” | “cancel”] and the tag
+    verb, tag = action_id.split("_", 1)
 
-    await mongo.clans.delete_one({"tag": tag})
+    # 1) if they really confirmed, delete and show a ❌ message
+    if verb == "confirm":
+        raw = await mongo.clans.find_one({"tag": tag})
+        db_clan = Clan(data=raw)
 
-    components = [
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Text(content=f"Welp, `{db_clan.name}` has been deleted forever! <:SadTrash:1387846121094774854>"),
-                Text(content="Hopefully you didn't make an oopsie..."),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-            ]
-        )
-    ]
-    return components
+        await mongo.clans.delete_one({"tag": tag})
+        return [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content=f"Welp, `{db_clan.name}` has been deleted! <:SadTrash:1387846121094774854>\n"
+                         "Hopefully you didn't make an oopsie..."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+    else:
+        return await dashboard_page(ctx=ctx, mongo=mongo)
+    #return components
 
 
 #EDIT CLAN STUFF
