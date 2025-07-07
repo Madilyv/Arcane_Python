@@ -43,16 +43,17 @@ registry.register_value(coc.Client, clash_client)
 async def on_starting(_: hikari.StartingEvent) -> None:
     # Add every extension path here manually or with your `load_cogs()` helper
     all_extensions = [
-        "extensions.components",
-        "extensions.commands.clan.list",
-        "extensions.commands.fwa.bases",
-        "extensions.context_menus.get_message_id",
-        "extensions.context_menus.get_user_id",
-        "extensions.events.message.message_events",
-        "extensions.events.message.task_event",
-        "extensions.commands.clan.dashboard.dashboard",
-        "extensions.commands.recruit.questions"
-    ] + load_cogs(disallowed={"example"})
+                         "extensions.components",
+                         "extensions.commands.clan.list",
+                         "extensions.commands.fwa.bases",
+                         "extensions.context_menus.get_message_id",
+                         "extensions.context_menus.get_user_id",
+                         "extensions.events.message.message_events",
+                         "extensions.events.message.task_event",
+                         "extensions.commands.clan.dashboard.dashboard",
+                         "extensions.commands.recruit.questions",
+                         "extensions.tasks.band_monitor"  # Add this line
+                     ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)
     await client.start()

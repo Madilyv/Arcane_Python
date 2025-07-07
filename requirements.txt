@@ -22,3 +22,5 @@ coc.py
 Pillow
 
 requests
+
+aiohttp
