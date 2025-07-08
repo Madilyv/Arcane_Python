@@ -33,6 +33,7 @@ class Clan:
         self.thread_id = data.get("thread_id")
         self.type: str = data.get("type")
         self.points: int = data.get("points")
+        self.recruit_count: int = data.get("recruit_count", 0)
 
 class Auction:
     def __init__(self, data: dict):
