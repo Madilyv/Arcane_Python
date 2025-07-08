@@ -4,6 +4,7 @@ import lightbulb
 import hikari
 from datetime import datetime
 import json
+import os
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -22,6 +23,18 @@ from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GREEN_ACCENT
 
 loader = lightbulb.Loader()
+
+# DEBUG CONFIGURATION - Change this to False for production
+DEBUG_MODE = os.getenv("BAND_DEBUG", "False").lower() == "true"  # Set via environment variable
+
+
+# Alternative: DEBUG_MODE = True  # Set directly
+
+def debug_print(*args, **kwargs):
+    """Only print if DEBUG_MODE is enabled"""
+    if DEBUG_MODE:
+        print(*args, **kwargs)
+
 
 # BAND API Configuration
 BAND_API_BASE = "https://openapi.band.us/v2/band/posts"
@@ -53,12 +66,12 @@ async def fetch_band_posts():
                     data = await response.json()
                     return data
                 else:
-                    print(f"[BAND API] Error: Status {response.status}")
+                    debug_print(f"[BAND API] Error: Status {response.status}")
                     text = await response.text()
-                    print(f"[BAND API] Response: {text}")
+                    debug_print(f"[BAND API] Response: {text}")
                     return None
         except Exception as e:
-            print(f"[BAND API] Exception: {type(e).__name__}: {e}")
+            debug_print(f"[BAND API] Exception: {type(e).__name__}: {e}")
             return None
 
 
@@ -67,7 +80,7 @@ async def send_war_sync_to_discord(post):
     global bot_instance
 
     if not bot_instance:
-        print("[BAND Monitor] Bot instance not available!")
+        debug_print("[BAND Monitor] Bot instance not available!")
         return
 
     # Extract post details
@@ -146,9 +159,9 @@ async def send_war_sync_to_discord(post):
             role_mentions=[ALLOWED_ROLE_ID]
         )
 
-        print(f"[BAND Monitor] Sent War Sync reminder to Discord")
+        debug_print(f"[BAND Monitor] Sent War Sync reminder to Discord")
     except Exception as e:
-        print(f"[BAND Monitor] Failed to send Discord message: {e}")
+        debug_print(f"[BAND Monitor] Failed to send Discord message: {e}")
 
 
 @register_action("war_response", no_return=True)
@@ -287,11 +300,11 @@ async def on_war_response(
 
 async def band_checker_loop(mongo: MongoClient):
     """Main loop that checks BAND API every 30 seconds"""
-    print("[BAND Monitor] Starting BAND API monitoring task...")
+    debug_print("[BAND Monitor] Starting BAND API monitoring task...")
 
     while True:
         try:
-            print(f"\n[BAND Monitor] Checking at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            debug_print(f"\n[BAND Monitor] Checking at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
             # Fetch posts from BAND API
             data = await fetch_band_posts()
@@ -305,7 +318,7 @@ async def band_checker_loop(mongo: MongoClient):
                     latest_post_key = latest_post.get('post_key')
                     latest_content = latest_post.get('content', '')
 
-                    print(f"[BAND Monitor] Latest post key: {latest_post_key}")
+                    debug_print(f"[BAND Monitor] Latest post key: {latest_post_key}")
 
                     if latest_post_key:
                         # Get the last processed post from MongoDB
@@ -314,14 +327,14 @@ async def band_checker_loop(mongo: MongoClient):
 
                         # Only process if this is a NEW most recent post
                         if latest_post_key != last_processed_key:
-                            print(f"[BAND Monitor] New latest post detected!")
+                            debug_print(f"[BAND Monitor] New latest post detected!")
 
                             # Check if this new post contains war sync text
                             if "PLEASE stop searching when the window closes after 1.5 hours" in latest_content:
-                                print("[BAND Monitor] New post contains War Sync reminder!")
+                                debug_print("[BAND Monitor] New post contains War Sync reminder!")
                                 await send_war_sync_to_discord(latest_post)
                             else:
-                                print("[BAND Monitor] New post doesn't contain War Sync text.")
+                                debug_print("[BAND Monitor] New post doesn't contain War Sync text.")
 
                             # Update the last processed post in MongoDB
                             await mongo.fwa_band_data.update_one(
@@ -333,22 +346,22 @@ async def band_checker_loop(mongo: MongoClient):
                                 }},
                                 upsert=True
                             )
-                            print(f"[BAND Monitor] Updated last processed post to: {latest_post_key}")
+                            debug_print(f"[BAND Monitor] Updated last processed post to: {latest_post_key}")
                         else:
-                            print("[BAND Monitor] No new posts since last check.")
+                            debug_print("[BAND Monitor] No new posts since last check.")
                     else:
-                        print("[BAND Monitor] Latest post has no post_key")
+                        debug_print("[BAND Monitor] Latest post has no post_key")
                 else:
-                    print("[BAND Monitor] No posts found in API response")
+                    debug_print("[BAND Monitor] No posts found in API response")
             else:
                 error_msg = data.get('result_msg', 'Unknown error') if data else 'Failed to fetch data'
-                print(f"[BAND Monitor] API Error: {error_msg}")
+                debug_print(f"[BAND Monitor] API Error: {error_msg}")
 
         except Exception as e:
-            print(f"[BAND Monitor] Error in loop: {type(e).__name__}: {e}")
+            debug_print(f"[BAND Monitor] Error in loop: {type(e).__name__}: {e}")
 
         # Wait 30 seconds before next check
-        print("\n[BAND Monitor] Waiting 30 seconds until next check...")
+        debug_print("\n[BAND Monitor] Waiting 30 seconds until next check...")
         await asyncio.sleep(30)
 
 
@@ -367,7 +380,7 @@ async def on_bot_started(
 
     # Create the task with mongo passed in
     band_check_task = asyncio.create_task(band_checker_loop(mongo))
-    print("[BAND Monitor] Background task started!")
+    debug_print("[BAND Monitor] Background task started!")
 
 
 @loader.listener(hikari.StoppingEvent)
@@ -381,4 +394,20 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
             await band_check_task
         except asyncio.CancelledError:
             pass
-        print("[BAND Monitor] Background task cancelled!")
+        debug_print("[BAND Monitor] Background task cancelled!")
+
+
+@loader.command
+class ToggleDebug(
+    lightbulb.SlashCommand,
+    name="toggle-debug",
+    description="Toggle debug mode for BAND monitor",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        global DEBUG_MODE
+        DEBUG_MODE = not DEBUG_MODE
+        status = "ON" if DEBUG_MODE else "OFF"
+        await ctx.respond(f"🔧 BAND Monitor debug mode: **{status}**", ephemeral=True)
+        debug_print(f"[DEBUG] Debug mode toggled to: {status} by {ctx.user.username}")
