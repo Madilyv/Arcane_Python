@@ -4,10 +4,11 @@ import lightbulb
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
-from extensions.factories.fwa_bases import get_fwa_base_object
+from extensions.commands.fwa import loader, fwa
+from .helpers import get_fwa_base_object
 from utils.emoji import emojis
 
-from utils.constants import RED_ACCENT, GOLD_ACCENT,BLUE_ACCENT,GREEN_ACCENT,FWA_WAR_BASE,FWA_ACTIVE_WAR_BASE
+from utils.constants import RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -24,15 +25,8 @@ from hikari.impl import (
     LinkButtonBuilder as LinkButton
 )
 
-loader = lightbulb.Loader()
 
-group = lightbulb.Group(
-    name="fwa",
-    description="All FWA-related commands",
-)
-
-
-@group.register()
+@fwa.register()
 class Bases(
     lightbulb.SlashCommand,
     name="bases",
@@ -42,16 +36,25 @@ class Bases(
         "discord-user",
         "Which user to show this for",
     )
+
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(
-        self,
-        ctx: lightbulb.Context,
-        mongo: MongoClient = lightbulb.di.INJECTED,
+            self,
+            ctx: lightbulb.Context,
+            mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
 
         action_id = str(uuid.uuid4())
+
+        # Store the user_id in MongoDB like other commands do
+        data = {
+            "_id": action_id,
+            "user_id": self.user.id  # Store as integer
+        }
+        await mongo.button_store.insert_one(data)
+
         components = [
             Container(
                 accent_color=BLUE_ACCENT,
@@ -67,7 +70,7 @@ class Bases(
                         components=[
                             TextSelectMenu(
                                 max_values=1,
-                                custom_id=f"th_select:{action_id}_{self.user.id}",
+                                custom_id=f"th_select:{action_id}",  # Just use action_id
                                 placeholder="Select a Base...",
                                 options=[
                                     SelectOption(
@@ -120,37 +123,43 @@ class Bases(
                         ]
                     ),
                     Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
-                    Text(
-                        content=(
-                            f"_Requested by "
-                            f"{ctx.member.display_name if ctx.member else ctx.user.username}_"
-                        )
-                    ),
                 ],
             )
         ]
 
         await ctx.respond(components=components, ephemeral=True)
 
-@register_action("th_select" ,no_return=True)
+
+@register_action("th_select", no_return=True)
 @lightbulb.di.with_di
 async def th_select(
-    action_id: str,
-    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **kwargs
+        user_id: int,  # Now this can be typed because it comes from MongoDB
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
 ):
-
     ctx: lightbulb.components.MenuContext = kwargs["ctx"]
-    bracket, user_id = action_id.rsplit("_", 1)
-    user_id = int(user_id)
+
+    # Get the user from the user_id that was stored in MongoDB
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
+    # Get the selected TH level
     choice = ctx.interaction.values[0]
-    fwa = await get_fwa_base_object(mongo)
-    th_number = choice.lstrip('th')
 
-    base_link = getattr(fwa.fwa_base_links, choice)
+    # Get FWA data
+    fwa_data = await get_fwa_base_object(mongo)
+    if not fwa_data:
+        await ctx.respond("FWA data not found in database!", ephemeral=True)
+        return
+
+    th_number = choice.lstrip('th')
+    base_link = getattr(fwa_data.fwa_base_links, choice, "")
+
+    if not base_link:
+        await ctx.respond(f"No base link found for {choice}!", ephemeral=True)
+        return
+
+    # Build the response
     components = [
         Text(content=f"{user.mention}"),
         Container(
@@ -159,7 +168,7 @@ async def th_select(
                 Text(content=f"## Town Hall {th_number}"),
                 Media(
                     items=[
-                        MediaItem(media=FWA_WAR_BASE[choice]),
+                        MediaItem(media=FWA_WAR_BASE.get(choice, ""))
                     ]
                 ),
                 ActionRow(
@@ -182,16 +191,20 @@ async def th_select(
                 )),
                 Media(
                     items=[
-                        MediaItem(media=FWA_ACTIVE_WAR_BASE[choice]),
+                        MediaItem(media=FWA_ACTIVE_WAR_BASE.get(choice, ""))
                     ]
                 ),
-                Text(content=f"_Requested by {ctx.user.display_name}_")
+                Text(content=f"-# Requested by {ctx.member.mention}")
             ]
         )
     ]
+
     await bot.rest.create_message(
         components=components,
-        channel=ctx.channel_id
+        channel=ctx.channel_id,
+        user_mentions=[user.id],
+        role_mentions=True,
     )
 
-loader.command(group)
+
+loader.command(fwa)

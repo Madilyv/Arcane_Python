@@ -21,7 +21,7 @@ from hikari.impl import (
 )
 
 from extensions.commands.recruit import recruit
-from extensions.factories.fwa_bases import get_fwa_base_object
+from extensions.commands.fwa.helpers import get_fwa_base_object
 from utils.constants import (
     RED_ACCENT,
     GOLD_ACCENT,
