@@ -18,6 +18,8 @@ bot = hikari.GatewayBot(
         hikari.Intents.GUILD_MESSAGES
         | hikari.Intents.MESSAGE_CONTENT
         | hikari.Intents.GUILDS
+        | hikari.Intents.GUILD_MEMBERS
+        | hikari.Intents.GUILD_MODERATION
     ),
 )
 
@@ -48,10 +50,11 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.context_menus.get_message_id",
         "extensions.context_menus.get_user_id",
         "extensions.events.message.message_events",
-        "extensions.events.message.task_event",
+        "extensions.events.message.task_manager",
         "extensions.commands.clan.dashboard.dashboard",
         "extensions.commands.recruit.questions",
         "extensions.tasks.band_monitor",
+        "extensions.commands.moderation",
                      ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)
