@@ -97,6 +97,7 @@ async def dashboard_page(
     ]
     return components
 
+
 @clan.register()
 class DashboardCommand(
     lightbulb.SlashCommand,
@@ -106,14 +107,21 @@ class DashboardCommand(
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(
-        self,
-        ctx: lightbulb.Context,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-        mongo: MongoClient      = lightbulb.di.INJECTED,
+            self,
+            ctx: lightbulb.Context,
+            bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+            mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
-        await ctx.defer(ephemeral=True)
+        await ctx.defer(ephemeral=True)  # Keep this ephemeral for the "thinking" message
+
+        # Get the components
         comps = await dashboard_page(bot=bot, ctx=ctx, mongo=mongo)
-        await ctx.respond(components=comps, ephemeral=True)
 
+        # Send to channel without replying
+        await bot.rest.create_message(
+            channel=ctx.channel_id,
+            components=comps
+        )
 
-loader.command(clan)
+        # Delete the ephemeral "thinking" message
+        await ctx.interaction.delete_initial_response()
