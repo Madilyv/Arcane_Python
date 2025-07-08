@@ -19,7 +19,8 @@ from hikari.impl import (
     ThumbnailComponentBuilder as Thumbnail,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
-    ModalActionRowBuilder as ModalActionRow
+    ModalActionRowBuilder as ModalActionRow,
+    LinkButtonBuilder as LinkButton
 )
 
 from extensions.components import register_action
@@ -32,7 +33,6 @@ from utils.emoji import emojis
 from utils.mongo import MongoClient
 from extensions.commands.clan.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
-
 
 IMG_RE = re.compile(r"^https?://\S+\.(?:png|jpe?g|gif|webp)$", re.IGNORECASE)
 
@@ -112,8 +112,7 @@ async def update_clan_information(
     return await dashboard_page(ctx=ctx)
 
 
-
-#ADD CLAN STUFF
+# ADD CLAN STUFF
 @register_action("add_clan_page")
 @lightbulb.di.with_di
 async def add_clan_page(
@@ -144,7 +143,6 @@ async def add_clan_page(
     return components
 
 
-
 @register_action("add_clan", no_return=True, is_modal=True)
 @lightbulb.di.with_di
 async def add_clan(
@@ -162,7 +160,6 @@ async def add_clan(
         custom_id=f"add_clan_modal:",
         components=[tag]
     )
-
 
 
 @register_action("add_clan_modal", no_return=True, is_modal=True)
@@ -208,7 +205,8 @@ async def add_clan_modal(
     new_components = await clan_edit_menu(ctx, action_id=clan.tag, mongo=mongo, tag=clan.tag)
     await ctx.interaction.edit_initial_response(components=new_components)
 
-#REMOVE CLAN STUFF
+
+# REMOVE CLAN STUFF
 @register_action("remove_clan_select", ephemeral=True)
 @lightbulb.di.with_di
 async def remove_clan_select(
@@ -244,6 +242,7 @@ async def remove_clan_select(
         )
     ]
     return components
+
 
 @register_action("clan_remove_menu", ephemeral=True)
 @lightbulb.di.with_di
@@ -290,6 +289,7 @@ async def clan_remove_menu(
     )]
     return components
 
+
 @register_action("remove_clan", ephemeral=True)
 @lightbulb.di.with_di
 async def on_remove_clan_field(
@@ -298,7 +298,7 @@ async def on_remove_clan_field(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    # split into [“confirm” | “cancel”] and the tag
+    # split into ["confirm" | "cancel"] and the tag
     verb, tag = action_id.split("_", 1)
 
     # 1) if they really confirmed, delete and show a ❌ message
@@ -312,17 +312,17 @@ async def on_remove_clan_field(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content=f"Welp, `{db_clan.name}` has been deleted! <:SadTrash:1387846121094774854>\n"
-                         "Hopefully you didn't make an oopsie..."),
+                                 "Hopefully you didn't make an oopsie..."),
                     Media(items=[MediaItem(media="assets/Red_Footer.png")]),
                 ]
             )
         ]
     else:
         return await dashboard_page(ctx=ctx, mongo=mongo)
-    #return components
+    # return components
 
 
-#EDIT CLAN STUFF
+# EDIT CLAN STUFF
 @register_action("choose_clan_select", ephemeral=True)
 @lightbulb.di.with_di
 async def choose_clan_select(
@@ -372,17 +372,35 @@ async def clan_edit_menu(
     raw = await mongo.clans.find_one({"tag": tag})
     db_clan = Clan(data=raw)
 
-
     guild_id = ctx.interaction.guild_id
     channel_link = f"https://discord.com/channels/{guild_id}/"
 
-    components = [Container(
-        accent_color=RED_ACCENT,
-        components=[
-            Text(content=f"## ✏️ **Editing {db_clan.name}** (`{db_clan.tag}`)"),
-            Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+    # Create a Section with Thumbnail if logo exists
+    general_info_components = []
 
-            # General Clan Info
+    # If we have a logo URL, create a section with thumbnail
+    if db_clan.logo and db_clan.logo.startswith('http'):
+        general_info_components.append(
+            Section(
+                components=[
+                    Text(content="\n## __🛡️ General Info__"),
+                    Text(
+                        content=(
+                            f"{emojis.white_arrow_right}**Clan Type:** {db_clan.type or '⚠️ Data Missing'}\n"
+                            f"{emojis.white_arrow_right}**Clan Status:** {db_clan.status or '⚠️ Data Missing'}\n"
+                            f"{emojis.white_arrow_right}**Logo:** {'✅ Uploaded' if db_clan.logo else '⚠️ Data Missing'}\n"
+                            f"{emojis.white_arrow_right}**Emoji:** {db_clan.emoji or '⚠️ Data Missing'}\n"
+                            f"{emojis.white_arrow_right}**TH Requirement:** {db_clan.th_requirements or '⚠️ Data Missing'}\n"
+                            f"{emojis.white_arrow_right}**TH Attribute:** {db_clan.th_attribute or '⚠️ Data Missing'}"
+                        )
+                    ),
+                ],
+                accessory=Thumbnail(media=db_clan.logo)
+            )
+        )
+    else:
+        # No logo, just show text
+        general_info_components.extend([
             Text(content="\n## __🛡️ General Info__"),
             Text(
                 content=(
@@ -394,114 +412,60 @@ async def clan_edit_menu(
                     f"{emojis.white_arrow_right}**TH Attribute:** {db_clan.th_attribute or '⚠️ Data Missing'}"
                 )
             ),
+        ])
+
+    components = [Container(
+        accent_color=RED_ACCENT,
+        components=[
+            Text(content=f"## ✏️ **Editing {db_clan.name}** (`{db_clan.tag}`)"),
+            Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+            *general_info_components,
 
             # Clan Roles
             Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-            Text(content="\n## __👤 Roles__"),
             Text(content=(
-                f"**Leader:** {f'<@{db_clan.leader_id}>' if db_clan.leader_id else '⚠️ Data Missing'}"
-            )),
-
-            ActionRow(
-                components=[
-                    SelectMenu(
-                        min_values=1,
-                        type=hikari.ComponentType.USER_SELECT_MENU,
-                        custom_id = f"edit_clan:leader_id_{tag}",
-                        placeholder="Select the leader...",
-                    ),
-                ]
-            ),
-            Text(content=(
-                f"**Leader Role:** {f'<@&{db_clan.leader_role_id}>' if db_clan.leader_role_id else '⚠️ Data Missing'}"
-            )),
-
-            ActionRow(
-                components=[
-                    SelectMenu(
-                        type=hikari.ComponentType.ROLE_SELECT_MENU,
-                        custom_id = f"edit_clan:leader_role_id_{tag}",
-                        placeholder="Select the leader role...",
-                    ),
-                ]
-            ),
-            Text(content=(
+                "\n## __👤 Roles__\n"
+                f"**Leader:** {f'<@{db_clan.leader_id}>' if db_clan.leader_id else '⚠️ Data Missing'}\n"
+                f"**Leader Role:** {f'<@&{db_clan.leader_role_id}>' if db_clan.leader_role_id else '⚠️ Data Missing'}\n"
                 f"**Clan Role:** {f'<@&{db_clan.role_id}>' if db_clan.role_id else '⚠️ Data Missing'}"
             )),
 
-            ActionRow(
-                components=[
-                    SelectMenu(
-                        type=hikari.ComponentType.ROLE_SELECT_MENU,
-                        custom_id = f"edit_clan:role_id_{tag}",
-                        placeholder="Select the clan role...",
-                    ),
-                ]
-            ),
-
-            # Clan Channel
-            Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-            Text(content="\n## __💬 Channels__"),
-            Text(content=(
-                f"**Chat Channel:** {f'<#{db_clan.chat_channel_id}>' if db_clan.chat_channel_id else '⚠️ Data Missing'}"
-            ))
-            ,
-            ActionRow(
-                components=[
-                    SelectMenu(
-                        type=hikari.ComponentType.CHANNEL_SELECT_MENU,
-                        custom_id=f"edit_clan:chat_channel_id_{tag}",
-                        placeholder="Select a channel..",
-                    ),
-                ]
-            ),
-            Text(content=(
-                f"**Announcement Channel:** {f'<#{db_clan.announcement_id}>' if db_clan.announcement_id else '⚠️ Data Missing'}"
-            )),
-            ActionRow(
-                components=[
-                    SelectMenu(
-                        type=hikari.ComponentType.CHANNEL_SELECT_MENU,
-                        custom_id = f"edit_clan:announcement_id_{tag}",
-                        placeholder="Select a channel..",
-                    ),
-                ]
-            ),
-            Text(content=(
-                f"**Rules Channel:** {f'<#{db_clan.rules_channel_id}>' if db_clan.rules_channel_id else '⚠️ Data Missing'}"
-            )),
-            ActionRow(
-                components=[
-                    SelectMenu(
-                        type=hikari.ComponentType.CHANNEL_SELECT_MENU,
-                        custom_id = f"edit_clan:rules_channel_id_{tag}",
-                        placeholder="Select a channel..",
-                    ),
-                ]
-            ),
-            Text(content=(
-                f"**Leadership Channel:** {f'<#{db_clan.leadership_channel_id}>' if db_clan.leadership_channel_id else '⚠️ Data Missing'}"
-            )),
-            ActionRow(
-                components=[
-                    SelectMenu(
-                        type=hikari.ComponentType.CHANNEL_SELECT_MENU,
-                        custom_id = f"edit_clan:leadership_channel_id_{tag}",
-                        placeholder="Select a channel..",
-                    ),
-                ]
-            ),
-            Text(content=(
-                f"**Clan Thread:** {f'<#{db_clan.thread_id}>' if db_clan.thread_id else '⚠️ Data Missing'}"
-            )),
-
-            # Thread is Auto Thread Create
+            # Single action row for all role selections
             ActionRow(
                 components=[
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"edit_roles:{tag}",
+                        label="Edit Roles",
+                        emoji="👤"
+                    )
+                ]
+            ),
+
+            # Clan Channels
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+            Text(content=(
+                "\n## __💬 Channels__\n"
+                f"**Chat:** {f'<#{db_clan.chat_channel_id}>' if db_clan.chat_channel_id else '⚠️ Data Missing'}\n"
+                f"**Announcement:** {f'<#{db_clan.announcement_id}>' if db_clan.announcement_id else '⚠️ Data Missing'}\n"
+                f"**Rules:** {f'<#{db_clan.rules_channel_id}>' if db_clan.rules_channel_id else '⚠️ Data Missing'}\n"
+                f"**Leadership:** {f'<#{db_clan.leadership_channel_id}>' if db_clan.leadership_channel_id else '⚠️ Data Missing'}\n"
+                f"**Thread:** {f'<#{db_clan.thread_id}>' if db_clan.thread_id else '⚠️ Data Missing'}"
+            )),
+
+            # Single action row for channel management
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"edit_channels:{tag}",
+                        label="Edit Channels",
+                        emoji="💬"
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
                         custom_id=f"edit_thread:thread_id_{db_clan.tag}",
-                        label="Add Clan Thread",
+                        label="Add/Update Thread",
                     )
                 ]
             ),
@@ -528,6 +492,17 @@ async def clan_edit_menu(
             Media(items=[MediaItem(media="assets/Red_Footer.png")]),
         ],
     )]
+
+    # If we have a logo, add it as a separate container
+    if db_clan.logo and db_clan.logo.startswith('http'):
+        components.insert(0, Container(
+            accent_color=0x2F3136,  # Dark gray for visual separation
+            components=[
+                Text(content="## 🖼️ Current Clan Logo"),
+                Media(items=[MediaItem(media=db_clan.logo)]),
+            ]
+        ))
+
     return components
 
 
@@ -543,25 +518,41 @@ async def on_edit_clan_field(
     raw_val = ctx.interaction.values[0]
     selected = int(raw_val) if raw_val.isdigit() else raw_val
 
-    await mongo.clans.update_one({"tag": tag}, {"$set": {field : selected}})
+    await mongo.clans.update_one({"tag": tag}, {"$set": {field: selected}})
 
-    return await clan_edit_menu(
-        ctx=ctx,
-        mongo=mongo,
-        tag=tag
-    )
+    # Determine which menu to return to based on the field
+    if field in ["leader_id", "leader_role_id", "role_id"]:
+        # Return to roles menu
+        return await edit_roles(
+            ctx=ctx,
+            action_id=tag,
+            mongo=mongo
+        )
+    elif field in ["chat_channel_id", "announcement_id", "rules_channel_id", "leadership_channel_id"]:
+        # Return to channels menu
+        return await edit_channels(
+            ctx=ctx,
+            action_id=tag,
+            mongo=mongo
+        )
+    else:
+        # Default: return to main edit menu
+        return await clan_edit_menu(
+            ctx=ctx,
+            mongo=mongo,
+            tag=tag
+        )
 
 
 @register_action("edit_thread", ephemeral=True)
 @lightbulb.di.with_di
 async def on_edit_thread_field(
         ctx: lightbulb.components.MenuContext,
-        action_id: str,                       # e.g. "edit_thread:thread_id_LYUQG8CL"
+        action_id: str,  # e.g. "edit_thread:thread_id_LYUQG8CL"
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-        mongo: MongoClient   = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-
     field, tag = action_id.rsplit("_", 1)
 
     guild_id = ctx.interaction.guild_id
@@ -594,24 +585,189 @@ async def on_edit_thread_field(
     )
 
 
-@register_action("update_logo", no_return=True, is_modal=True)
+@register_action("update_logo", ephemeral=True)
 @lightbulb.di.with_di
 async def update_logo_button(
         ctx: lightbulb.components.MenuContext,
-        action_id: str,
+        action_id: str,  # This is the clan tag
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
     tag = action_id
 
+    # First, let's get the clan data so we can show the clan name
+    # This makes the instructions more personalized and clear
+    clan_data = await mongo.clans.find_one({"tag": tag})
+    if not clan_data:
+        # This shouldn't happen, but it's good to handle edge cases
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="❌ Clan not found in database."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+        return components
+
+    clan_name = clan_data.get("name", "Unknown Clan")
+
+    # Create a helpful instruction panel that explains both options
+    components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content=f"## 📸 Update Logo for {clan_name}"),
+                Separator(divider=True),
+                Text(content=(
+                    "Choose how you'd like to provide your clan logo:\n\n"
+                    "**🔗 Option 1: Image URL**\n"
+                    "Perfect if your logo is already hosted online (Imgur, Discord, etc.)\n"
+                    "• Quick and easy\n"
+                    "• No file size limits\n"
+                    "• Works with any image host\n\n"
+                    "**📤 Option 2: Upload File**\n"
+                    "Best if you have the logo saved on your device\n"
+                    "• Drag and drop support\n"
+                    "• Automatic cloud storage\n"
+                    "• Max 8MB per file (Discord limit)\n"
+                )),
+                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+
+                # Action buttons for each option
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.PRIMARY,
+                            custom_id=f"logo_url_modal:{tag}",
+                            label="Use Image URL",
+                            emoji="🔗"
+                        ),
+                        Button(
+                            style=hikari.ButtonStyle.PRIMARY,
+                            custom_id=f"logo_upload_guide:{tag}",
+                            label="Upload File",
+                            emoji="📤"
+                        ),
+                    ]
+                ),
+
+                # Cancel button to return to the edit menu
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            custom_id=f"back_to_clan_edit:{tag}",
+                            label="← Back to Edit Menu",
+                        )
+                    ]
+                ),
+
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ]
+        )
+    ]
+
+    return components
+
+
+@register_action("logo_upload_guide", ephemeral=True)
+@lightbulb.di.with_di
+async def logo_upload_guide(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,  # This is the clan tag
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    tag = action_id
+
+    # Get clan data for personalized instructions
+    clan_data = await mongo.clans.find_one({"tag": tag})
+    clan_name = clan_data.get("name", "Unknown Clan")
+
+    # Create the instruction guide with copyable command
+    components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content="## 📤 Upload Files Instructions"),
+                Separator(divider=True),
+
+                # Step-by-step instructions
+                Text(content=(
+                    f"To upload images for **{clan_name}**, follow these steps:\n\n"
+                    "**Step 1:** Copy this command:\n"
+                    f"```/clan upload-images clan:{clan_name} | {tag}```\n\n"
+                    "**Step 2:** Paste it in any channel where you can use bot commands\n\n"
+                    "**Step 3:** Attach your images:\n"
+                    "• Click the ➕ button when typing the command\n"
+                    "• Select your logo and/or banner files\n"
+                    "• You can upload both at once or separately\n\n"
+                    "**File Requirements:**\n"
+                    "• Formats: PNG, JPG, GIF, or WEBP\n"
+                    "• Maximum size: 8MB per file\n"
+                    "• Logo: First attachment\n"
+                    "• Banner: Second attachment (if uploading both)\n"
+                )),
+
+                # Visual separator
+                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+
+                # Helpful tip
+                Text(content=(
+                    "💡 **Pro Tip:** You can also type `/clan upload-images` and "
+                    "select the clan from the dropdown menu that appears!"
+                )),
+
+                # Navigation buttons
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            custom_id=f"update_logo:{tag}",
+                            label="← Back to Options",
+                        ),
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            custom_id=f"back_to_clan_edit:{tag}",
+                            label="← Back to Edit Menu",
+                        )
+                    ]
+                ),
+
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ]
+        )
+    ]
+
+    return components
+
+
+@register_action("logo_url_modal", no_return=True, is_modal=True)
+@lightbulb.di.with_di
+async def logo_url_modal_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        **kwargs
+):
+    # When a button with custom_id="logo_url_modal:TAG" is clicked,
+    # the system splits it into command_name="logo_url_modal" and action_id="TAG"
+
+    tag = action_id  # The clan tag passed from the button
+
+    # Create the modal with input fields for URLs
     logo_input = ModalActionRow().add_text_input(
-        "logo_url", "Logo Image URL",
-        placeholder="https://…/logo.png",
-        required=True,
+        "logo_url",
+        "Logo Image URL",
+        placeholder="https://example.com/logo.png",
+        required=True,  # Making it required since it's specifically for logo
     )
 
+    # Important: Use respond_with_modal for button interactions that open modals
     await ctx.respond_with_modal(
-        title=f"Update Logo & Emoji for {tag}",
-        custom_id=f"update_logo_modal:{tag}",
+        title=f"Update Logo via URL",
+        custom_id=f"update_logo_modal:{tag}",  # This will trigger update_logo_modal handler
         components=[logo_input],
     )
 
@@ -627,6 +783,7 @@ async def update_logo_modal(
 ):
     tag = action_id
 
+    # Helper function to extract values from modal components
     def get_val(cid: str) -> str:
         for row in ctx.interaction.components:
             for comp in row:
@@ -634,75 +791,469 @@ async def update_logo_modal(
                     return comp.value
         return ""
 
-    new_logo_url  = get_val("logo_url")
+    new_logo_url = get_val("logo_url")
 
-    if new_logo_url:
-        if not IMG_RE.match(new_logo_url):
-            return await ctx.respond(
-                "⚠️ `logo_url` must be a direct link to a .png/.jpg/.gif/.webp image.",
-                ephemeral=True
+    # Basic validation - ensure URL was provided
+    if not new_logo_url:
+        return await ctx.respond(
+            "❌ Please provide a logo URL.",
+            ephemeral=True
+        )
+
+    # Validate URL format
+    if not IMG_RE.match(new_logo_url):
+        return await ctx.respond(
+            "⚠️ Logo URL must be a direct link to a .png/.jpg/.gif/.webp image.",
+            ephemeral=True
+        )
+
+    # Create a deferred response first
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+
+    try:
+        # Update the database with new URL
+        await mongo.clans.update_one(
+            {"tag": tag},
+            {"$set": {"logo": new_logo_url}}
+        )
+
+        # Return to the clan edit menu
+        new_components = await clan_edit_menu(ctx, action_id=tag, mongo=mongo, tag=tag)
+        await ctx.interaction.edit_initial_response(components=new_components)
+
+    except Exception as e:
+        # Create error components that maintain the interface style
+        error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Update Failed"),
+                    Separator(divider=True),
+                    Text(content=f"**Error:** {str(e)[:200]}"),
+                    Text(content=(
+                        "\n**Please check:**\n"
+                        "• The URL is valid and accessible\n"
+                        "• The image format is supported (PNG, JPG, GIF, WEBP)\n"
+                        "• The URL is a direct link to the image\n"
+                    )),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"update_logo:{tag}",
+                                label="← Try Again",
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"back_to_clan_edit:{tag}",
+                                label="← Back to Edit Menu",
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
             )
+        ]
 
-    # Persist both
-    await mongo.clans.update_one(
-        {"tag": tag},
-        {"$set": {"logo": new_logo_url}}
-    )
-
-    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
-    new_components = await clan_edit_menu(ctx, action_id=tag, mongo=mongo, tag=tag)
-    await ctx.interaction.edit_initial_response(components=new_components)
+        await ctx.interaction.edit_initial_response(components=error_components)
 
 
-@register_action("update_emoji", no_return=True, is_modal=True)
+@register_action("back_to_clan_edit", ephemeral=True)
 @lightbulb.di.with_di
-async def update_emoji_button(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,   # this is your clan tag
-    **kwargs
+async def back_to_clan_edit(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,  # the tag
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
 ):
-    tag = action_id
-
-    # only one input now
-    emoji_input = ModalActionRow().add_text_input(
-        "emoji_url", "New Clan Emoji URL",
-        placeholder="https://…/emoji.png",
-        required=True,
+    # Call clan_edit_menu to rebuild the menu
+    components = await clan_edit_menu(
+        ctx,
+        mongo=mongo,
+        tag=action_id,
     )
 
-    await ctx.respond_with_modal(
-        title=f"Update Emoji for {tag}",
-        custom_id=f"update_emoji_modal:{tag}",
-        components=[emoji_input],
-    )
+    # Return the components
+    return components
 
-@register_action("update_emoji_modal", no_return=True, is_modal=True)
+
+@register_action("edit_roles", ephemeral=True)
 @lightbulb.di.with_di
-async def update_emoji_modal(
-    ctx: lightbulb.components.ModalContext,
-    action_id: str,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    **kwargs
+async def edit_roles(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,  # clan tag
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
 ):
     tag = action_id
     raw = await mongo.clans.find_one({"tag": tag})
     db_clan = Clan(data=raw)
-    clan_name = db_clan.name.replace(" ", "_")
 
-    # helper to pull your modal field values
-    def get_val(cid: str) -> str:
-        for row in ctx.interaction.components:
-            for comp in row:
-                if comp.custom_id == cid:
-                    return comp.value
-        return ""
+    components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content=f"## 👤 **Edit Roles - {db_clan.name}**"),
+                Separator(divider=True),
 
-    new_emoji_url = get_val("emoji_url")
+                Text(content=(
+                    f"**Current Leader:** {f'<@{db_clan.leader_id}>' if db_clan.leader_id else '⚠️ Not Set'}"
+                )),
+                ActionRow(
+                    components=[
+                        SelectMenu(
+                            min_values=1,
+                            type=hikari.ComponentType.USER_SELECT_MENU,
+                            custom_id=f"edit_clan:leader_id_{tag}",
+                            placeholder="Select the leader...",
+                        ),
+                    ]
+                ),
 
-    if new_emoji_url:
+                Text(content=(
+                    f"**Current Leader Role:** {f'<@&{db_clan.leader_role_id}>' if db_clan.leader_role_id else '⚠️ Not Set'}"
+                )),
+                ActionRow(
+                    components=[
+                        SelectMenu(
+                            type=hikari.ComponentType.ROLE_SELECT_MENU,
+                            custom_id=f"edit_clan:leader_role_id_{tag}",
+                            placeholder="Select the leader role...",
+                        ),
+                    ]
+                ),
+
+                Text(content=(
+                    f"**Current Clan Role:** {f'<@&{db_clan.role_id}>' if db_clan.role_id else '⚠️ Not Set'}"
+                )),
+                ActionRow(
+                    components=[
+                        SelectMenu(
+                            type=hikari.ComponentType.ROLE_SELECT_MENU,
+                            custom_id=f"edit_clan:role_id_{tag}",
+                            placeholder="Select the clan role...",
+                        ),
+                    ]
+                ),
+
+                Separator(divider=True),
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            custom_id=f"back_to_clan_edit:{tag}",
+                            label="← Back to Edit Menu",
+                        )
+                    ]
+                ),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ]
+        )
+    ]
+    return components
+
+
+@register_action("edit_channels", ephemeral=True)
+@lightbulb.di.with_di
+async def edit_channels(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,  # clan tag
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    tag = action_id
+    raw = await mongo.clans.find_one({"tag": tag})
+    db_clan = Clan(data=raw)
+
+    components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content=f"## 💬 **Edit Channels - {db_clan.name}**"),
+                Separator(divider=True),
+
+                Text(content=(
+                    f"**Chat Channel:** {f'<#{db_clan.chat_channel_id}>' if db_clan.chat_channel_id else '⚠️ Not Set'}"
+                )),
+                ActionRow(
+                    components=[
+                        SelectMenu(
+                            type=hikari.ComponentType.CHANNEL_SELECT_MENU,
+                            custom_id=f"edit_clan:chat_channel_id_{tag}",
+                            placeholder="Select chat channel...",
+                        ),
+                    ]
+                ),
+
+                Text(content=(
+                    f"**Announcement Channel:** {f'<#{db_clan.announcement_id}>' if db_clan.announcement_id else '⚠️ Not Set'}"
+                )),
+                ActionRow(
+                    components=[
+                        SelectMenu(
+                            type=hikari.ComponentType.CHANNEL_SELECT_MENU,
+                            custom_id=f"edit_clan:announcement_id_{tag}",
+                            placeholder="Select announcement channel...",
+                        ),
+                    ]
+                ),
+
+                Text(content=(
+                    f"**Rules Channel:** {f'<#{db_clan.rules_channel_id}>' if db_clan.rules_channel_id else '⚠️ Not Set'}"
+                )),
+                ActionRow(
+                    components=[
+                        SelectMenu(
+                            type=hikari.ComponentType.CHANNEL_SELECT_MENU,
+                            custom_id=f"edit_clan:rules_channel_id_{tag}",
+                            placeholder="Select rules channel...",
+                        ),
+                    ]
+                ),
+
+                Text(content=(
+                    f"**Leadership Channel:** {f'<#{db_clan.leadership_channel_id}>' if db_clan.leadership_channel_id else '⚠️ Not Set'}"
+                )),
+                ActionRow(
+                    components=[
+                        SelectMenu(
+                            type=hikari.ComponentType.CHANNEL_SELECT_MENU,
+                            custom_id=f"edit_clan:leadership_channel_id_{tag}",
+                            placeholder="Select leadership channel...",
+                        ),
+                    ]
+                ),
+
+                Separator(divider=True),
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            custom_id=f"back_to_clan_edit:{tag}",
+                            label="← Back to Edit Menu",
+                        )
+                    ]
+                ),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ]
+        )
+    ]
+    return components
+
+
+@register_action("update_emoji", ephemeral=True)
+@lightbulb.di.with_di
+async def update_emoji_button(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,  # this is your clan tag
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    tag = action_id
+
+    # Get clan data to show current emoji status
+    clan_data = await mongo.clans.find_one({"tag": tag})
+    if not clan_data:
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="❌ Clan not found in database."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+        return components
+
+    clan_name = clan_data.get("name", "Unknown Clan")
+    current_emoji = clan_data.get("emoji", "")
+
+    # Create instruction panel for emoji upload
+    components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content=f"## 😊 Update Emoji for {clan_name}"),
+                Separator(divider=True),
+                Text(content=(
+                    f"**Current Emoji:** {current_emoji if current_emoji else '⚠️ No emoji set'}\n\n"
+                    "Choose how you'd like to provide your clan emoji:\n\n"
+                    "**🔗 Option 1: Image URL**\n"
+                    "• Provide a direct link to an emoji image\n"
+                    "• Will be automatically resized to 128x128\n"
+                    "• Uploaded to Discord as a bot emoji\n\n"
+                    "**☁️ Option 2: From Cloudinary**\n"
+                    "• Automatically fetch from your clan's Cloudinary folder\n"
+                    "• Uses your clan logo as the emoji\n"
+                    "• One-click solution\n"
+                )),
+                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+
+                # Action buttons
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.PRIMARY,
+                            custom_id=f"emoji_url_modal:{tag}",
+                            label="Use Image URL",
+                            emoji="🔗"
+                        ),
+                        Button(
+                            style=hikari.ButtonStyle.PRIMARY,
+                            custom_id=f"emoji_from_cloudinary:{tag}",
+                            label="Use Cloudinary Logo",
+                            emoji="☁️"
+                        ),
+                    ]
+                ),
+
+                # Back button
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            custom_id=f"back_to_clan_edit:{tag}",
+                            label="← Back to Edit Menu",
+                        )
+                    ]
+                ),
+
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ]
+        )
+    ]
+
+    return components
+
+
+@register_action("emoji_url_modal", no_return=True, is_modal=True)
+@lightbulb.di.with_di
+async def emoji_url_modal_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        **kwargs
+):
+    tag = action_id
+
+    emoji_input = ModalActionRow().add_text_input(
+        "emoji_url",
+        "Emoji Image URL",
+        placeholder="https://example.com/emoji.png",
+        required=True,
+    )
+
+    await ctx.respond_with_modal(
+        title=f"Update Emoji via URL",
+        custom_id=f"update_emoji_modal:{tag}",
+        components=[emoji_input],
+    )
+
+
+@register_action("emoji_from_cloudinary", ephemeral=True, no_return=True)
+@lightbulb.di.with_di
+async def emoji_from_cloudinary(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    tag = action_id
+
+    # Get clan data
+    raw = await mongo.clans.find_one({"tag": tag})
+    if not raw:
+        return [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="❌ Clan not found!"),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+
+    db_clan = Clan(data=raw)
+
+    # Check if clan has a logo URL
+    if not db_clan.logo:
+        return [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content=(
+                        "❌ **No Logo Found**\n\n"
+                        "This clan doesn't have a logo uploaded yet.\n"
+                        "Please upload a logo first using the 'Update Logo' button."
+                    )),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"update_emoji:{tag}",
+                                label="← Back",
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+
+    # Process the emoji using the logo URL
+    await process_emoji_upload(
+        ctx=ctx,
+        tag=tag,
+        emoji_url=db_clan.logo,
+        db_clan=db_clan,
+        mongo=mongo,
+        bot=bot
+    )
+
+
+async def process_emoji_upload(
+        ctx: lightbulb.components.MenuContext | lightbulb.components.ModalContext,
+        tag: str,
+        emoji_url: str,
+        db_clan: Clan,
+        mongo: MongoClient,
+        bot: hikari.GatewayBot
+):
+    """Common function to process emoji uploads from any source"""
+
+    # Create loading message
+    loading_components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content="## ⏳ Processing Emoji..."),
+                Text(content="Downloading and resizing image..."),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ]
+        )
+    ]
+
+    # Update or respond based on context type
+    if isinstance(ctx, lightbulb.components.ModalContext):
+        await ctx.interaction.create_initial_response(
+            hikari.ResponseType.MESSAGE_UPDATE,
+            components=loading_components
+        )
+    else:
+        await ctx.respond(components=loading_components, edit=True)
+
+    try:
+        # Clean clan name for emoji name (remove spaces, special chars)
+        clan_name = re.sub(r'[^a-zA-Z0-9]', '', db_clan.name)
+        if not clan_name:
+            clan_name = f"clan_{tag.replace('#', '')}"
+
+        # Delete old emoji if exists
         old_mention = db_clan.emoji or ""
-        match = re.search(r":(\d+)>$", old_mention)
+        match = re.search(r':(\d+)>$'
+                          , old_mention)
         if match:
             old_id = int(match.group(1))
             application = await bot.rest.fetch_my_user()
@@ -714,21 +1265,34 @@ async def update_emoji_modal(
             except hikari.NotFoundError:
                 pass
 
+        # Download and resize image
         def resize_and_compress_image(image_content, max_size=(128, 128), max_kb=256):
             image = Image.open(BytesIO(image_content))
-            image.thumbnail(max_size)
 
+            # Convert to RGBA if necessary
+            if image.mode != 'RGBA':
+                image = image.convert('RGBA')
+
+            # Resize with high quality
+            image.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+            # Save as PNG with optimization
             buffer = BytesIO()
             image.save(buffer, format="PNG", optimize=True)
+
+            # If still too large, reduce quality
             if buffer.tell() / 1024 > max_kb:
                 buffer = BytesIO()
                 image.save(buffer, format="PNG", optimize=True, quality=85)
+
             return buffer.getvalue()
 
-        resp = requests.get(new_emoji_url)
+        # Download the image
+        resp = requests.get(emoji_url)
         resp.raise_for_status()
         img_data = resize_and_compress_image(resp.content)
 
+        # Upload to Discord
         application = await bot.rest.fetch_my_user()
         new_emoji = await bot.rest.create_application_emoji(
             application=application.id,
@@ -736,11 +1300,118 @@ async def update_emoji_modal(
             image=img_data
         )
 
+        # Update database
         await mongo.clans.update_one(
             {"tag": tag},
             {"$set": {"emoji": new_emoji.mention}}
         )
 
-    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
-    new_components = await clan_edit_menu(ctx, action_id=tag, mongo=mongo, tag=tag)
-    await ctx.interaction.edit_initial_response(components=new_components)
+        # Success message
+        success_components = [
+            Container(
+                accent_color=0x00FF00,  # Green
+                components=[
+                    Text(content="## ✅ Emoji Updated Successfully!"),
+                    Separator(divider=True),
+                    Text(content=(
+                        f"**Clan:** {db_clan.name}\n"
+                        f"**New Emoji:** {new_emoji.mention}\n"
+                        f"**Emoji Name:** `:{clan_name}:`\n"
+                        f"**Emoji ID:** `{new_emoji.id}`"
+                    )),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"back_to_clan_edit:{tag}",
+                                label="← Back to Edit Menu",
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=success_components)
+
+    except Exception as e:
+        error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Emoji Upload Failed"),
+                    Separator(divider=True),
+                    Text(content=f"**Error:** {str(e)[:200]}"),
+                    Text(content=(
+                        "\n**Common Issues:**\n"
+                        "• Image URL is invalid or inaccessible\n"
+                        "• Image format not supported\n"
+                        "• Discord API rate limit\n"
+                        "• Bot doesn't have permission to create emojis\n"
+                    )),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"update_emoji:{tag}",
+                                label="← Try Again",
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"back_to_clan_edit:{tag}",
+                                label="← Back to Edit Menu",
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=error_components)
+
+
+@register_action("update_emoji_modal", no_return=True, is_modal=True)
+@lightbulb.di.with_di
+async def update_emoji_modal(
+        ctx: lightbulb.components.ModalContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    tag = action_id
+
+    # Get modal input
+    def get_val(cid: str) -> str:
+        for row in ctx.interaction.components:
+            for comp in row:
+                if comp.custom_id == cid:
+                    return comp.value
+        return ""
+
+    new_emoji_url = get_val("emoji_url")
+
+    if not new_emoji_url:
+        return await ctx.respond(
+            "❌ Please provide an emoji URL.",
+            ephemeral=True
+        )
+
+    # Get clan data
+    raw = await mongo.clans.find_one({"tag": tag})
+    if not raw:
+        return await ctx.respond("❌ Clan not found!", ephemeral=True)
+
+    db_clan = Clan(data=raw)
+
+    # Process the emoji upload
+    await process_emoji_upload(
+        ctx=ctx,
+        tag=tag,
+        emoji_url=new_emoji_url,
+        db_clan=db_clan,
+        mongo=mongo,
+        bot=bot
+    )

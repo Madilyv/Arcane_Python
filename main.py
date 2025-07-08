@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from utils.mongo import MongoClient
 import coc
 from utils.startup import load_cogs
+from utils.cloudinary_client import CloudinaryClient
 
 load_dotenv()
 
@@ -30,9 +31,12 @@ clash_client = coc.Client(
     raw_attribute=True,
 )
 
+cloudinary_client = CloudinaryClient()
+
 registry = client.di.registry_for(lightbulb.di.Contexts.DEFAULT)
 registry.register_value(MongoClient, mongo_client)
 registry.register_value(coc.Client, clash_client)
+registry.register_value(CloudinaryClient, cloudinary_client)
 
 
 @bot.listen(hikari.StartingEvent)

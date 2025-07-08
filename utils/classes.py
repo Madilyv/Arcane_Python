@@ -22,6 +22,7 @@ class Clan:
         self.leader_role_id: int = data.get("leader_role_id")
         self.leadership_channel_id: int = data.get("leadership_channel_id")
         self.logo: str = data.get("logo")
+        self.banner: str = data.get("banner")
         self.name: str = data.get("name")
         self.profile: str = data.get("profile")
         self.role_id: int = data.get("role_id")

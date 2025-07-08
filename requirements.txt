@@ -24,3 +24,5 @@ Pillow
 requests
 
 aiohttp
+
+cloudinary

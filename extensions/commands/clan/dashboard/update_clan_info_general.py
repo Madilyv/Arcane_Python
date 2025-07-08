@@ -34,13 +34,6 @@ from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.classes import Clan
 
-
-
-
-
-
-
-
 # 2) Modal‐submit (handles the data)
 import re
 
@@ -122,7 +115,7 @@ async def update_general_info_panel(
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         custom_id=f"back_to_clan_edit:{tag}",
-                        label="« Back",
+                        label="← Back to Edit Menu",
                     )
                 ]),
                 Media(items=[MediaItem(media="assets/Red_Footer.png")]),
