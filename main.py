@@ -37,7 +37,6 @@ registry.register_value(coc.Client, clash_client)
 
 @bot.listen(hikari.StartingEvent)
 async def on_starting(_: hikari.StartingEvent) -> None:
-    # Add every extension path here manually or with your `load_cogs()` helper
     all_extensions = [
         "extensions.components",
         "extensions.commands.clan.list",
@@ -47,8 +46,9 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.events.message.message_events",
         "extensions.events.message.task_event",
         "extensions.commands.clan.dashboard.dashboard",
-        "extensions.commands.recruit.questions"
-    ] + load_cogs(disallowed={"example"})
+        "extensions.commands.recruit.questions",
+        "extensions.tasks.band_monitor",
+                     ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)
     await client.start()
