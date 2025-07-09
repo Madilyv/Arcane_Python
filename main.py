@@ -8,6 +8,7 @@ from utils.mongo import MongoClient
 import coc
 from utils.startup import load_cogs
 from utils.cloudinary_client import CloudinaryClient
+from extensions.autocomplete import preload_autocomplete_cache
 
 load_dotenv()
 
@@ -55,8 +56,9 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.commands.recruit.questions",
         "extensions.tasks.band_monitor",
         "extensions.commands.moderation",
-         "extensions.commands.fwa.upload_images",
-                     ] + load_cogs(disallowed={"example"})
+        "extensions.commands.fwa.upload_images",
+        "extensions.commands.fwa.war_plans",
+    ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)
     await client.start()
