@@ -1,3 +1,4 @@
+# extensions/commands/clan/__init__.py
 import lightbulb
 
 loader = lightbulb.Loader()
