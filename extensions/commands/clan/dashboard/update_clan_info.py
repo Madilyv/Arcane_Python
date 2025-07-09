@@ -185,20 +185,23 @@ async def add_clan_modal(
         "announcement_id": 0,
         "chat_channel_id": 0,
         "emoji": "",
+        "tag": clan.tag,
         "leader_id": 0,
         "leader_role_id": 0,
         "leadership_channel_id": 0,
         "logo": "",
+        "banner": "",
         "name": clan.name,
         "profile": "",
         "role_id": 0,
         "rules_channel_id": 0,
         "status": "",
-        "tag": clan.tag,
         "th_attribute": "",
         "th_requirements": 0,
         "thread_id": 0,
-        "type": ""
+        "type": "",
+        "points": 0,
+        "recruit_count": 0
     })
 
     await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)

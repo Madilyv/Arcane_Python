@@ -32,7 +32,7 @@ class Clan:
         self.th_requirements: int = data.get("th_requirements")
         self.thread_id = data.get("thread_id")
         self.type: str = data.get("type")
-        self.points: int = data.get("points")
+        self.points: float = data.get("points")
         self.recruit_count: int = data.get("recruit_count", 0)
 
 class Auction:

@@ -155,11 +155,11 @@ async def handle_report_type(
         return
 
 
-@register_action("select_clan", ephemeral=True)
+@register_action("select_clan", ephemeral=True, no_return=True, is_modal=True)
 async def handle_clan_selection(
-        ctx: lightbulb.components.MenuContext,
-        action_id: str,
-        **kwargs
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    **kwargs
 ):
     """Handle clan selection and show appropriate next step"""
     # Split action_id which is in format: discord_post_12345 or dm_recruit_12345
@@ -200,22 +200,13 @@ async def handle_clan_selection(
             custom_id=f"submit_link:{selected_clan}_{user_id}",
             components=[link_input, notes_input]
         )
-
     elif report_type == "dm_recruit":
         # Modal for recruitment details
-        player_name = ModalActionRow().add_text_input(
-            "player_name",
-            "New Player's Name",
-            placeholder="Enter their in-game name",
+        discord_id = ModalActionRow().add_text_input(
+            "discord_id",
+            "Recruited User's Discord ID",
+            placeholder="e.g. 123456789012345678",
             required=True,
-            max_length=50
-        )
-
-        player_tag = ModalActionRow().add_text_input(
-            "player_tag",
-            "Player Tag (Optional)",
-            placeholder="#ABC123 (if known)",
-            required=False,
             max_length=20
         )
 
@@ -231,9 +222,8 @@ async def handle_clan_selection(
         await ctx.respond_with_modal(
             title="DM Recruitment Details",
             custom_id=f"dm_submit_details:{selected_clan}_{user_id}",
-            components=[player_name, player_tag, context]
+            components=[discord_id, context]
         )
-
 
 @register_action("submit_link", no_return=True, is_modal=True)
 @lightbulb.di.with_di
@@ -441,7 +431,7 @@ async def confirm_discord_submission(
                     ]
                 ),
 
-                Media(items=[MediaItem(media="assets/Magenta_Footer.png")])
+                Media(items=[MediaItem(media="assets/Purple_Footer.png")])
             ]
         )
     ]

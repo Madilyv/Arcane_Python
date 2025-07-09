@@ -26,7 +26,7 @@ from utils.constants import GREEN_ACCENT, RED_ACCENT
 from .utils import LOG_CHANNEL
 
 
-@register_action("approve_points", ephemeral=True)
+@register_action("approve_points", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def approve_points(
         ctx: lightbulb.components.MenuContext,
@@ -36,10 +36,16 @@ async def approve_points(
         **kwargs
 ):
     """Handle point approval"""
-    parts = action_id.split(":", 2)
-    submission_type = parts[0]
-    clan_tag = parts[1]
-    user_id = parts[2]
+    if action_id.startswith("discord_post_"):
+        submission_type = "discord_post"
+        remaining = action_id[13:]  # Remove "discord_post_"
+        clan_tag, user_id = remaining.split("_", 1)
+    else:
+        # Handle other formats if needed
+        parts = action_id.split("_", 2)
+        submission_type = parts[0]
+        clan_tag = parts[1]
+        user_id = parts[2]
 
     # Get clan data
     clan_data = await mongo.clans.find_one({"tag": clan_tag})
@@ -125,21 +131,23 @@ async def approve_points(
     # Delete the approval message
     await ctx.interaction.delete_initial_response()
 
-    # Respond to approver
-    await ctx.respond(
-        f"✅ Approved! {clan.name} now has {new_points} points.",
-        ephemeral=True
-    )
 
-
-@register_action("deny_points", ephemeral=True)
+@register_action("deny_points", ephemeral=True, no_return=True, is_modal=True)
 async def deny_points(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         **kwargs
 ):
     """Show denial modal"""
-    submission_type, clan_tag, user_id = action_id.split(":", 2)
+    if action_id.startswith("discord_post_"):
+        submission_type = "discord_post"
+        remaining = action_id[13:]
+        clan_tag, user_id = remaining.split("_", 1)
+    else:
+        parts = action_id.split("_", 2)
+        submission_type = parts[0]
+        clan_tag = parts[1]
+        user_id = parts[2]
 
     reason_input = ModalActionRow().add_text_input(
         "denial_reason",
@@ -147,13 +155,13 @@ async def deny_points(
         placeholder="Please provide a reason for denial...",
         required=True,
         style=hikari.TextInputStyle.PARAGRAPH,
-        min_length=10,
+        min_length=5,
         max_length=500
     )
 
     await ctx.respond_with_modal(
         title="Deny Clan Points",
-        custom_id=f"submit_denial:{submission_type}:{clan_tag}:{user_id}",
+        custom_id=f"submit_denial:{submission_type}_{clan_tag}_{user_id}",
         components=[reason_input]
     )
 
@@ -168,7 +176,36 @@ async def submit_denial(
         **kwargs
 ):
     """Process the denial with reason"""
-    submission_type, clan_tag, user_id = action_id.split(":", 2)
+    # Respond immediately to avoid timeout
+    info_text = (
+        f"⚠️ Processing denial..."
+    )
+
+    warning_components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content=info_text),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")])
+            ]
+        )
+    ]
+
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.MESSAGE_UPDATE,
+        components=warning_components
+    )
+
+    # Now process the rest
+    if action_id.startswith("discord_post_"):
+        submission_type = "discord_post"
+        remaining = action_id[13:]
+        clan_tag, user_id = remaining.split("_", 1)
+    else:
+        parts = action_id.split("_", 2)
+        submission_type = parts[0]
+        clan_tag = parts[1]
+        user_id = parts[2]
 
     # Extract denial reason
     def get_value(custom_id: str) -> str:
@@ -183,7 +220,10 @@ async def submit_denial(
     # Get clan data
     clan_data = await mongo.clans.find_one({"tag": clan_tag})
     if not clan_data:
-        await ctx.respond("❌ Clan not found in database!", ephemeral=True)
+        await ctx.interaction.edit_initial_response(
+            content="❌ Clan not found in database!",
+            components=[]
+        )
         return
 
     clan = Clan(data=clan_data)
@@ -256,19 +296,28 @@ async def submit_denial(
     except:
         pass  # User has DMs disabled
 
-    # Inform sender about the warning
-    info_text = (
-        f"⚠️ **Important:** This denial will be sent to <@{user_id}>.\n"
-        "They will see your denial reason. Please ensure it's appropriate."
+    # Update the message with final info
+    final_text = (
+        f"✅ Denial processed!\n\n"
+        f"**Denied:** <@{user_id}>'s submission for {clan.name}\n"
+        f"**Reason sent:** {denial_reason}"
     )
 
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.MESSAGE_UPDATE,
-        content=info_text,
-        flags=hikari.MessageFlag.EPHEMERAL
+    final_components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content=final_text),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")])
+            ]
+        )
+    ]
+
+    await ctx.interaction.edit_initial_response(
+        components=final_components
     )
 
-    # Delete the original approval message after a delay
+    # Delete after delay
     import asyncio
     await asyncio.sleep(3)
     await ctx.interaction.delete_initial_response()
