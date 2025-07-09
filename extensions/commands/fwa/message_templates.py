@@ -241,15 +241,23 @@ class WarCopyTexts:
     @staticmethod
     def win_copy(opponent: str) -> str:
         return (
-            f"Win vs {opponent}: 1st attack ⭐⭐⭐ mirror. "
-            f"2nd: ⭐⭐ #1+ for loot OR wait 8hrs for 3⭐ cleanup. Goal: 150⭐"
+            f"✅War vs {opponent} is a WIN war!\n"
+            "🔹First Attack: 3⭐️ your mirror.\n"
+            "🔹Second Attack:\n"
+            "•Option 1: Hit Base #1 or any higher base for loot.\n"
+            "•Option 2: Wait until 8h left, then clean up with a strong 3⭐️.\n"
+            "Let’s max out our stars and secure the win! 💪"
         )
 
     @staticmethod
     def lose_copy(opponent: str) -> str:
         return (
-            f"Lose vs {opponent}: 1st attack ⭐⭐ mirror. "
-            f"2nd: ⭐ #1 for loot OR wait 8hrs for 2⭐ cleanup. Goal: 100⭐"
+            f"⚠️War vs {opponent} is a LOSE war – aim for 100⭐!\n"
+            "🔹First Attack: 2⭐️ your mirror.\n"
+            "🔹Second Attack:\n"
+            "•Option 1: Hit Base #1 or any top base for loot.\n"
+            "•Option 2: Wait until 8h left, then go for a safe 2⭐️ cleanup.\n\n"
+            "Finish strong and help hit our star goal! 🌟"
         )
 
     @staticmethod
@@ -264,8 +272,11 @@ class WarCopyTexts:
     @staticmethod
     def mismatch_copy(opponent: str) -> str:
         return (
-            f"Mismatch vs {opponent}: Optional attacks. "
-            f"⭐⭐⭐ mirror or snipe top 2 for loot. Keep farming base."
+            f"⚔️War vs {opponent} is a MISMATCH war!\n"
+            "🔹Attacking is optional this war.\n"
+            "•Go for a 3⭐️ on your mirror if you'd like.\n"
+            "•Or just snipe the top 1–2 bases for loot.\n"
+            "🚫 Do NOT change your war base. Keep your FWA base up!"
         )
 
 

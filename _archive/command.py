@@ -2,9 +2,8 @@
 """Main command entry point for clan points reporting"""
 
 import lightbulb
-import hikari
 from extensions.commands.clan import loader, clan
-from .utils import create_home_dashboard
+from _archive.utils import create_home_dashboard
 
 @clan.register()
 class ReportPoints(
