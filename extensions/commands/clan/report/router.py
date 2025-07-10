@@ -43,26 +43,32 @@ async def create_home_dashboard(member: hikari.Member) -> list:
                             style=hikari.ButtonStyle.PRIMARY,
                             label="Discord Post",
                             emoji="💬",
-                            custom_id=f"report_select:discord_post_{member.id}"
+                            custom_id=f"report_type:discord_post_{member.id}"
                         ),
                         Button(
                             style=hikari.ButtonStyle.PRIMARY,
                             label="DM Recruitment",
                             emoji="📩",
-                            custom_id=f"report_select:dm_recruitment_{member.id}"
+                            custom_id=f"report_type:dm_recruit_{member.id}"
                         )
                     ]
                 ),
 
-                # Status for "Member Left" button
+                # Additional features row
                 ActionRow(
                     components=[
                         Button(
                             style=hikari.ButtonStyle.SECONDARY,
                             label="Member Left",
                             emoji="👋",
-                            custom_id=f"report_select:member_left_{member.id}",
+                            custom_id=f"report_type:member_left_{member.id}",
                             is_disabled=True
+                        ),
+                        Button(
+                            style=hikari.ButtonStyle.SUCCESS,
+                            label="Recruitment Help",
+                            emoji="📢",
+                            custom_id=f"report_type:recruitment_help_{member.id}"
                         )
                     ]
                 ),
@@ -72,9 +78,9 @@ async def create_home_dashboard(member: hikari.Member) -> list:
                 Text(content=(
                     "**📌 Quick Guide:**\n"
                     "• **Discord Post** - You recruited via a public Discord message\n"
-                    "• **DM Recruitment** - You recruited via DMs (requires screenshot)\n"
-                    "• **Member Left** - *(Coming soon)*\n\n"
-                    "-# Points are awarded after leadership approval"
+                    "• **DM Recruitment** - You recruited someone through DMs\n"
+                    "• **Member Left** - Report when a recruit leaves (coming soon)\n"
+                    "• **Recruitment Help** - Post what members your clan is looking for"
                 )),
 
                 Media(items=[MediaItem(media="assets/Gold_Footer.png")])
@@ -84,42 +90,40 @@ async def create_home_dashboard(member: hikari.Member) -> list:
     return components
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║                  Report Type Routing Handler                 ║
+# ║                  Report Type Selection Handler               ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-@register_action("report_select", no_return=True)
+@register_action("report_type", no_return=True)
 @lightbulb.di.with_di
-async def handle_report_selection(
+async def report_type_selected(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
     """Route to appropriate report type handler"""
-    # action_id format: "report_type_user_id"
     parts = action_id.split("_")
-    if len(parts) >= 3:  # Handle dm_recruitment or other multi-word types
-        report_type = f"{parts[0]}_{parts[1]}"
-        user_id = parts[2]
-    else:
-        report_type = parts[0]
-        user_id = parts[1] if len(parts) > 1 else str(ctx.user.id)
+    report_type = "_".join(parts[:-1])  # Everything except user ID
+    user_id = parts[-1]
 
-    # Verify user
-    if int(user_id) != ctx.user.id:
-        await ctx.respond("This button is not for you!", ephemeral=True)
+    # Check if user is authorized
+    if str(ctx.user.id) != user_id:
+        await ctx.respond("❌ This button is not for you!", ephemeral=True)
         return
 
     # Dispatch to appropriate handler based on report type
     if report_type == "discord_post":
         from .discord_post import show_discord_post_flow
         await show_discord_post_flow(ctx, user_id, mongo)
-    elif report_type == "dm_recruitment":
+    elif report_type == "dm_recruit":
         from .dm_recruitment import show_dm_recruitment_flow
         await show_dm_recruitment_flow(ctx, user_id, mongo)
     elif report_type == "member_left":
         from .member_left import show_member_left_flow
         await show_member_left_flow(ctx, user_id)
+    elif report_type == "recruitment_help":
+        from .recruitment_help import recruitment_help_select
+        await recruitment_help_select(ctx, user_id, mongo)
 
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                      Cancel Handler                          ║

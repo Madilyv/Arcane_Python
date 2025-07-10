@@ -7,6 +7,7 @@ class MongoClient(AsyncMongoClient):
         self.__settings = self.get_database("settings")
         self.button_store = self.__settings.get_collection("button_store")
         self.clans = self.__settings.get_collection("clan_data")
+        self.clan_recruitment = self.__settings.get_collection("clan_recruitment")
         self.fwa = self.__settings.get_collection("fwa_data")
         self.fwa_band_data = self.__settings.get_collection("fwa_band_data")
         self.user_tasks = self.__settings.get_collection("user_tasks")

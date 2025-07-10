@@ -1,9 +1,8 @@
-# commands/clan/report/helpers.py
-
-"""Shared utilities for report system"""
+# extensions/commands/clan/report/helpers.py
+"""Helper functions for clan report system"""
 
 import re
-from typing import Optional, Dict, List
+from typing import Optional, List, Dict
 from datetime import datetime
 
 import hikari
@@ -12,62 +11,36 @@ from hikari.impl import SelectOptionBuilder as SelectOption
 from utils.mongo import MongoClient
 from utils.classes import Clan
 
-# ╔══════════════════════════════════════════════════════════════╗
-# ║                  Channel Configuration                       ║
-# ╚══════════════════════════════════════════════════════════════╝
-
+# Channel IDs
 APPROVAL_CHANNEL = 1348691451197784074
 LOG_CHANNEL = 1345589195695194113
 
-# ╔══════════════════════════════════════════════════════════════╗
-# ║                 Discord Link Regex Pattern                   ║
-# ╚══════════════════════════════════════════════════════════════╝
-
-DISCORD_LINK_REGEX = re.compile(
-    r'https?://(?:www\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)'
-)
+# Regex for Discord message links
+DISCORD_LINK_REGEX = re.compile(r"https://discord\.com/channels/(\d+)/(\d+)/(\d+)")
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║                  Get Clan Options Utility                    ║
+# ║                Progress Header Creation Utility              ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-async def get_clan_options(mongo: MongoClient) -> List[SelectOption]:
-    """Get list of clan options for select menu"""
-    clan_data = await mongo.clans.find().to_list(length=None)
-    clans = [Clan(data=d) for d in clan_data]
-
-    options = []
-    for c in clans:
-        kwargs = {"label": c.name, "value": c.tag, "description": c.tag}
-        if getattr(c, "partial_emoji", None):
-            kwargs["emoji"] = c.partial_emoji
-        options.append(SelectOption(**kwargs))
-
-    return options
-
-# ╔══════════════════════════════════════════════════════════════╗
-# ║                Create Progress Header Utility                ║
-# ╚══════════════════════════════════════════════════════════════╝
-
-def create_progress_header(current: int, total: int, steps: List[str]) -> str:
-    """Create a progress indicator for multi-step flows"""
+def create_progress_header(current_step: int, total_steps: int, steps: List[str]) -> str:
+    """Create a progress indicator header"""
     parts = []
-    for i, step in enumerate(steps, 1):
-        if i < current:
-            parts.append(f"✅ ~~{step}~~")
-        elif i == current:
-            parts.append(f"🔵 **{step}**")
+    for i, step in enumerate(steps):
+        if i < current_step - 1:
+            parts.append(f"{step} ✓")
+        elif i == current_step - 1:
+            parts.append(f"**{step}**")
         else:
-            parts.append(f"⚪ {step}")
+            parts.append(step)
 
-    return f"**Step {current}/{total}:** " + " → ".join(parts)
+    return f"**Step {current_step} of {total_steps}** • " + " → ".join(parts)
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║                  Parse Discord Link Utility                  ║
+# ║                Parse Discord Link Utility                    ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-def parse_discord_link(link: str) -> Optional[Dict[str, int]]:
-    """Parse a Discord message link into its components"""
+def parse_discord_link(link: str) -> Optional[dict]:
+    """Parse a Discord message link"""
     match = DISCORD_LINK_REGEX.match(link.strip())
     if match:
         return {
@@ -76,28 +49,6 @@ def parse_discord_link(link: str) -> Optional[Dict[str, int]]:
             "message_id": int(match.group(3))
         }
     return None
-
-# ╔══════════════════════════════════════════════════════════════╗
-# ║               Create Submission Data Utility                 ║
-# ╚══════════════════════════════════════════════════════════════╝
-
-async def create_submission_data(
-        submission_type: str,
-        clan: Clan,
-        user: hikari.User,
-        **kwargs
-) -> dict:
-    """Create standardized submission data for approval messages"""
-    return {
-        "submission_type": submission_type,
-        "clan_name": clan.name,
-        "clan_tag": clan.tag,
-        "clan_logo": clan.logo if clan.logo else "https://cdn-icons-png.flaticon.com/512/845/845665.png",
-        "user_id": user.id,
-        "user_mention": f"<@{user.id}>",
-        "timestamp": int(datetime.now().timestamp()),
-        **kwargs  # Additional fields like discord_link, screenshot_url, etc.
-    }
 
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                Validate Discord ID Utility                   ║
@@ -122,3 +73,52 @@ async def get_clan_by_tag(mongo: MongoClient, tag: str) -> Optional[Clan]:
     if clan_data:
         return Clan(data=clan_data)
     return None
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                  Get Clan Options Utility                    ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+async def get_clan_options(mongo: MongoClient) -> List[SelectOption]:
+    """Get clan options for select menu"""
+    clan_data = await mongo.clans.find().to_list(length=None)
+    clans = [Clan(data=data) for data in clan_data]
+
+    # Sort alphabetically
+    sorted_clans = sorted(clans, key=lambda c: c.name)
+
+    options = []
+    for clan in sorted_clans[:25]:  # Discord limit
+        kwargs = {
+            "label": clan.name,
+            "value": clan.tag,
+            "description": f"Points: {clan.points:.1f}"
+        }
+        if clan.partial_emoji:
+            kwargs["emoji"] = clan.partial_emoji
+
+        options.append(SelectOption(**kwargs))
+
+    return options
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║               Create Submission Data Utility                 ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+async def create_submission_data(
+        submission_type: str,
+        clan: Clan,
+        user: hikari.User,
+        **kwargs
+) -> Dict:
+    """Create standardized submission data for approval"""
+    return {
+        "submission_id": f"{clan.tag}_{user.id}_{int(datetime.now().timestamp())}",
+        "type": submission_type,
+        "clan_tag": clan.tag,
+        "clan_name": clan.name,
+        "clan_logo": clan.logo or "https://cdn-icons-png.flaticon.com/512/845/845665.png",
+        "user_id": str(user.id),
+        "user_mention": f"<@{user.id}>",
+        "timestamp": int(datetime.now().timestamp()),
+        **kwargs
+    }

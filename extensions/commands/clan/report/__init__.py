@@ -5,9 +5,9 @@ from extensions.commands.clan import loader, clan
 from .router import create_home_dashboard
 
 @clan.register()
-class ReportPoints(
+class RecruitPoints(
     lightbulb.SlashCommand,
-    name="report-points",
+    name="recruit-points",
     description="Report recruitment activities for clan points",
 ):
     @lightbulb.invoke
@@ -18,12 +18,16 @@ class ReportPoints(
             ephemeral=True
         )
 
+# Import helpers first as other modules depend on it
+from . import helpers
+
 # Import all report modules to register their actions
 from . import discord_post
 from . import dm_recruitment
 from . import member_left
 from . import approval
 from . import router
+from . import recruitment_help  # New import
 
 # Register the clan group with the loader
 loader.command(clan)
