@@ -7,6 +7,16 @@ import lightbulb
 from datetime import datetime
 from typing import Optional
 
+# Import components for processing message
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    TextDisplayComponentBuilder as Text,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
+    SeparatorComponentBuilder as Separator
+)
+from utils.constants import BLUE_ACCENT, RED_ACCENT
+
 
 # Register this event with the bot
 def load(bot: hikari.GatewayBot) -> None:
@@ -43,6 +53,7 @@ async def on_message_create(event: hikari.GuildMessageCreateEvent) -> None:
         if session["user_id"] == user_id and session["channel_id"] == event.channel_id:
             session_key = key
             session_data = session
+            print(f"[DEBUG] Found session for user {user_id}: key={key}")
             break
 
     if not session_data:
@@ -62,9 +73,9 @@ async def on_message_create(event: hikari.GuildMessageCreateEvent) -> None:
     if not image_attachment:
         return
 
-    # Process the screenshot
+    # Process the screenshot - use event.app instead of event.app
     await process_screenshot_upload(
-        event.app,
+        event.app,  # This is the bot instance
         session_key,
         session_data,
         image_attachment,
@@ -80,6 +91,8 @@ async def process_screenshot_upload(
         message: hikari.Message
 ) -> None:
     """Process the uploaded screenshot"""
+    print(f"[DEBUG] process_screenshot_upload called with session_key={session_key}")
+
     # Import here to avoid circular imports
     from extensions.commands.clan.report.dm_recruitment import (
         image_collection_sessions,
@@ -128,11 +141,7 @@ async def process_screenshot_upload(
         # NOW delete the user's message after we have the image data
         await message.delete()
 
-        # Send processing notification
-        processing_msg = await bot.rest.create_message(
-            channel=message.channel_id,
-            content=f"📤 Processing screenshot for <@{session_data['user_id']}>..."
-        )
+        # No need to update any existing message - we'll create a new one for the review
 
         # Upload to Cloudinary
         timestamp = int(datetime.now().timestamp())
@@ -158,10 +167,7 @@ async def process_screenshot_upload(
         # Clean up image collection session
         del image_collection_sessions[session_key]
 
-        # Delete processing message
-        await bot.rest.delete_message(message.channel_id, processing_msg)
-
-        # Show review screen
+        # Show review screen (this will edit the existing message)
         await show_dm_review_in_channel(
             bot,
             session_key,
@@ -173,10 +179,22 @@ async def process_screenshot_upload(
     except Exception as e:
         print(f"Error processing screenshot: {e}")
 
-        # Notify user of error
+        # Create error message
+        error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content=f"❌ <@{session_data['user_id']}> Failed to process screenshot."),
+                    Text(content=f"**Error:** {str(e)[:200]}"),
+                    Text(content="Please try again or contact an administrator."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+
         await bot.rest.create_message(
             channel=message.channel_id,
-            content=f"❌ <@{session_data['user_id']}> Failed to process screenshot.\nError: {str(e)[:200]}\nPlease try again or contact an administrator."
+            components=error_components
         )
 
         # Clean up session on error
