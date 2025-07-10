@@ -9,6 +9,9 @@ import coc
 from utils.startup import load_cogs
 from utils.cloudinary_client import CloudinaryClient
 from extensions.autocomplete import preload_autocomplete_cache
+from utils.session_cleanup import start_cleanup_task
+from extensions.events.message import dm_screenshot_upload
+from utils import bot_data
 
 load_dotenv()
 
@@ -36,6 +39,10 @@ clash_client = coc.Client(
 
 cloudinary_client = CloudinaryClient()
 
+bot_data.data["mongo"] = mongo_client
+bot_data.data["cloudinary_client"] = cloudinary_client
+bot_data.data["bot"] = bot
+
 registry = client.di.registry_for(lightbulb.di.Contexts.DEFAULT)
 registry.register_value(MongoClient, mongo_client)
 registry.register_value(coc.Client, clash_client)
@@ -44,6 +51,7 @@ registry.register_value(hikari.GatewayBot, bot)
 
 @bot.listen(hikari.StartingEvent)
 async def on_starting(_: hikari.StartingEvent) -> None:
+    """Bot starting event"""
     all_extensions = [
         "extensions.components",
         "extensions.commands.clan.list",
@@ -65,9 +73,15 @@ async def on_starting(_: hikari.StartingEvent) -> None:
     await client.start()
     await clash_client.login_with_tokens("")
 
+    dm_screenshot_upload.load(bot)
+    start_cleanup_task()
+    print("Bot started with DM screenshot listener and cleanup task")
 
 @bot.listen(hikari.StoppingEvent)
 async def on_stopping(_: hikari.StoppingEvent) -> None:
+    """Bot stopping event"""
+    dm_screenshot_upload.unload(bot)
+    print("Bot stopped, event listeners unloaded")
     # Properly close the coc.py client to avoid unclosed session warnings
     await clash_client.close()
 

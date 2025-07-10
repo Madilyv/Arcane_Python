@@ -1,6 +1,6 @@
 # commands/clan/report/dm_recruitment.py
 
-"""DM recruitment reporting functionality"""
+"""DM recruitment reporting functionality with event-based image handling"""
 
 import hikari
 import lightbulb
@@ -41,6 +41,10 @@ from .helpers import (
 # Temporary storage for DM recruitment data
 dm_recruitment_data: Dict[str, dict] = {}
 
+# Image collection sessions - exported for event listener
+image_collection_sessions: Dict[str, dict] = {}
+
+
 # ╔══════════════════════════════════════════════════════════╗
 # ║          Show DM Recruitment Flow (Step 1)               ║
 # ╚══════════════════════════════════════════════════════════╝
@@ -65,8 +69,10 @@ async def show_dm_recruitment_flow(
                 ActionRow(
                     components=[
                         TextSelectMenu(
-                            custom_id=f"dm_select_clan:{user_id}",
                             placeholder="Choose a clan...",
+                            min_values=1,
+                            max_values=1,
+                            custom_id=f"dm_clan_select:{user_id}",
                             options=await get_clan_options(mongo)
                         )
                     ]
@@ -83,6 +89,7 @@ async def show_dm_recruitment_flow(
                     ]
                 ),
 
+                Text(content="-# Select the clan that recruited the new member"),
                 Media(items=[MediaItem(media="assets/Blue_Footer.png")])
             ]
         )
@@ -90,51 +97,41 @@ async def show_dm_recruitment_flow(
 
     await ctx.respond(components=components, edit=True)
 
+
 # ╔══════════════════════════════════════════════════════════╗
-# ║          Clan Selection Handler (Step 2)                 ║
+# ║         DM Recruitment Clan Selection (Step 2)           ║
 # ╚══════════════════════════════════════════════════════════╝
 
-@register_action("dm_select_clan", ephemeral=True, no_return=True, is_modal=True)
-async def dm_handle_clan_selection(
-        ctx: lightbulb.components.MenuContext,
-        action_id: str,
-        **kwargs
-):
-    """Handle clan selection and show details modal"""
+@register_action("dm_clan_select", no_return=True, opens_modal=True)
+async def dm_clan_selected(ctx: lightbulb.components.MenuContext, action_id: str, **kwargs):
+    """Handle clan selection for DM recruitment"""
     user_id = action_id
     selected_clan = ctx.interaction.values[0]
 
     discord_id_input = ModalActionRow().add_text_input(
         "discord_id",
-        "Recruited User's Discord ID",
-        placeholder="e.g., 123456789012345678",
+        "Discord User ID",
+        placeholder="Enter the recruited user's Discord ID (e.g., 123456789012345678)",
         required=True,
         min_length=17,
-        max_length=20
+        max_length=19
     )
 
     context_input = ModalActionRow().add_text_input(
         "context",
         "Recruitment Context",
-        placeholder="How did you recruit this user? (e.g., 'From Reddit COC subreddit')",
+        placeholder="Where/how did you recruit them? (e.g., 'From Reddit COC subreddit')",
         required=True,
         style=hikari.TextInputStyle.PARAGRAPH,
         max_length=200
     )
 
-    screenshot_input = ModalActionRow().add_text_input(
-        "screenshot_url",
-        "Screenshot URL (Optional)",
-        placeholder="Direct link to DM screenshot (imgur, discord cdn, etc.)",
-        required=False,
-        max_length=500
-    )
-
     await ctx.respond_with_modal(
         title="DM Recruitment Details",
         custom_id=f"dm_submit_details:{selected_clan}_{user_id}",
-        components=[discord_id_input, context_input, screenshot_input]
+        components=[discord_id_input, context_input]
     )
+
 
 # ╔══════════════════════════════════════════════════════════╗
 # ║         DM Recruitment Details Submission (Step 3)       ║
@@ -148,14 +145,13 @@ async def dm_submit_details(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    """Process DM recruitment details and show review"""
+    """Process DM recruitment details and prompt for screenshot"""
     parts = action_id.split("_")
     clan_tag = parts[0]
     user_id = parts[1]
 
     discord_id = ""
     context = ""
-    screenshot_url = ""
 
     for row in ctx.interaction.components:
         for comp in row:
@@ -163,8 +159,6 @@ async def dm_submit_details(
                 discord_id = comp.value.strip()
             elif comp.custom_id == "context":
                 context = comp.value.strip()
-            elif comp.custom_id == "screenshot_url":
-                screenshot_url = comp.value.strip()
 
     if not validate_discord_id(discord_id):
         await ctx.respond(
@@ -178,13 +172,151 @@ async def dm_submit_details(
         await ctx.respond("❌ Clan not found!", ephemeral=True)
         return
 
+    # Create session for image collection
     session_key = f"{clan_tag}_{user_id}_{int(datetime.now().timestamp())}"
-    dm_recruitment_data[session_key] = {
+    image_collection_sessions[session_key] = {
         "discord_id": discord_id,
         "context": context,
-        "screenshot_url": screenshot_url
+        "channel_id": ctx.channel_id,
+        "user_id": int(user_id),
+        "clan": clan,
+        "timestamp": datetime.now()
     }
 
+    # Show image upload prompt
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=create_progress_header(2.5, 3, ["Select Clan", "Enter Details", "Review"])),
+                Separator(),
+
+                Text(content="## 📸 Screenshot Required"),
+                Text(content=(
+                    "Please upload a screenshot of the DM conversation showing the recruitment.\n\n"
+                    "**Instructions:**\n"
+                    "• Take a screenshot of your DM conversation\n"
+                    "• **Upload it as your next message in this channel**\n"
+                    "• The bot will automatically capture and process it\n"
+                    "• Your image message will be deleted to keep the channel clean\n\n"
+                    "-# ⏰ You have 2 minutes to upload the screenshot"
+                )),
+
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.PRIMARY,
+                            label="Skip Screenshot",
+                            emoji="⏭️",
+                            custom_id=f"dm_skip_screenshot:{session_key}"
+                        ),
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            label="Cancel",
+                            emoji="❌",
+                            custom_id=f"cancel_report:{user_id}"
+                        )
+                    ]
+                ),
+
+                Text(content="-# The bot is now waiting for your screenshot upload"),
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+    await ctx.interaction.edit_initial_response(components=components)
+
+
+# ╔══════════════════════════════════════════════════════════╗
+# ║                 Skip Screenshot Handler                  ║
+# ╚══════════════════════════════════════════════════════════╝
+
+@register_action("dm_skip_screenshot", no_return=True)
+@lightbulb.di.with_di
+async def dm_skip_screenshot(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Skip screenshot and proceed to review"""
+    session_key = action_id
+
+    if session_key not in image_collection_sessions:
+        await ctx.respond("❌ Session expired. Please start over.", ephemeral=True)
+        return
+
+    session = image_collection_sessions[session_key]
+
+    # Store data without screenshot
+    dm_recruitment_data[session_key] = {
+        "discord_id": session["discord_id"],
+        "context": session["context"],
+        "screenshot_url": None
+    }
+
+    # Clean up image collection session
+    del image_collection_sessions[session_key]
+
+    # Show review screen
+    await show_dm_review(ctx, session_key, str(session["user_id"]), mongo)
+
+
+# ╔══════════════════════════════════════════════════════════╗
+# ║              Review Screen Functions                     ║
+# ╚══════════════════════════════════════════════════════════╝
+
+async def show_dm_review(ctx: lightbulb.components.MenuContext, session_key: str, user_id: str, mongo: MongoClient):
+    """Show review screen from button context"""
+    parts = session_key.split("_")
+    clan_tag = parts[0]
+
+    clan = await get_clan_by_tag(mongo, clan_tag)
+    data = dm_recruitment_data[session_key]
+
+    review_components = create_review_components(clan, data, session_key, user_id)
+
+    await ctx.respond(components=review_components, edit=True)
+
+
+async def show_dm_review_in_channel(bot: hikari.GatewayBot, session_key: str, user_id: str, channel_id: int,
+                                    mongo: MongoClient):
+    """Show review screen in channel (called from event listener)"""
+    parts = session_key.split("_")
+    clan_tag = parts[0]
+
+    clan = await get_clan_by_tag(mongo, clan_tag)
+    data = dm_recruitment_data[session_key]
+
+    review_components = create_review_components(clan, data, session_key, user_id)
+
+    try:
+        # First, send a simple mention message
+        mention_msg = await bot.rest.create_message(
+            channel=channel_id,
+            content=f"<@{user_id}> Your screenshot has been processed! Review your submission below:"
+        )
+
+        # Then send the components
+        await bot.rest.create_message(
+            channel=channel_id,
+            components=review_components
+        )
+    except Exception as e:
+        print(f"Error creating review message: {e}")
+        # Fallback to simpler message
+        await bot.rest.create_message(
+            channel=channel_id,
+            content=f"<@{user_id}> Screenshot processed! Please use `/clan report-points` again to continue."
+        )
+
+
+def create_review_components(clan: Clan, data: dict, session_key: str, user_id: str) -> list:
+    """Create review screen components"""
     review_components = [
         Text(content=create_progress_header(3, 3, ["Select Clan", "Enter Details", "Review"])),
         Separator(),
@@ -208,25 +340,24 @@ async def dm_submit_details(
 
         Text(content=(
             f"**📋 Recruitment Details:**\n"
-            f"**Recruited User:** <@{discord_id}>\n"
-            f"**Context:** {context}"
+            f"**Recruited User:** <@{data['discord_id']}>\n"
+            f"**Context:** {data['context']}"
         )),
     ]
 
-    if screenshot_url:
+    # Add screenshot if available
+    if data.get('screenshot_url'):
         review_components.extend([
+            Separator(),
             Text(content="**📸 Screenshot:**"),
-            ActionRow(
-                components=[
-                    LinkButton(
-                        label="View Screenshot",
-                        url=screenshot_url,
-                        emoji="🖼️"
-                    )
-                ]
-            )
+            Media(items=[MediaItem(media=data['screenshot_url'])])
         ])
+    else:
+        review_components.append(
+            Text(content="-# No screenshot provided")
+        )
 
+    # Add action buttons
     review_components.extend([
         ActionRow(
             components=[
@@ -246,19 +377,17 @@ async def dm_submit_details(
         ),
 
         Text(content="-# Your submission will be reviewed by leadership"),
-
         Media(items=[MediaItem(media="assets/Green_Footer.png")])
     ])
 
-    components = [
+    # Return wrapped in container
+    return [
         Container(
             accent_color=GREEN_ACCENT,
             components=review_components
         )
     ]
 
-    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
-    await ctx.interaction.edit_initial_response(components=components)
 
 # ╔══════════════════════════════════════════════════════════╗
 # ║            Confirm Submission Handler                    ║
@@ -363,6 +492,7 @@ async def dm_confirm_submission(
             components=approval_components
         )
 
+        # Clean up data
         del dm_recruitment_data[session_key]
 
         success_components = [
@@ -374,18 +504,16 @@ async def dm_confirm_submission(
                         f"Your DM recruitment submission for **{clan.name}** has been sent for approval.\n\n"
                         "You'll receive a DM once it's been reviewed by leadership."
                     )),
-
                     ActionRow(
                         components=[
                             Button(
                                 style=hikari.ButtonStyle.PRIMARY,
                                 label="Submit Another",
                                 emoji="➕",
-                                custom_id=f"report_another:{user_id}"
+                                custom_id="report_another"
                             )
                         ]
                     ),
-
                     Media(items=[MediaItem(media="assets/Green_Footer.png")])
                 ]
             )
@@ -394,31 +522,7 @@ async def dm_confirm_submission(
         await ctx.respond(components=success_components, edit=True)
 
     except Exception as e:
-        print(f"Error sending DM recruitment approval: {e}")
-        import traceback
-        traceback.print_exc()
-
-        error_components = [
-            Container(
-                accent_color=RED_ACCENT,
-                components=[
-                    Text(content="## ❌ Submission Failed"),
-                    Text(content=f"Error: {str(e)}"),
-                    Text(content="Please contact an administrator."),
-
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                label="Try Again",
-                                emoji="🔄",
-                                custom_id=f"cancel_report:{user_id}"
-                            )
-                        ]
-                    ),
-
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
-                ]
-            )
-        ]
-        await ctx.respond(components=error_components, edit=True)
+        await ctx.respond(
+            f"❌ Error submitting for approval: {str(e)}",
+            ephemeral=True
+        )

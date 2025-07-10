@@ -82,7 +82,7 @@ async def approve_points(
     # Format submission type for display
     submission_display = {
         "discord_post": "Discord Server Posts",
-        "dm_recruit": "Discord DM",
+        "dm_recruit": "Discord DM Recruiting",
         "member_left": "Member Left"
     }.get(submission_type, submission_type)
 
@@ -273,7 +273,7 @@ async def confirm_denial(
     # Format submission type
     submission_display = {
         "discord_post": "Discord Server Posts",
-        "dm_recruit": "Discord DM",
+        "dm_recruit": "Discord DM Recruiting",
         "member_left": "Member Left"
     }.get(submission_type, submission_type)
 
