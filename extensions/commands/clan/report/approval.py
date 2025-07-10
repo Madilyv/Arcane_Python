@@ -1,5 +1,7 @@
 # commands/clan/report/approval.py
+
 """Approval workflow handlers for clan points"""
+
 import hikari
 import lightbulb
 from datetime import datetime
@@ -26,6 +28,9 @@ from utils.constants import GREEN_ACCENT, RED_ACCENT
 
 from .helpers import get_clan_by_tag, LOG_CHANNEL
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                    Approve Points Handler                    ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 @register_action("approve_points", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
@@ -103,7 +108,7 @@ async def approve_points(
                 ),
 
                 Text(
-                    content=f"-# Approved by {ctx.user.mention} • Today at {datetime.now().strftime('%I:%M %p').lstrip('0')}"),
+                    content=f"-# Approved by {ctx.user.mention} • <t:{int(datetime.now().timestamp())}:f>"),
 
                 Media(items=[MediaItem(media="assets/Green_Footer.png")])
             ]
@@ -147,14 +152,32 @@ async def approve_points(
     # Delete the approval message
     await ctx.interaction.delete_initial_response()
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                    Deny Points Handler                       ║
+# ╚══════════════════════════════════════════════════════════════╝
 
-@register_action("deny_points", ephemeral=True, no_return=True, is_modal=True)
+@register_action("deny_points", no_return=True, opens_modal=True)
+@lightbulb.di.with_di
 async def deny_points(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
     """Show denial modal"""
+    # Store the message info in the database before opening modal
+    message_id = ctx.interaction.message.id
+    channel_id = ctx.interaction.channel_id
+
+    # Store in button_store temporarily
+    denial_key = f"denial_{message_id}_{int(datetime.now().timestamp())}"
+    await mongo.button_store.insert_one({
+        "_id": denial_key,
+        "message_id": message_id,
+        "channel_id": channel_id,
+        "action_id": action_id
+    })
+
     # Parse action_id (same format as approve_points)
     parts = action_id.split("_")
 
@@ -183,10 +206,13 @@ async def deny_points(
 
     await ctx.respond_with_modal(
         title="Deny Clan Points Submission",
-        custom_id=f"confirm_deny:{action_id}",
+        custom_id=f"confirm_deny:{denial_key}",  # Pass the denial_key instead
         components=[reason_input]
     )
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                    Confirm Denial Handler                    ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 @register_action("confirm_deny", no_return=True, is_modal=True)
 @lightbulb.di.with_di
@@ -198,8 +224,24 @@ async def confirm_denial(
         **kwargs
 ):
     """Process denial with reason"""
+    denial_key = action_id
+
+    # Retrieve stored denial info
+    denial_info = await mongo.button_store.find_one({"_id": denial_key})
+    if not denial_info:
+        await ctx.respond("❌ Error: Session expired. Please try again.", ephemeral=True)
+        return
+
+    # Clean up stored data
+    await mongo.button_store.delete_one({"_id": denial_key})
+
+    # Get the original action_id
+    original_action_id = denial_info["action_id"]
+    message_id = denial_info["message_id"]
+    channel_id = denial_info["channel_id"]
+
     # Parse action_id (same format as approve_points)
-    parts = action_id.split("_")
+    parts = original_action_id.split("_")
 
     # Handle multi-word submission types
     if parts[0] == "discord" and parts[1] == "post":
@@ -256,7 +298,7 @@ async def confirm_denial(
                 ),
 
                 Text(
-                    content=f"-# Denied by {ctx.user.mention} • Today at {datetime.now().strftime('%I:%M %p').lstrip('0')}"),
+                    content=f"-# Denied by {ctx.user.mention} • <t:{int(datetime.now().timestamp())}:f>"),
 
                 Media(items=[MediaItem(media="assets/Red_Footer.png")])
             ]
@@ -296,5 +338,17 @@ async def confirm_denial(
     except:
         pass  # User has DMs disabled
 
-    # Delete the approval message
-    await ctx.interaction.delete_initial_response()
+    # First respond to the modal
+    await ctx.respond(
+        "✅ Denial processed successfully. The approval message has been removed.",
+        ephemeral=True
+    )
+
+    # Then delete the approval message using the stored info
+    try:
+        await bot.rest.delete_message(
+            channel=channel_id,
+            message=message_id
+        )
+    except Exception as e:
+        print(f"Error deleting approval message: {e}")

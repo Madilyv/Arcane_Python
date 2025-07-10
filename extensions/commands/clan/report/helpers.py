@@ -1,5 +1,7 @@
 # commands/clan/report/helpers.py
+
 """Shared utilities for report system"""
+
 import re
 from typing import Optional, Dict, List
 from datetime import datetime
@@ -10,15 +12,24 @@ from hikari.impl import SelectOptionBuilder as SelectOption
 from utils.mongo import MongoClient
 from utils.classes import Clan
 
-# Channel Configuration
-APPROVAL_CHANNEL = 1350318721771634699
-LOG_CHANNEL = 1350340719918936135
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                  Channel Configuration                       ║
+# ╚══════════════════════════════════════════════════════════════╝
 
-# Discord message link regex
+APPROVAL_CHANNEL = 1348691451197784074
+LOG_CHANNEL = 1345589195695194113
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                 Discord Link Regex Pattern                   ║
+# ╚══════════════════════════════════════════════════════════════╝
+
 DISCORD_LINK_REGEX = re.compile(
     r'https?://(?:www\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)'
 )
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                  Get Clan Options Utility                    ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 async def get_clan_options(mongo: MongoClient) -> List[SelectOption]:
     """Get list of clan options for select menu"""
@@ -34,6 +45,9 @@ async def get_clan_options(mongo: MongoClient) -> List[SelectOption]:
 
     return options
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                Create Progress Header Utility                ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 def create_progress_header(current: int, total: int, steps: List[str]) -> str:
     """Create a progress indicator for multi-step flows"""
@@ -48,6 +62,9 @@ def create_progress_header(current: int, total: int, steps: List[str]) -> str:
 
     return f"**Step {current}/{total}:** " + " → ".join(parts)
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                  Parse Discord Link Utility                  ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 def parse_discord_link(link: str) -> Optional[Dict[str, int]]:
     """Parse a Discord message link into its components"""
@@ -60,6 +77,9 @@ def parse_discord_link(link: str) -> Optional[Dict[str, int]]:
         }
     return None
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║               Create Submission Data Utility                 ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 async def create_submission_data(
         submission_type: str,
@@ -79,6 +99,9 @@ async def create_submission_data(
         **kwargs  # Additional fields like discord_link, screenshot_url, etc.
     }
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                Validate Discord ID Utility                   ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 def validate_discord_id(discord_id: str) -> bool:
     """Validate a Discord user ID"""
@@ -89,6 +112,9 @@ def validate_discord_id(discord_id: str) -> bool:
     except ValueError:
         return False
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                   Get Clan By Tag Utility                    ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 async def get_clan_by_tag(mongo: MongoClient, tag: str) -> Optional[Clan]:
     """Get clan data by tag"""

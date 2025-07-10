@@ -1,7 +1,10 @@
 # commands/clan/report/router.py
+
 """Central routing and dispatch for report types"""
+
 import hikari
 import lightbulb
+
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
     ContainerComponentBuilder as Container,
@@ -18,6 +21,9 @@ from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                  Create Home Dashboard Utility               ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 async def create_home_dashboard(member: hikari.Member) -> list:
     """Create the main report dashboard"""
@@ -77,6 +83,9 @@ async def create_home_dashboard(member: hikari.Member) -> list:
     ]
     return components
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                  Report Type Routing Handler                 ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 @register_action("report_select", no_return=True)
 @lightbulb.di.with_di
@@ -112,6 +121,9 @@ async def handle_report_selection(
         from .member_left import show_member_left_flow
         await show_member_left_flow(ctx, user_id)
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                      Cancel Handler                          ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 @register_action("cancel_report", no_return=True)
 async def cancel_report(ctx: lightbulb.components.MenuContext, action_id: str, **kwargs):
@@ -124,6 +136,9 @@ async def cancel_report(ctx: lightbulb.components.MenuContext, action_id: str, *
     components = await create_home_dashboard(ctx.member)
     await ctx.respond(components=components, edit=True)
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                   Report Another Handler                     ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 @register_action("report_another", no_return=True)
 async def report_another(ctx: lightbulb.components.MenuContext, action_id: str, **kwargs):

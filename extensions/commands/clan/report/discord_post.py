@@ -1,5 +1,7 @@
 # commands/clan/report/discord_post.py
+
 """Discord post reporting functionality"""
+
 import hikari
 import lightbulb
 from datetime import datetime
@@ -24,7 +26,7 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.classes import Clan
-from utils.constants import BLUE_ACCENT, GREEN_ACCENT, MAGENTA_ACCENT
+from utils.constants import BLUE_ACCENT, GREEN_ACCENT, MAGENTA_ACCENT, RED_ACCENT
 
 from .helpers import (
     get_clan_options,
@@ -35,15 +37,16 @@ from .helpers import (
     APPROVAL_CHANNEL
 )
 
+# ╔══════════════════════════════════════════════════════════╗
+# ║            Show Discord Post Flow (Step 1)               ║
+# ╚══════════════════════════════════════════════════════════╝
 
-@lightbulb.di.with_di
 @lightbulb.di.with_di
 async def show_discord_post_flow(
         ctx: lightbulb.components.MenuContext,
         user_id: str,
         mongo: MongoClient = lightbulb.di.INJECTED
 ):
-    """Show the discord post reporting flow - Step 1: Clan Selection"""
     components = [
         Container(
             accent_color=BLUE_ACCENT,
@@ -80,20 +83,21 @@ async def show_discord_post_flow(
         )
     ]
 
-    await ctx.respond(components=components)
+    await ctx.respond(components=components, edit=True)
 
+# ╔══════════════════════════════════════════════════════════╗
+# ║            Clan Selection Handler (Step 2)               ║
+# ╚══════════════════════════════════════════════════════════╝
 
-@register_action("dp_select_clan", ephemeral=True, no_return=True, is_modal=True)
+@register_action("dp_select_clan", no_return=True, opens_modal=True)
 async def dp_handle_clan_selection(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         **kwargs
 ):
-    """Handle clan selection and show link modal"""
     user_id = action_id
     selected_clan = ctx.interaction.values[0]
 
-    # Show modal for Discord link
     link_input = ModalActionRow().add_text_input(
         "discord_link",
         "Discord Message Link",
@@ -117,6 +121,9 @@ async def dp_handle_clan_selection(
         components=[link_input, notes_input]
     )
 
+# ╔══════════════════════════════════════════════════════════╗
+# ║         Discord Link Submission Handler (Step 3)         ║
+# ╚══════════════════════════════════════════════════════════╝
 
 @register_action("dp_submit_link", no_return=True, is_modal=True)
 @lightbulb.di.with_di
@@ -127,13 +134,10 @@ async def dp_submit_discord_link(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ):
-    """Process Discord link submission and show review"""
-    # action_id format: "clan_tag_user_id"
     parts = action_id.split("_")
     clan_tag = parts[0]
     user_id = parts[1]
 
-    # Extract values from modal
     discord_link = ""
     notes = ""
     for row in ctx.interaction.components:
@@ -143,7 +147,6 @@ async def dp_submit_discord_link(
             elif comp.custom_id == "notes":
                 notes = comp.value.strip()
 
-    # Validate Discord link
     link_data = parse_discord_link(discord_link)
     if not link_data:
         await ctx.respond(
@@ -153,13 +156,11 @@ async def dp_submit_discord_link(
         )
         return
 
-    # Get clan data
     clan = await get_clan_by_tag(mongo, clan_tag)
     if not clan:
         await ctx.respond("❌ Clan not found!", ephemeral=True)
         return
 
-    # Store submission data temporarily
     submission_id = f"{clan_tag}_{user_id}_{int(datetime.now().timestamp())}"
     submission_data = {
         "_id": submission_id,
@@ -171,7 +172,8 @@ async def dp_submit_discord_link(
     }
     await mongo.button_store.insert_one(submission_data)
 
-    # Show review screen
+    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+
     review_components = [
         Text(content=create_progress_header(3, 3, ["Select Clan", "Add Link", "Review"])),
         Separator(),
@@ -195,7 +197,6 @@ async def dp_submit_discord_link(
         Text(content=f"`{discord_link}`"),
     ]
 
-    # Add link button if link is valid
     if link_data:
         review_components.append(
             ActionRow(
@@ -209,11 +210,9 @@ async def dp_submit_discord_link(
             )
         )
 
-    # Add notes if provided
     if notes:
         review_components.append(Text(content=f"**📝 Notes:** {notes}"))
 
-    # Add action buttons
     review_components.extend([
         ActionRow(
             components=[
@@ -244,10 +243,13 @@ async def dp_submit_discord_link(
         )
     ]
 
-    await ctx.respond(components=components)
+    await ctx.interaction.edit_initial_response(components=components)
 
+# ╔══════════════════════════════════════════════════════════╗
+# ║             Confirm Submission Handler                   ║
+# ╚══════════════════════════════════════════════════════════╝
 
-@register_action("dp_confirm_submit", ephemeral=True, no_return=True)
+@register_action("dp_confirm_submit", no_return=True)
 @lightbulb.di.with_di
 async def dp_confirm_submission(
         ctx: lightbulb.components.MenuContext,
@@ -256,10 +258,8 @@ async def dp_confirm_submission(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ):
-    """Finalize Discord post submission and send to approval"""
     submission_id = action_id
 
-    # Retrieve stored submission data
     stored_data = await mongo.button_store.find_one({"_id": submission_id})
     if not stored_data or "data" not in stored_data:
         await ctx.respond("❌ Error: Submission data not found!", ephemeral=True)
@@ -269,21 +269,17 @@ async def dp_confirm_submission(
     discord_link = submission_data.get("discord_link", "")
     notes = submission_data.get("notes", "")
 
-    # Parse submission_id to get clan_tag and user_id
     parts = submission_id.split("_")
     clan_tag = parts[0]
     user_id = parts[1]
 
-    # Clean up stored data
     await mongo.button_store.delete_one({"_id": submission_id})
 
-    # Get clan data
     clan = await get_clan_by_tag(mongo, clan_tag)
     if not clan:
         await ctx.respond("❌ Error: Clan not found!", ephemeral=True)
         return
 
-    # Create submission data
     approval_data = await create_submission_data(
         submission_type="Discord Post",
         clan=clan,
@@ -292,7 +288,6 @@ async def dp_confirm_submission(
         notes=notes
     )
 
-    # Create approval message
     approval_components_list = [
         Text(content="## 🔔 Clan Points Submission"),
 
@@ -323,11 +318,9 @@ async def dp_confirm_submission(
         ),
     ]
 
-    # Add notes if provided
     if notes:
         approval_components_list.append(Text(content=f"**📝 Notes:** {notes}"))
 
-    # Add approval buttons
     approval_components_list.extend([
         ActionRow(
             components=[
@@ -356,16 +349,12 @@ async def dp_confirm_submission(
         )
     ]
 
-    # Send to approval channel
     try:
-        print(f"Attempting to send approval message to channel {APPROVAL_CHANNEL}")
         await bot.rest.create_message(
             channel=APPROVAL_CHANNEL,
             components=approval_components
         )
-        print("Approval message sent successfully")
 
-        # Update user's view to success
         success_components = [
             Container(
                 accent_color=GREEN_ACCENT,

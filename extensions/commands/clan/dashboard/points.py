@@ -6,6 +6,7 @@ import hikari
 from datetime import datetime
 from typing import List, Optional
 import asyncio
+import math
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
@@ -1261,7 +1262,7 @@ async def month_reset_confirm(
                 Separator(divider=True),
                 Text(content=(
                     "**This will:**\n"
-                    "• Reduce all points by 25% or 10 (whichever is less)\n"
+                    "• 25% of current points (rounded up), or 10, whichever is less.\n"
                     "• Reset all recruit counts to 0\n\n"
                     f"**Clans affected:** {clans_affected}\n"
                     f"**Total points before reset:** {total_points:.1f}"
@@ -1306,9 +1307,8 @@ async def confirm_month_reset(
     for clan in clans:
         old_points = clan.get("points", 0)
         if old_points > 0:
-            reduction = min(old_points * 0.25, 10.0)
-            new_points = max(0, old_points - reduction)
-
+            twenty_five_percent = math.ceil(old_points * 0.25)
+            new_points = min(twenty_five_percent, 10)
             await mongo.clans.update_one(
                 {"tag": clan["tag"]},
                 {"$set": {"points": new_points}}
@@ -1327,7 +1327,7 @@ async def confirm_month_reset(
                 Separator(divider=True),
                 Text(content=(
                     f"**Reset {len(changes)} clans**\n"
-                    "• Points reduced by 25% or 10 (min)\n"
+                    "• Points reduced to 25% of previous value (rounded up), or 10, whichever is less.\n"
                     "• All recruit counts reset to 0\n\n"
                     f"Reset performed by: {ctx.member.mention}"
                 )),

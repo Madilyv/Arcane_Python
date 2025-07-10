@@ -155,13 +155,13 @@ async def on_clan_chosen(
             ],
         ),
         Container(
-            accent_color=0x2F3136,
+            accent_color=RED_ACCENT,
             components=[
                 Section(
                     components=[Text(content="\n".join(lines))],
                     accessory=Thumbnail(media=api_clan.badge.large if api_clan else db_clan.logo),
                 ),
-                Media(items=[MediaItem(media=db_clan.logo)]),
+                Media(items=[MediaItem(media=db_clan.banner)]),
                 ActionRow(
                     components=[
                         LinkButton(

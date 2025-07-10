@@ -1,5 +1,7 @@
 # commands/clan/report/member_left.py
+
 """Member left reporting functionality (placeholder for future implementation)"""
+
 import hikari
 import lightbulb
 
@@ -18,6 +20,9 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils.constants import GOLD_ACCENT
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                 Show Member Left Flow Handler                ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 async def show_member_left_flow(
         ctx: lightbulb.components.MenuContext,
@@ -58,8 +63,10 @@ async def show_member_left_flow(
 
     await ctx.respond(components=components, edit=True)
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║         Member Left Placeholder Handler (Future)             ║
+# ╚══════════════════════════════════════════════════════════════╝
 
-# Placeholder for future functionality
 @register_action("member_left_flow", ephemeral=True)
 async def member_left_placeholder(ctx: lightbulb.components.MenuContext, **kwargs):
     """Placeholder for member left functionality"""
