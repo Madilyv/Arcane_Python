@@ -14,6 +14,7 @@ from hikari.impl import (
 
 from extensions.components import register_action
 from utils.constants import GOLD_ACCENT
+from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
 
@@ -77,10 +78,12 @@ async def create_home_dashboard(member: hikari.Member) -> list:
     return components
 
 
-@register_action("report_select", ephemeral=True, no_return=True)
+@register_action("report_select", no_return=True)
+@lightbulb.di.with_di
 async def handle_report_selection(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
     """Route to appropriate report type handler"""
@@ -101,16 +104,16 @@ async def handle_report_selection(
     # Dispatch to appropriate handler based on report type
     if report_type == "discord_post":
         from .discord_post import show_discord_post_flow
-        await show_discord_post_flow(ctx, user_id)
+        await show_discord_post_flow(ctx, user_id, mongo)
     elif report_type == "dm_recruitment":
         from .dm_recruitment import show_dm_recruitment_flow
-        await show_dm_recruitment_flow(ctx, user_id)
+        await show_dm_recruitment_flow(ctx, user_id, mongo)
     elif report_type == "member_left":
         from .member_left import show_member_left_flow
         await show_member_left_flow(ctx, user_id)
 
 
-@register_action("cancel_report", ephemeral=True, no_return=True)
+@register_action("cancel_report", no_return=True)
 async def cancel_report(ctx: lightbulb.components.MenuContext, action_id: str, **kwargs):
     """Universal cancel handler - returns to main dashboard"""
     user_id = action_id
@@ -122,7 +125,7 @@ async def cancel_report(ctx: lightbulb.components.MenuContext, action_id: str, *
     await ctx.respond(components=components, edit=True)
 
 
-@register_action("report_another", ephemeral=True, no_return=True)
+@register_action("report_another", no_return=True)
 async def report_another(ctx: lightbulb.components.MenuContext, action_id: str, **kwargs):
     """Handle 'Submit Another' button - returns to main dashboard"""
     components = await create_home_dashboard(ctx.member)

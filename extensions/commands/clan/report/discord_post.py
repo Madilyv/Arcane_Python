@@ -244,10 +244,10 @@ async def dp_submit_discord_link(
         )
     ]
 
-    await ctx.respond(components=components, edit=True)
+    await ctx.respond(components=components)
 
 
-@register_action("dp_confirm_submit", ephemeral=True)
+@register_action("dp_confirm_submit", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def dp_confirm_submission(
         ctx: lightbulb.components.MenuContext,
@@ -358,10 +358,12 @@ async def dp_confirm_submission(
 
     # Send to approval channel
     try:
+        print(f"Attempting to send approval message to channel {APPROVAL_CHANNEL}")
         await bot.rest.create_message(
             channel=APPROVAL_CHANNEL,
             components=approval_components
         )
+        print("Approval message sent successfully")
 
         # Update user's view to success
         success_components = [
@@ -390,10 +392,32 @@ async def dp_confirm_submission(
             )
         ]
 
-        await ctx.interaction.edit_initial_response(components=success_components)
+        await ctx.respond(components=success_components, edit=True)
 
     except Exception as e:
-        await ctx.respond(
-            f"❌ Error sending submission: {str(e)}",
-            ephemeral=True
-        )
+        print(f"Error sending approval message: {e}")
+        error_msg = f"❌ Error sending submission: {str(e)}"
+        error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Submission Failed"),
+                    Text(content=error_msg),
+                    Text(content="Please contact an administrator."),
+
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                label="Try Again",
+                                emoji="🔄",
+                                custom_id=f"cancel_report:{user_id}"
+                            )
+                        ]
+                    ),
+
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        await ctx.respond(components=error_components, edit=True)

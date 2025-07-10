@@ -308,7 +308,7 @@ async def show_dm_review_screen(
     await ctx.respond(components=components, edit=True)
 
 
-@register_action("dm_confirm_submit", ephemeral=True)
+@register_action("dm_confirm_submit", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def dm_confirm_submission(
         ctx: lightbulb.components.MenuContext,
@@ -408,10 +408,12 @@ async def dm_confirm_submission(
 
     # Send to approval channel
     try:
+        print(f"Attempting to send DM recruitment approval to channel {APPROVAL_CHANNEL}")
         await bot.rest.create_message(
             channel=APPROVAL_CHANNEL,
             components=approval_components
         )
+        print("DM recruitment approval message sent successfully")
 
         # Clean up temporary data
         del dm_recruitment_data[session_key]
@@ -443,13 +445,35 @@ async def dm_confirm_submission(
             )
         ]
 
-        await ctx.interaction.edit_initial_response(components=success_components)
+        await ctx.respond(components=success_components, edit=True)
 
     except Exception as e:
-        await ctx.respond(
-            f"❌ Error sending submission: {str(e)}",
-            ephemeral=True
-        )
+        print(f"Error sending DM recruitment approval: {e}")
+        error_msg = f"❌ Error sending submission: {str(e)}"
+        error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Submission Failed"),
+                    Text(content=error_msg),
+                    Text(content="Please contact an administrator."),
+
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                label="Try Again",
+                                emoji="🔄",
+                                custom_id=f"cancel_report:{user_id}"
+                            )
+                        ]
+                    ),
+
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        await ctx.respond(components=error_components, edit=True)
 
 
 # Handle screenshot uploads via message events (separate handler needed)

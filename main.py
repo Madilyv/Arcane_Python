@@ -40,7 +40,7 @@ registry = client.di.registry_for(lightbulb.di.Contexts.DEFAULT)
 registry.register_value(MongoClient, mongo_client)
 registry.register_value(coc.Client, clash_client)
 registry.register_value(CloudinaryClient, cloudinary_client)
-
+registry.register_value(hikari.GatewayBot, bot)
 
 @bot.listen(hikari.StartingEvent)
 async def on_starting(_: hikari.StartingEvent) -> None:
