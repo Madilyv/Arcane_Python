@@ -28,6 +28,7 @@ from utils.constants import GREEN_ACCENT, RED_ACCENT
 
 from .helpers import get_clan_by_tag, LOG_CHANNEL
 
+
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                    Approve Points Handler                    ║
 # ╚══════════════════════════════════════════════════════════════╝
@@ -42,6 +43,28 @@ async def approve_points(
         **kwargs
 ):
     """Handle point approval"""
+    # Use MongoDB to prevent duplicate processing
+    approval_key = f"approval_{ctx.interaction.message.id}"
+    try:
+        await mongo.button_store.insert_one({
+            "_id": approval_key,
+            "timestamp": datetime.now()
+        })
+    except:
+        # Already being processed
+        return
+
+    # Show processing message
+    processing_components = [
+        Container(
+            accent_color=GREEN_ACCENT,
+            components=[
+                Text(content="⏳ Processing approval...")
+            ]
+        )
+    ]
+    await ctx.respond(components=processing_components, edit=True)
+
     # Parse action_id format: "submission_type_clan_tag_user_id"
     parts = action_id.split("_")
 
@@ -62,7 +85,17 @@ async def approve_points(
     # Get clan data
     clan = await get_clan_by_tag(mongo, clan_tag)
     if not clan:
-        await ctx.respond("❌ Clan not found in database!", ephemeral=True)
+        await ctx.interaction.edit_initial_response(
+            components=[
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="❌ Clan not found in database!")
+                    ]
+                )
+            ]
+        )
+        await mongo.button_store.delete_one({"_id": approval_key})
         return
 
     # Update clan points
@@ -137,6 +170,8 @@ async def approve_points(
                         f"**Clan Total:** {new_points} points\n\n"
                         "Thank you for your contribution!"
                     )),
+                    Text(
+                        content=f"-# Approved by {ctx.user.mention} • <t:{int(datetime.now().timestamp())}:f>"),
                     Media(items=[MediaItem(media="assets/Green_Footer.png")])
                 ]
             )
@@ -151,6 +186,10 @@ async def approve_points(
 
     # Delete the approval message
     await ctx.interaction.delete_initial_response()
+
+    # Clean up MongoDB
+    await mongo.button_store.delete_one({"_id": approval_key})
+
 
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                    Deny Points Handler                       ║
@@ -209,6 +248,7 @@ async def deny_points(
         custom_id=f"confirm_deny:{denial_key}",  # Pass the denial_key instead
         components=[reason_input]
     )
+
 
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                    Confirm Denial Handler                    ║
@@ -326,6 +366,8 @@ async def confirm_denial(
                         f"**Reason:** {reason}\n\n"
                         "If you have questions, please contact leadership."
                     )),
+                    Text(
+                        content=f"-# Denied by {ctx.user.mention} • <t:{int(datetime.now().timestamp())}:f>"),
                     Media(items=[MediaItem(media="assets/Red_Footer.png")])
                 ]
             )
