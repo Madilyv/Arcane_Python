@@ -299,6 +299,7 @@ async def on_remove_clan_field(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,  # Add bot injection
         **kwargs
 ):
     # split into ["confirm" | "cancel"] and the tag
@@ -309,21 +310,40 @@ async def on_remove_clan_field(
         raw = await mongo.clans.find_one({"tag": tag})
         db_clan = Clan(data=raw)
 
+        # Delete the emoji from Discord if it exists
+        if db_clan.emoji:
+            # Parse emoji ID from mention format like <:emoji_name:123456789>
+            match = re.search(r":(\d+)>$", db_clan.emoji)
+            if match:
+                emoji_id = int(match.group(1))
+                application = await bot.rest.fetch_my_user()
+                try:
+                    await bot.rest.delete_application_emoji(
+                        application=application.id,
+                        emoji=emoji_id
+                    )
+                    print(f"[DEBUG] Deleted emoji {emoji_id} for clan {db_clan.name}")
+                except hikari.NotFoundError:
+                    print(f"[DEBUG] Emoji {emoji_id} not found, may have been already deleted")
+                except Exception as e:
+                    print(f"[ERROR] Failed to delete emoji {emoji_id}: {e}")
+
+        # Delete clan from database
         await mongo.clans.delete_one({"tag": tag})
+
         return [
             Container(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content=f"Welp, `{db_clan.name}` has been deleted! <:SadTrash:1387846121094774854>\n"
                                  "Hopefully you didn't make an oopsie..."),
+                    Text(content=f"✅ Associated emoji has been removed from the bot." if db_clan.emoji else ""),
                     Media(items=[MediaItem(media="assets/Red_Footer.png")]),
                 ]
             )
         ]
     else:
         return await dashboard_page(ctx=ctx, mongo=mongo)
-    # return components
-
 
 # EDIT CLAN STUFF
 @register_action("choose_clan_select", ephemeral=True)
@@ -495,17 +515,6 @@ async def clan_edit_menu(
             Media(items=[MediaItem(media="assets/Red_Footer.png")]),
         ],
     )]
-
-    # If we have a logo, add it as a separate container
-    if db_clan.logo and db_clan.logo.startswith('http'):
-        components.insert(0, Container(
-            accent_color=0x2F3136,  # Dark gray for visual separation
-            components=[
-                Text(content="## 🖼️ Current Clan Logo"),
-                Media(items=[MediaItem(media=db_clan.logo)]),
-            ]
-        ))
-
     return components
 
 
@@ -1253,20 +1262,42 @@ async def process_emoji_upload(
         if not clan_name:
             clan_name = f"clan_{tag.replace('#', '')}"
 
-        # Delete old emoji if exists
+        application = await bot.rest.fetch_my_user()
+
+        # Check for any existing emoji with the same NAME (not just same clan)
+        print(f"[DEBUG] Checking for existing emojis with name: {clan_name}")
+        try:
+            existing_emojis = await bot.rest.fetch_application_emojis(application.id)
+            for emoji in existing_emojis:
+                if emoji.name.lower() == clan_name.lower():
+                    print(f"[DEBUG] Found duplicate emoji name '{emoji.name}' (ID: {emoji.id}), deleting...")
+                    try:
+                        await bot.rest.delete_application_emoji(
+                            application=application.id,
+                            emoji=emoji.id
+                        )
+                        print(f"[DEBUG] Deleted duplicate emoji {emoji.id}")
+                    except Exception as e:
+                        print(f"[ERROR] Failed to delete duplicate emoji {emoji.id}: {e}")
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch existing emojis: {e}")
+
+        # Also delete old emoji for this specific clan if it exists
         old_mention = db_clan.emoji or ""
-        match = re.search(r':(\d+)>$'
-                          , old_mention)
+        match = re.search(r':(\d+)>$', old_mention)
         if match:
             old_id = int(match.group(1))
-            application = await bot.rest.fetch_my_user()
+            # Only try to delete if it's different from any we already deleted
             try:
                 await bot.rest.delete_application_emoji(
                     application=application.id,
                     emoji=old_id
                 )
+                print(f"[DEBUG] Deleted old clan emoji {old_id}")
             except hikari.NotFoundError:
-                pass
+                print(f"[DEBUG] Old emoji {old_id} not found (may have been already deleted)")
+            except Exception as e:
+                print(f"[DEBUG] Could not delete old emoji {old_id}: {e}")
 
         # Download and resize image
         def resize_and_compress_image(image_content, max_size=(128, 128), max_kb=256):
@@ -1296,12 +1327,12 @@ async def process_emoji_upload(
         img_data = resize_and_compress_image(resp.content)
 
         # Upload to Discord
-        application = await bot.rest.fetch_my_user()
         new_emoji = await bot.rest.create_application_emoji(
             application=application.id,
             name=clan_name,
             image=img_data
         )
+        print(f"[DEBUG] Created new emoji '{new_emoji.name}' (ID: {new_emoji.id})")
 
         # Update database
         await mongo.clans.update_one(
