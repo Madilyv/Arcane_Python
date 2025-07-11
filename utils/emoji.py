@@ -35,6 +35,7 @@ class Emojis:
         self.view = EmojiType("<:View:1387842874053234808>")
         self.confirm = EmojiType("<:Confirm:1387845018139754517>")
         self.cancel = EmojiType("<:Cancel:1387845041845698652>")
+        self.BulletPoint = EmojiType("<:BulletPoint:1393247569970331688>")
 
         # TH Emojis
         self.TH2 = EmojiType("<:TH_2:1387845120732172329>")
@@ -53,6 +54,23 @@ class Emojis:
         self.TH15 = EmojiType("<:TH_15:1387844534729314344>")
         self.TH16 = EmojiType("<:TH_16:1387844562059395193>")
         self.TH17 = EmojiType("<:TH_17:1387844788853801081>")
+
+        # League Emojis
+        self.Champ1 = EmojiType("<:CHL_1:1387845952512983222>")
+        self.Champ2 = EmojiType("<:CHL_2:1387845931231219763>")
+        self.Champ3 = EmojiType("<:CHL_3:1387845906015191131>")
+        self.Master1 = EmojiType("<:ML_1:1387845742080692257>")
+        self.Master2 = EmojiType("<:ML_2:1387845712875880500>")
+        self.Master3 = EmojiType("<:ML_3:1387845689978917025>")
+        self.Crystal1 = EmojiType("<:CRL_1:1387845877405716591>")
+        self.Crystal2 = EmojiType("<:CRL_2:1387845850763624488>")
+        self.Crystal3 = EmojiType("<:CRL_3:1387845831679410227>")
+        self.Gold1 = EmojiType("<:GL_1:1387845805460815921>")
+        self.Gold2 = EmojiType("<:GL_2:1387845784116138099>")
+        self.Gold3 = EmojiType("<:GL_3:1387845764524408832>")
+        self.Silver1 = EmojiType("<:SL_1:1387845667145126009>")
+        self.Silver2 = EmojiType("<:SL_2:1387845644487491594>")
+        self.Silver3 = EmojiType("<:SL_3:1387845621095989318>")
 
 emojis = Emojis()
 

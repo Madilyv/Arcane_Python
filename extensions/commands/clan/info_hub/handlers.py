@@ -6,6 +6,7 @@ import coc
 from typing import List, Optional
 from datetime import datetime
 
+from hikari import Emoji
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
     ContainerComponentBuilder as Container,
@@ -24,6 +25,7 @@ from utils.mongo import MongoClient
 from utils.classes import Clan
 from utils.constants import RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT, MAGENTA_ACCENT
 from .helpers import get_clans_by_type, format_th_requirement, get_league_emoji
+from utils.emoji import emojis
 
 # League order for sorting
 LEAGUE_ORDER = [
@@ -113,17 +115,19 @@ async def build_clan_list_components(
 
         # Build the clan entry
         clan_text = (
-            f"{clan.emoji if clan.emoji else ''} **{clan.name}** "
-            f"`{clan.tag}`\n"
-            f"{league_emoji} {league_name} | "
+            f"## {clan.emoji if clan.emoji else ''} **{clan.name}**\n"
+            f" {emojis.BulletPoint} {league_emoji} {league_name} {emojis.BulletPoint} "
             f"{format_th_requirement(clan.th_requirements, clan.th_attribute)}"
         )
 
         # Add thread link if available
         if clan.thread_id:
-            clan_text += f" | [More Info](https://discord.com/channels/{ctx.guild_id}/{clan.thread_id})"
+            clan_text += f" {emojis.BulletPoint} [More Info](https://discord.com/channels/{ctx.guild_id}/{clan.thread_id})"
 
         clan_components.append(Text(content=clan_text))
+
+        if clan != clans[-1]:
+            clan_components.append(Separator(divider=False, spacing=hikari.SpacingType.LARGE))
 
     # Add all clan entries to a container
     final_components = clan_components.copy()
@@ -131,7 +135,7 @@ async def build_clan_list_components(
     # Add "What is?" button for Zen and FWA types
     if clan_type == "Zen":
         final_components.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
-        final_components.append(ActionRow(
+        final_components.append(ActionRow( # type: ignore
             components=[
                 Button(
                     style=hikari.ButtonStyle.SUCCESS,
@@ -143,7 +147,7 @@ async def build_clan_list_components(
         ))
     elif clan_type == "FWA":
         final_components.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
-        final_components.append(ActionRow(
+        final_components.append(ActionRow( # type: ignore
             components=[
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
@@ -155,9 +159,8 @@ async def build_clan_list_components(
         ))
 
     # Add footer
-    final_components.extend([
-        Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+    final_components.extend([ # type: ignore
+        Media(items=[MediaItem(media="assets/Red_Footer.png")])
     ])
 
     components.append(

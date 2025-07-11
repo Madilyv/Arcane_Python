@@ -3,7 +3,6 @@ import os
 import hikari
 import lightbulb
 from dotenv import load_dotenv
-
 from utils.mongo import MongoClient
 import coc
 from utils.startup import load_cogs
@@ -76,13 +75,13 @@ async def on_starting(_: hikari.StartingEvent) -> None:
 
     dm_screenshot_upload.load(bot)
     start_cleanup_task()
-    print("Bot started with DM screenshot listener and cleanup task")
+    # print("Bot started with DM screenshot listener and cleanup task")
 
 @bot.listen(hikari.StoppingEvent)
 async def on_stopping(_: hikari.StoppingEvent) -> None:
     """Bot stopping event"""
     dm_screenshot_upload.unload(bot)
-    print("Bot stopped, event listeners unloaded")
+    # print("Bot stopped, event listeners unloaded")
     # Properly close the coc.py client to avoid unclosed session warnings
     await clash_client.close()
 

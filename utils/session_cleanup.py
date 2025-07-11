@@ -44,4 +44,4 @@ async def cleanup_expired_sessions():
 def start_cleanup_task():
     """Start the cleanup task"""
     asyncio.create_task(cleanup_expired_sessions())
-    print("[Session Cleanup] Started session cleanup task")
+    # print("[Session Cleanup] Started session cleanup task")
