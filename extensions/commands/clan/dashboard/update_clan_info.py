@@ -219,22 +219,27 @@ async def remove_clan_select(
 ):
     clans = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=data) for data in clans]
-    options = [
-        SelectOption(label=c.name, value=c.tag, description=c.tag)
-        for c in clans
-    ]
+    options = []
+
+    for c in clans:
+        # Create option with emoji if it exists, otherwise without
+        if c.partial_emoji:
+            # Use the partial_emoji property which properly parses the emoji format
+            option = SelectOption(label=c.name, value=c.tag, description=c.tag, emoji=c.partial_emoji)
+        else:
+            option = SelectOption(label=c.name, value=c.tag, description=c.tag)
+        options.append(option)
 
     components = [
         Container(
             accent_color=RED_ACCENT,
             components=[
-
-                Text(content="✏️ **Which clan would you like to edit?**"),
+                Text(content="📋 **Select a clan**"),
                 ActionRow(
                     components=[
                         TextSelectMenu(
                             custom_id=f"clan_remove_menu:",
-                            placeholder="Select a clan to edit…",
+                            placeholder="Select a clan…",
                             max_values=1,
                             options=options,
                         )
@@ -245,7 +250,6 @@ async def remove_clan_select(
         )
     ]
     return components
-
 
 @register_action("clan_remove_menu", ephemeral=True)
 @lightbulb.di.with_di
@@ -345,6 +349,7 @@ async def on_remove_clan_field(
     else:
         return await dashboard_page(ctx=ctx, mongo=mongo)
 
+
 # EDIT CLAN STUFF
 @register_action("choose_clan_select", ephemeral=True)
 @lightbulb.di.with_di
@@ -355,22 +360,27 @@ async def choose_clan_select(
 ):
     clans = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=data) for data in clans]
-    options = [
-        SelectOption(label=c.name, value=c.tag, description=c.tag)
-        for c in clans
-    ]
+    options = []
+
+    for c in clans:
+        # Create option with emoji if it exists, otherwise without
+        if c.partial_emoji:
+            # Use the partial_emoji property which properly parses the emoji format
+            option = SelectOption(label=c.name, value=c.tag, description=c.tag, emoji=c.partial_emoji)
+        else:
+            option = SelectOption(label=c.name, value=c.tag, description=c.tag)
+        options.append(option)
 
     components = [
         Container(
             accent_color=RED_ACCENT,
             components=[
-
-                Text(content="✏️ **Which clan would you like to edit?**"),
+                Text(content="📋 **Select a clan**"),
                 ActionRow(
                     components=[
                         TextSelectMenu(
                             custom_id=f"clan_edit_menu:",
-                            placeholder="Select a clan to edit…",
+                            placeholder="Select a clan…",
                             max_values=1,
                             options=options,
                         )
@@ -512,11 +522,24 @@ async def clan_edit_menu(
                     ),
                 ]
             ),
+            Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        custom_id="choose_clan_select:",
+                        label="Edit Another Clan",
+                        emoji="✏️"
+                    )
+                ]
+            ),
+
+            # Footer image
             Media(items=[MediaItem(media="assets/Red_Footer.png")]),
         ],
     )]
     return components
-
 
 @register_action("edit_clan", ephemeral=True)
 @lightbulb.di.with_di

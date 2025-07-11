@@ -44,6 +44,7 @@ BANNERS = {
     "Trial": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/trial_clans.png"
 }
 
+
 async def build_clan_list_components(
         ctx: lightbulb.components.MenuContext,
         clan_type: str,
@@ -102,56 +103,69 @@ async def build_clan_list_components(
     for clan in sorted_clans:
         api_clan = clan_api_data.get(clan.tag)
 
-        # Format clan info
-        clan_name = f"{clan.emoji} **{clan.name}**" if clan.emoji else f"**{clan.name}**"
-
-        # TH requirement
-        th_req = format_th_requirement(clan.th_requirements, clan.th_attribute)
-
-        # League info
+        # Get league info
         if api_clan and hasattr(api_clan, 'war_league'):
             league_name = api_clan.war_league.name
             league_emoji = get_league_emoji(league_name)
-            league_info = f"{league_emoji} {league_name}"
         else:
-            league_info = "🏆 Unranked"
+            league_name = "Unranked"
+            league_emoji = "📊"
 
-        # Build clan entry
-        clan_text = f"{clan_name}\n{th_req} • {league_info}"
+        # Build the clan entry
+        clan_text = (
+            f"{clan.emoji if clan.emoji else ''} **{clan.name}** "
+            f"`{clan.tag}`\n"
+            f"{league_emoji} {league_name} | "
+            f"{format_th_requirement(clan.th_requirements, clan.th_attribute)}"
+        )
 
-        # Add More Info link if thread_id exists
+        # Add thread link if available
         if clan.thread_id:
-            clan_text += f" • [More Info](https://discord.com/channels/{ctx.guild_id}/{clan.thread_id})"
+            clan_text += f" | [More Info](https://discord.com/channels/{ctx.guild_id}/{clan.thread_id})"
 
         clan_components.append(Text(content=clan_text))
 
-    # Add clans to container
-    if clan_components:
-        components.append(
-            Container(
-                accent_color=accent_color,
-                components=[
-                    Text(content=f"## {clan_type} Clans"),
-                    Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-                    *clan_components,
-                    Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                ]
-            )
+    # Add all clan entries to a container
+    final_components = clan_components.copy()
+
+    # Add "What is?" button for Zen and FWA types
+    if clan_type == "Zen":
+        final_components.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
+        final_components.append(ActionRow(
+            components=[
+                Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id="what_is_zen_info:",
+                    label="What is Zen?",
+                    emoji="❓"
+                )
+            ]
+        ))
+    elif clan_type == "FWA":
+        final_components.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
+        final_components.append(ActionRow(
+            components=[
+                Button(
+                    style=hikari.ButtonStyle.PRIMARY,
+                    custom_id="what_is_fwa_info:",
+                    label="What is FWA?",
+                    emoji="❓"
+                )
+            ]
+        ))
+
+    # Add footer
+    final_components.extend([
+        Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+    ])
+
+    components.append(
+        Container(
+            accent_color=accent_color,
+            components=final_components
         )
-    else:
-        components.append(
-            Container(
-                accent_color=accent_color,
-                components=[
-                    Text(content=f"## {clan_type} Clans"),
-                    Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-                    Text(content=f"No {clan_type} clans found."),
-                    Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                ]
-            )
-        )
+    )
 
     return components
 
@@ -268,182 +282,65 @@ async def show_trial_clans(
     sorted_clans = sorted(clans, key=get_league_rank)
 
     # Build components
-    # Get the banner URL for trial clans
-    banner_url = BANNERS["Trial"]
+    components = []
 
-    components = [
+    # Get the banner URL for this clan type
+    banner_url = BANNERS.get("Trial", BANNERS["Competitive"])
+
+    components.append(
         Container(
             accent_color=MAGENTA_ACCENT,
             components=[
                 Media(items=[MediaItem(media=banner_url)]),
                 Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                Text(content="## Clans on Trial"),
-                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
             ]
         )
-    ]
+    )
 
-    if sorted_clans:
-        clan_components = []
-        for clan in sorted_clans:
-            api_clan = clan_api_data.get(clan.tag)
+    # Clan list
+    clan_components = []
 
-            clan_name = f"{clan.emoji} **{clan.name}**" if clan.emoji else f"**{clan.name}**"
-            th_req = format_th_requirement(clan.th_requirements, clan.th_attribute)
+    for clan in sorted_clans:
+        api_clan = clan_api_data.get(clan.tag)
 
-            if api_clan and hasattr(api_clan, 'war_league'):
-                league_name = api_clan.war_league.name
-                league_emoji = get_league_emoji(league_name)
-                league_info = f"{league_emoji} {league_name}"
-            else:
-                league_info = "🏆 Unranked"
+        # Get league info
+        if api_clan and hasattr(api_clan, 'war_league'):
+            league_name = api_clan.war_league.name
+            league_emoji = get_league_emoji(league_name)
+        else:
+            league_name = "Unranked"
+            league_emoji = "📊"
 
-            clan_text = f"{clan_name}\n{th_req} • {league_info}"
-
-            if clan.thread_id:
-                clan_text += f" • [More Info](https://discord.com/channels/{ctx.guild_id}/{clan.thread_id})"
-
-            clan_components.append(Text(content=clan_text))
-
-        components.append(
-            Container(
-                accent_color=MAGENTA_ACCENT,
-                components=[
-                    *clan_components,
-                    Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                ]
-            )
+        # Build the clan entry
+        clan_text = (
+            f"{clan.emoji if clan.emoji else ''} **{clan.name}** "
+            f"`{clan.tag}`\n"
+            f"{league_emoji} {league_name} | "
+            f"{format_th_requirement(clan.th_requirements, clan.th_attribute)}"
         )
-    else:
-        components.append(
-            Container(
-                accent_color=MAGENTA_ACCENT,
-                components=[
-                    Text(content="No clans are currently on trial."),
-                    Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                ]
-            )
+
+        # Add thread link if available
+        if clan.thread_id:
+            clan_text += f" | [More Info](https://discord.com/channels/{ctx.guild_id}/{clan.thread_id})"
+
+        clan_components.append(Text(content=clan_text))
+
+    if not clan_components:
+        clan_components.append(Text(content=(
+            "*No clans are currently on trial.*\n\n"
+            "Check back later for new clans being evaluated!"
+        )))
+
+    # Add all clan entries to a container
+    components.append(
+        Container(
+            accent_color=MAGENTA_ACCENT,
+            components=[
+                *clan_components,
+                Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ]
         )
+    )
 
     await ctx.respond(components=components, ephemeral=True)
-
-
-# Handler for back button
-@register_action("back_to_clan_info", ephemeral=False, no_return=True)
-async def back_to_clan_info(
-        ctx: lightbulb.components.MenuContext,
-        action_id: str,
-        **kwargs
-):
-    """Return to main clan info menu"""
-    # Edit the existing message instead of creating a new one
-    # Recreate the original menu
-    banner_url = "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752230328/server_banners/Our-Clans.png"
-
-    components = [
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Media(items=[MediaItem(media=banner_url)]),
-                Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                Text(content=(
-                    "Kings Alliance aims to provide a top tier and personalized clashing "
-                    "experience. We offer a variety of clans to suit your needs, whether "
-                    "you're a top-tier eSports player looking to prove your skills and "
-                    "climb the leaderboards or just want to relax, farm and have fun. "
-                    "Look no further than Kings and join one of our clans below."
-                )),
-                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-
-                # Main Clans Button
-                Text(content=(
-                    f"💎 **Main**\n"
-                    "Our Main Clans host King's most competitive players. A "
-                    "combination of trophy pushing giveaways and h2h wars provide for "
-                    "a competitive experience."
-                )),
-
-                # Feeder Clans Button
-                Text(content=(
-                    f"🏆 **Feeder**\n"
-                    "Main Clans full? Try one of our Feeder Clans. King's feeder clans "
-                    "encapsulate the same attitude of our Main Clan system whilst you "
-                    "wait."
-                )),
-
-                # Zen Button
-                Text(content=(
-                    f"🧘 **Zen**\n"
-                    "Originally created by Arcane, Zen War Clans offer a laid-back, "
-                    "stress-free environment where players can learn competitive attack "
-                    "strategies without criticism: members participate in h2h wars "
-                    "while farming, staying active without pressure from hero upgrades. "
-                    "Active participation is required with at least one war attack; "
-                    "second attacks are encouraged but not mandatory."
-                )),
-
-                # FWA Button
-                Text(content=(
-                    f"🌾 **FWA**\n"
-                    "King's FWA Clans, part of the Farm War Alliance, offer a unique "
-                    "clashing experience. Focused on strategic farming and no-hero "
-                    "wars, these clans help you grow your base. Once you're upgraded "
-                    "here, join one of our main clans to unleash your competitive side."
-                )),
-
-                # Clans on Trial Button
-                Text(content=(
-                    f"⚖️ **Clans on Trial**\n"
-                    "As part of King's goal to provide a top tier clashing experience, new "
-                    "clans are trialed before entering our ranks permanently. If one of "
-                    "these clans catches your attention, join!"
-                )),
-
-                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-                Text(content=(
-                    "To check out the details of our clans, please press the buttons attached to "
-                    "this embed. More info on Zen and FWA is available below in the buttons."
-                )),
-
-                # Action buttons
-                ActionRow(components=[
-                    Button(
-                        style=hikari.ButtonStyle.PRIMARY,
-                        custom_id="show_competitive:",
-                        label="Main",
-                        emoji="💎"
-                    ),
-                    Button(
-                        style=hikari.ButtonStyle.PRIMARY,
-                        custom_id="show_casual:",
-                        label="Feeder",
-                        emoji="🏆"
-                    ),
-                    Button(
-                        style=hikari.ButtonStyle.PRIMARY,
-                        custom_id="show_zen:",
-                        label="Zen",
-                        emoji="🧘"
-                    ),
-                ]),
-                ActionRow(components=[
-                    Button(
-                        style=hikari.ButtonStyle.PRIMARY,
-                        custom_id="show_fwa:",
-                        label="FWA",
-                        emoji="🌾"
-                    ),
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        custom_id="show_trial:",
-                        label="Clans on Trial",
-                        emoji="⚖️"
-                    ),
-                ]),
-            ],
-        )
-    ]
-
-    await ctx.interaction.edit_initial_response(components=components)

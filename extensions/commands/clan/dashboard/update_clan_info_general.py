@@ -93,7 +93,7 @@ async def update_general_info_panel(
                         max_values=1,
                         options=[
                             SelectOption(label=f"{lvl}", value=lvl)
-                            for lvl in TH_LEVELS
+                            for lvl in reversed(TH_LEVELS)
                         ],
                     )
                 ]),
