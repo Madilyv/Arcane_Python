@@ -62,6 +62,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.commands.clan.dashboard.dashboard",
         "extensions.commands.recruit.questions",
         "extensions.tasks.band_monitor",
+         "extensions.tasks.clanpoints_autoboard",
         "extensions.commands.moderation",
         "extensions.commands.fwa.upload_images",
         "extensions.commands.fwa.war_plans",

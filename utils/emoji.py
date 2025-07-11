@@ -36,6 +36,8 @@ class Emojis:
         self.confirm = EmojiType("<:Confirm:1387845018139754517>")
         self.cancel = EmojiType("<:Cancel:1387845041845698652>")
         self.BulletPoint = EmojiType("<:BulletPoint:1393247569970331688>")
+        self.RedGem = EmojiType("<:Red_Gem:1387846215022022656>")
+        self.PurpleGem = EmojiType("<:Purple_Gem:1387846189852135495>")
 
         # TH Emojis
         self.TH2 = EmojiType("<:TH_2:1387845120732172329>")
