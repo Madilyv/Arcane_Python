@@ -344,7 +344,7 @@ async def on_member_banned(event: hikari.BanCreateEvent) -> None:
     now = datetime.now(timezone.utc)
     bot_user = await event.app.rest.fetch_my_user()
 
-    # Try to fetch ban info from audit log
+    # Try to fetch ban info_hub from audit log
     reason = "No reason provided."
     banned_by = None
     try:
@@ -389,7 +389,7 @@ async def on_member_unbanned(event: hikari.BanDeleteEvent) -> None:
     now = datetime.now(timezone.utc)
     bot_user = await event.app.rest.fetch_my_user()
 
-    # Try to fetch unban info from audit log
+    # Try to fetch unban info_hub from audit log
     unbanned_by = None
     try:
         audit_log = await event.app.rest.fetch_audit_log(

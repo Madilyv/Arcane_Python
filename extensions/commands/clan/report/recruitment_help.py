@@ -419,7 +419,7 @@ async def rh_confirm_submission(
             Text(content=profile_post + "\n"),
         ])
 
-    # Add posting info
+    # Add posting info_hub
     posted_timestamp = int(datetime.now().timestamp())
     can_post_again_timestamp = int((datetime.now() + timedelta(days=30)).timestamp())
 

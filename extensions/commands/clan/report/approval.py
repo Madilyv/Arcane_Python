@@ -204,7 +204,7 @@ async def deny_points(
         **kwargs
 ):
     """Show denial modal"""
-    # Store the message info in the database before opening modal
+    # Store the message info_hub in the database before opening modal
     message_id = ctx.interaction.message.id
     channel_id = ctx.interaction.channel_id
 
@@ -266,7 +266,7 @@ async def confirm_denial(
     """Process denial with reason"""
     denial_key = action_id
 
-    # Retrieve stored denial info
+    # Retrieve stored denial info_hub
     denial_info = await mongo.button_store.find_one({"_id": denial_key})
     if not denial_info:
         await ctx.respond("❌ Error: Session expired. Please try again.", ephemeral=True)
@@ -386,7 +386,7 @@ async def confirm_denial(
         ephemeral=True
     )
 
-    # Then delete the approval message using the stored info
+    # Then delete the approval message using the stored info_hub
     try:
         await bot.rest.delete_message(
             channel=channel_id,

@@ -470,7 +470,7 @@ async def fwa_questions(
                         f"{emojis.red_arrow_right} **Post** a Friendly Challenge in-game.\n"
                         f"{emojis.red_arrow_right} **Scout** that challenge you posted\n"
                         f"{emojis.red_arrow_right} **Tap** on your Town Hall, then hit **Info**.\n"
-                        f"{emojis.red_arrow_right} **Upload** a screenshot of the Town Hall info popup here.\n\n"
+                        f"{emojis.red_arrow_right} **Upload** a screenshot of the Town Hall info_hub popup here.\n\n"
                         "*See the example below for reference.*"
                     )),
                     Media(

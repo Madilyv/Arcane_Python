@@ -83,11 +83,11 @@ class WarPlans(
             await ctx.respond("❌ You must have the FWA Clan Rep role to use this command.", ephemeral=True)
             return
 
-        # Extract clan info from autocomplete selection
+        # Extract clan info_hub from autocomplete selection
         # The autocomplete returns format: "Clan Name|#TAG|role_id" (no spaces)
         parts = self.clan_name.split("|")
         if len(parts) < 3:
-            # Debug info to help identify the issue
+            # Debug info_hub to help identify the issue
             await ctx.respond(
                 f"❌ Invalid clan selection format.\n"
                 f"Expected format: 'Name|Tag|RoleID'\n"
@@ -167,7 +167,7 @@ class WarPlans(
                 role_mentions=[int(clan_role_id)]
             )
 
-            # Store copy text and message info in button store for later retrieval
+            # Store copy text and message info_hub in button store for later retrieval
             await mongo.button_store.insert_one({
                 "_id": f"war_message_{message.id}",
                 "copy_text": copy_text,

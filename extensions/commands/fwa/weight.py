@@ -153,10 +153,10 @@ class WeightCommand(
                 range_data = WAR_WEIGHT_RANGES[th_level]
                 status_msg += f"\nWeight Range: {range_data['min']:,} - {range_data['max']:,}"
 
-        # Build additional info
+        # Build additional info_hub
         additional_info = []
 
-        # Add upgrade info if applicable
+        # Add upgrade info_hub if applicable
         if th_level and status == "exact":
             upgrade_info = get_upgrade_info(total_weight, th_level)
             if upgrade_info:
@@ -193,7 +193,7 @@ class WeightCommand(
             )
         ]
 
-        # Add additional info container if we have any
+        # Add additional info_hub container if we have any
         if additional_info:
             components.append(
                 Container(
