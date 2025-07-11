@@ -199,8 +199,9 @@ async def add_clan_modal(
         "th_attribute": "",
         "th_requirements": 0,
         "thread_id": 0,
+        "thread_message_id": 0,
         "type": "",
-        "points": 0,
+        "points": 0.0,
         "recruit_count": 0
     })
 

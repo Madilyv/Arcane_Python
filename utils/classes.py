@@ -31,6 +31,7 @@ class Clan:
         self.th_attribute: str = data.get("th_attribute")
         self.th_requirements: int = data.get("th_requirements")
         self.thread_id = data.get("thread_id")
+        self.thread_message_id: int = data.get("thread_message_id", 0)
         self.type: str = data.get("type")
         self.points: float = data.get("points")
         self.recruit_count: int = data.get("recruit_count", 0)
