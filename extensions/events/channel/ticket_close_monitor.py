@@ -109,8 +109,8 @@ async def process_no_bids_recruitment(recruit: Dict, player_clan: Dict, db_clan:
                 Separator(divider=True, spacing=hikari.SpacingType.LARGE),
                 Text(content=(
                     f"{emojis.Alert} **No points were deducted or refunded.**\n\n"
-                    f"📅 **12-day monitoring period has been refreshed**\n"
-                    f"-# New expiration: <t:{int(new_expires.timestamp())}:R>"
+                    # f"📅 **12-day monitoring period has been refreshed**\n"
+                    # f"-# New expiration: <t:{int(new_expires.timestamp())}:R>"
                 )),
                 Separator(divider=True),
                 Text(content="### Player Details"),
