@@ -140,8 +140,7 @@ async def show_member_left_flow(
                         Button(
                             style=hikari.ButtonStyle.SECONDARY,
                             label="Cancel",
-                            emoji="❌",
-                            custom_id=f"cancel_report:{user_id}"
+                            custom_id=f"report_home:{user_id}"
                         )
                     ]
                 ),
@@ -337,6 +336,7 @@ async def process_refund(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ):
     """Process the selected refund"""
@@ -479,7 +479,7 @@ async def process_refund(
     ]
 
     try:
-        await ctx.app.rest.create_message(
+        await bot.rest.create_message(
             channel=RECRUITMENT_LOG_CHANNEL,
             components=log_components
         )

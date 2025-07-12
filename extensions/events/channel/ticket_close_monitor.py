@@ -229,9 +229,11 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
                 "is_finalized": False
             })
 
-            # For this scenario, we only handle no bids
+            # For this scenario, we only handle no bids + joined our clan
             if bid_data and bid_data.get("bids", []):
                 print(f"[DEBUG] Recruit {player_tag} has bids - skipping no-bid processing")
+                # TODO: Handle with-bids scenario
+                await process_with_bids_recruitment(recruit, bid_data, player_clan, db_clan, event.app)
                 continue
 
             # Check what clan the player joined
@@ -239,6 +241,8 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
 
             if not player_clan:
                 print(f"[DEBUG] Player {player_tag} has not joined any clan")
+                # Process the "didn't join any clan" scenario
+                await process_no_clan_joined(recruit, event.app)
                 continue
 
             print(f"[DEBUG] Player {player_tag} joined clan: {player_clan['name']} ({player_clan['tag']})")
@@ -248,6 +252,28 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
 
             if not db_clan:
                 print(f"[DEBUG] Clan {player_clan['tag']} not in our database")
+                # Process external clan join
+                await process_external_clan_join(recruit, player_clan, bid_data, event.app)
+
+                # Update recruit record
+                await mongo_client.new_recruits.update_one(
+                    {"_id": recruit["_id"]},
+                    {
+                        "$set": {
+                            "ticket_closed_at": datetime.now(timezone.utc),
+                            "recruitment_outcome": "external_clan",
+                            "external_clan_tag": player_clan["tag"],
+                            "external_clan_name": player_clan["name"]
+                        }
+                    }
+                )
+
+                # Cancel any bids if they exist
+                if bid_data:
+                    await mongo_client.clan_bidding.update_one(
+                        {"player_tag": player_tag, "is_finalized": False},
+                        {"$set": {"is_finalized": True, "winner": "EXTERNAL_CLAN", "amount": 0}}
+                    )
                 continue
 
             print(f"[INFO] Processing no-bid recruitment: {player_tag} -> {db_clan['name']}")
@@ -278,6 +304,104 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
 
 
 # Additional handler for other recruitment outcome scenarios
+async def process_no_clan_joined(recruit: Dict, bid_data: Optional[Dict], bot_app):
+    """Process when player didn't join any clan after ticket closure"""
+
+    # Determine if bids were placed
+    has_bids = bid_data and bid_data.get("bids", [])
+
+    # Create the message for no clan joined
+    components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content=(
+                    f"## 🚫 Didn't Get Bid On - Left Server / Ticket Closed - TH{recruit.get('player_th_level', '??')}"
+                    if not has_bids else
+                    f"## ❌ Had Bids But Left - Ticket Closed - TH{recruit.get('player_th_level', '??')}"
+                )),
+                Separator(divider=True),
+                Text(content="### Recruitment Details:"),
+                Text(content=(
+                    f"❌ Recruit left before any bids were placed.\n"
+                    f"No points were gained or lost."
+                    if not has_bids else
+                    f"⚠️ Recruit had {len(bid_data['bids'])} bid(s) placed but left without joining.\n"
+                    f"No points were deducted. All bids cancelled."
+                )),
+                Separator(divider=True),
+                Text(content="### Player Details"),
+                Text(content=(
+                    f"• **Discord ID:** <@{recruit.get('discord_user_id', 'Unknown')}>\n"
+                    f"• **Name:** {recruit.get('player_name', 'Unknown')}\n"
+                    f"• **Player Tag:** {recruit.get('player_tag', 'Unknown')}\n"
+                    f"• **TH Level:** {recruit.get('player_th_level', '??')}"
+                )),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")])
+            ]
+        )
+    ]
+
+    # Send to log channel
+    try:
+        await bot_app.rest.create_message(
+            channel=RECRUITMENT_LOG_CHANNEL,
+            components=components
+        )
+        print(f"[INFO] Logged no clan joined for {recruit.get('player_tag')}")
+    except Exception as e:
+        print(f"[ERROR] Failed to send no clan joined message: {e}")
+
+
+async def process_external_clan_join(recruit: Dict, player_clan: Dict, bid_data: Optional[Dict], bot_app):
+    """Process when player joined a clan not in our database"""
+
+    # Determine if bids were placed
+    has_bids = bid_data and bid_data.get("bids", [])
+
+    # Create message for external clan join
+    components = [
+        Container(
+            accent_color=GOLD_ACCENT,
+            components=[
+                Text(content=(
+                    f"## Recruit Joined External Clan - TH{recruit.get('player_th_level', '??')}"
+                )),
+                Separator(divider=True),
+                Text(content="### Recruitment Outcome:"),
+                Text(content=(
+                    f"Player joined **{player_clan['name']}** ({player_clan['tag']})\n"
+                    f"This clan is not part of our alliance.\n\n"
+                    f"No points were deducted or awarded."
+                    if not has_bids else
+                    f"Player joined **{player_clan['name']}** ({player_clan['tag']})\n"
+                    f"This clan is not part of our alliance.\n\n"
+                    f"⚠️ {len(bid_data['bids'])} bid(s) were cancelled. No points deducted."
+                )),
+                Separator(divider=True),
+                Text(content="### Player Details"),
+                Text(content=(
+                    f"• **Discord ID:** <@{recruit.get('discord_user_id', 'Unknown')}>\n"
+                    f"• **Name:** {recruit.get('player_name', 'Unknown')}\n"
+                    f"• **Player Tag:** {recruit.get('player_tag', 'Unknown')}\n"
+                    f"• **TH Level:** {recruit.get('player_th_level', '??')}"
+                )),
+                Media(items=[MediaItem(media="assets/Gold_Footer.png")])
+            ]
+        )
+    ]
+
+    # Send to log channel
+    try:
+        await bot_app.rest.create_message(
+            channel=RECRUITMENT_LOG_CHANNEL,
+            components=components
+        )
+        print(f"[INFO] Logged external clan join for {recruit.get('player_tag')}")
+    except Exception as e:
+        print(f"[ERROR] Failed to send external clan join message: {e}")
+
+
 async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_clan: Dict, db_clan: Dict, bot_app):
     """Process recruitment when bids were placed - to be implemented"""
     # TODO: Implement logic for when bids were placed
@@ -287,6 +411,9 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
     # 3. Send appropriate success/failure messages
     # 4. IMPORTANT: Refresh 12-day monitor if they joined a tracked clan
     # 5. Update recruitment history with bid details
+
+    # For now, just log it
+    print(f"[TODO] Process with-bids recruitment for {recruit['player_tag']}")
     pass
 
 
