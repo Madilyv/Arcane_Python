@@ -76,6 +76,16 @@ async def show_dm_recruitment_flow(
                         )
                     ]
                 ),
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            label="Cancel",
+                            emoji="❌",
+                            custom_id=f"cancel_report:{user_id}"
+                        )
+                    ]
+                ),
 
                 Text(content="-# Select the clan where you recruited a member via DM"),
                 Media(items=[MediaItem(media="assets/Blue_Footer.png")])
@@ -84,7 +94,6 @@ async def show_dm_recruitment_flow(
     ]
 
     await ctx.respond(components=components, edit=True)
-
 
 # ╔══════════════════════════════════════════════════════════╗
 # ║           DM Recruitment Clan Selection (Step 2)          ║

@@ -82,8 +82,9 @@ async def recruitment_help_select(
                 ActionRow(
                     components=[
                         Button(
-                            style=hikari.ButtonStyle.DANGER,
+                            style=hikari.ButtonStyle.SECONDARY,
                             label="Cancel",
+                            emoji="❌",
                             custom_id=f"cancel_report:{user_id}"
                         )
                     ]

@@ -61,8 +61,8 @@ async def create_home_dashboard(member: hikari.Member) -> list:
                             style=hikari.ButtonStyle.SECONDARY,
                             label="Member Left",
                             emoji="👋",
-                            custom_id=f"report_type:member_left_{member.id}",
-                            is_disabled=True
+                            custom_id=f"report_type:member_left_{member.id}"
+                            # REMOVED is_disabled=True - button is now active!
                         ),
                         Button(
                             style=hikari.ButtonStyle.SUCCESS,
@@ -79,7 +79,7 @@ async def create_home_dashboard(member: hikari.Member) -> list:
                     "**📌 Quick Guide:**\n"
                     "• **Discord Post** - You recruited via a public Discord message\n"
                     "• **DM Recruitment** - You recruited someone through DMs\n"
-                    "• **Member Left** - Report when a recruit leaves (coming soon)\n"
+                    "• **Member Left** - Process refunds for members who left early\n"
                     "• **Recruitment Help** - Post what members your clan is looking for"
                 )),
 
@@ -120,7 +120,8 @@ async def report_type_selected(
         await show_dm_recruitment_flow(ctx, user_id, mongo)
     elif report_type == "member_left":
         from .member_left import show_member_left_flow
-        await show_member_left_flow(ctx, user_id)
+        # Call the handler directly with proper context
+        await show_member_left_flow(ctx, action_id, mongo)
     elif report_type == "recruitment_help":
         from .recruitment_help import recruitment_help_select
         await recruitment_help_select(ctx, user_id, mongo)
