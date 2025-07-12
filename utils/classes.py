@@ -74,3 +74,51 @@ class FWA:
     def __init__(self, data):
         self._data = data
         self.fwa_base_links = BaseLinks(data.get("fwa_base_links", {}))
+
+
+class NewRecruit:
+    """Represents a new recruit being tracked for 12 days"""
+
+    def __init__(self, data: dict):
+        self._data = data
+
+        # Player info
+        self.player_tag: str = data.get("player_tag")
+        self.player_name: str = data.get("player_name")
+        self.player_th_level: int = data.get("player_th_level")
+
+        # Discord/Ticket info
+        self.discord_user_id: str = data.get("discord_user_id")
+        self.ticket_channel_id: str = data.get("ticket_channel_id")
+        self.ticket_thread_id: str = data.get("ticket_thread_id")
+
+        # Timestamps
+        self.created_at = data.get("created_at")
+        self.expires_at = data.get("expires_at")
+
+        # Recruitment
+        self.recruitment_history: list = data.get("recruitment_history", [])
+        self.current_clan: str = data.get("current_clan")
+        self.total_clans_joined: int = data.get("total_clans_joined", 0)
+        self.is_expired: bool = data.get("is_expired", False)
+
+    @property
+    def is_in_clan(self) -> bool:
+        """Check if currently in a clan"""
+        return self.current_clan is not None
+
+    @property
+    def latest_recruitment(self) -> dict:
+        """Get the most recent recruitment info"""
+        if self.recruitment_history:
+            return self.recruitment_history[-1]
+        return None
+
+    @property
+    def days_until_expiry(self) -> float:
+        """Calculate days until this recruit expires"""
+        if not self.expires_at:
+            return 0
+        from datetime import datetime, timezone
+        delta = self.expires_at - datetime.now(timezone.utc)
+        return max(0, delta.total_seconds() / 86400)

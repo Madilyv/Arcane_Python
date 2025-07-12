@@ -41,6 +41,7 @@ cloudinary_client = CloudinaryClient()
 bot_data.data["mongo"] = mongo_client
 bot_data.data["cloudinary_client"] = cloudinary_client
 bot_data.data["bot"] = bot
+bot_data.data["coc_client"] = clash_client
 
 registry = client.di.registry_for(lightbulb.di.Contexts.DEFAULT)
 registry.register_value(MongoClient, mongo_client)
@@ -59,11 +60,13 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.context_menus.get_user_id",
         "extensions.events.message.message_events",
         "extensions.events.message.task_manager",
+        "extensions.events.channel.ticket_channel_monitor",
         "extensions.commands.clan.dashboard.dashboard",
         "extensions.commands.recruit.questions",
         "extensions.tasks.band_monitor",
         "extensions.tasks.clanpoints_autoboard",
         "extensions.tasks.reddit.clan_post_monitor",
+        "extensions.tasks.expire_new_recruits",
         "extensions.commands.moderation",
         "extensions.commands.fwa.upload_images",
         "extensions.commands.fwa.war_plans",

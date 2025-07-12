@@ -1,0 +1,283 @@
+# extensions/events/channel/ticket_channel_monitor.py
+"""Event listener for monitoring new channel creation for ticket channels"""
+
+import asyncio
+import aiohttp
+import hikari
+import lightbulb
+import coc
+from datetime import datetime, timedelta, timezone
+from utils.mongo import MongoClient
+from utils.constants import RED_ACCENT
+from utils.emoji import emojis
+
+# Import Components V2
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    TextDisplayComponentBuilder as Text,
+    SeparatorComponentBuilder as Separator,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
+)
+
+loader = lightbulb.Loader()
+
+# Add debug print when module loads
+print("[INFO] Loading ticket_channel_monitor extension...")
+
+# Global variables to store instances
+mongo_client = None
+coc_client = None
+
+# Define the patterns we're looking for
+# These are the special characters/patterns to match
+PATTERNS = {
+    "TEST": "𝕋𝔼𝕊𝕋",  # Active
+    "CLAN": "ℂ𝕃𝔸ℕ",  # Disabled for now
+    "FWA": "𝔽𝕎𝔸"  # Disabled for now
+}
+
+# Define which patterns are currently active
+ACTIVE_PATTERNS = ["TEST"]  # Only TEST is active for now
+
+
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def on_bot_started(
+        event: hikari.StartedEvent,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        coc_api: coc.Client = lightbulb.di.INJECTED
+) -> None:
+    """Store instances when bot starts"""
+    global mongo_client, coc_client
+    mongo_client = mongo
+    coc_client = coc_api
+    print("[INFO] Ticket channel monitor ready with MongoDB and CoC connections")
+
+
+@loader.listener(hikari.GuildChannelCreateEvent)
+async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
+    """Handle channel creation events"""
+
+    # Get the channel name
+    channel_name = event.channel.name
+
+    # Debug logging
+    print(f"[DEBUG] New channel created: {channel_name} (ID: {event.channel.id})")
+
+    # Check if the channel name contains any of the active patterns
+    matched = False
+    for pattern_key in ACTIVE_PATTERNS:
+        if pattern_key in PATTERNS and PATTERNS[pattern_key] in channel_name:
+            matched = True
+            print(f"[DEBUG] Channel matches pattern: {pattern_key}")
+            break
+
+    # If no match, return early
+    if not matched:
+        return
+
+    # Wait 3 seconds before proceeding
+    await asyncio.sleep(3)
+
+    # Get the channel ID
+    channel_id = event.channel.id
+
+    # Try to find any threads in this channel
+    thread_id = None
+    try:
+        # Fetch active threads for the guild
+        active_threads = await event.app.rest.fetch_active_threads(event.guild_id)
+
+        # Look for a thread in our channel
+        for thread in active_threads:
+            if thread.parent_id == channel_id:
+                thread_id = thread.id
+                print(f"[DEBUG] Found thread {thread_id} in channel {channel_id}")
+                break
+
+        # If no active thread found, try to fetch the channel to see if it's a thread
+        if not thread_id:
+            # Sometimes the "channel" itself might be a thread
+            channel_info = await event.app.rest.fetch_channel(channel_id)
+            if channel_info.type in [hikari.ChannelType.GUILD_PUBLIC_THREAD,
+                                     hikari.ChannelType.GUILD_PRIVATE_THREAD,
+                                     hikari.ChannelType.GUILD_NEWS_THREAD]:
+                # The channel itself is a thread
+                thread_id = channel_id
+                channel_id = channel_info.parent_id
+                print(f"[DEBUG] The created channel is actually a thread")
+
+        # If still no thread found, wait a bit more and check again
+        # (sometimes thread creation is delayed)
+        if not thread_id:
+            await asyncio.sleep(2)  # Wait 2 more seconds
+            try:
+                active_threads = await event.app.rest.fetch_active_threads(event.guild_id)
+                for thread in active_threads:
+                    if thread.parent_id == channel_id:
+                        thread_id = thread.id
+                        print(f"[DEBUG] Found thread {thread_id} after additional wait")
+                        break
+            except Exception as e:
+                print(f"[DEBUG] Error on second thread fetch attempt: {e}")
+
+        # Also check for archived threads (in case it was instantly archived)
+        if not thread_id:
+            try:
+                # Check if the channel is a forum channel
+                if event.channel.type == hikari.ChannelType.GUILD_FORUM:
+                    # For forum channels, threads are the posts
+                    threads = await event.app.rest.fetch_public_archived_threads(channel_id)
+                    if threads:
+                        # Get the most recent thread
+                        thread_id = threads[0].id
+                        print(f"[DEBUG] Found forum post/thread: {thread_id}")
+            except Exception as e:
+                print(f"[DEBUG] Error checking for forum threads: {e}")
+
+    except Exception as e:
+        print(f"[DEBUG] Error fetching threads: {e}")
+
+    # Make API call to get ticket information
+    api_data = None
+    player_data = None
+    stored_in_db = False
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            api_url = f"https://api.clashk.ing/ticketing/open/json/{channel_id}"
+            print(f"[DEBUG] Making API call to: {api_url}")
+
+            async with session.get(api_url) as response:
+                if response.status == 200:
+                    api_data = await response.json()
+                    print(f"[DEBUG] API response: {api_data}")
+
+                    # Fetch player data using coc.py if apply_account exists
+                    if api_data.get('apply_account') and coc_client:
+                        player_tag = api_data.get('apply_account')
+                        print(f"[DEBUG] Fetching player data for tag: {player_tag}")
+                        try:
+                            player_data = await coc_client.get_player(player_tag)
+                            print(f"[DEBUG] Player found: {player_data.name} (TH{player_data.town_hall})")
+                        except coc.NotFound:
+                            print(f"[ERROR] Player not found: {player_tag}")
+                        except Exception as e:
+                            print(f"[ERROR] Failed to fetch player: {e}")
+                else:
+                    print(f"[ERROR] API returned status {response.status}")
+    except Exception as e:
+        print(f"[ERROR] Failed to call API: {e}")
+
+    # Store in MongoDB if we have API data and player info
+    if api_data and api_data.get('apply_account') and mongo_client:
+        try:
+            # Create new recruit entry
+            from datetime import datetime, timedelta, timezone
+
+            now = datetime.now(timezone.utc)
+            recruit_doc = {
+                # Player info
+                "player_tag": api_data.get('apply_account'),
+                "player_name": player_data.name if player_data else None,
+                "player_th_level": player_data.town_hall if player_data else None,
+
+                # Discord/Ticket (store as strings)
+                "discord_user_id": str(api_data.get('user')),
+                "ticket_channel_id": str(api_data.get('channel')),
+                "ticket_thread_id": str(api_data.get('thread')),
+
+                # Timestamps
+                "created_at": now,
+                "expires_at": now + timedelta(days=12),
+
+                # Initial state
+                "recruitment_history": [],
+                "current_clan": None,
+                "total_clans_joined": 0,
+                "is_expired": False
+            }
+
+            # Insert into MongoDB
+            result = await mongo_client.new_recruits.insert_one(recruit_doc)
+            print(f"[DEBUG] Stored new recruit in MongoDB: {result.inserted_id}")
+            stored_in_db = True
+
+        except Exception as e:
+            print(f"[ERROR] Failed to store in MongoDB: {e}")
+            stored_in_db = False
+    else:
+        stored_in_db = False
+
+    # Prepare the message components
+    if api_data and stored_in_db:
+        # Create Components V2 embed - focused on screenshot requirement with user ping
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content=f"## <@{api_data.get('user', '')}>\n\n"),
+                    Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+                    Text(content=(
+                        f"{emojis.Alert_Strobing} **SCREENSHOT REQUIRED** {emojis.Alert_Strobing}\n"
+                        "-# Provide a screenshot of your base."
+                    )),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                    Text(content=(
+                        f"-# **Kings Alliance Recruitment** - Your base layout says a lot about you—make it a good one!"
+                    ))
+                ]
+            )
+        ]
+    else:
+        # Fallback error message if something went wrong
+        # Try to get user ID from the channel name pattern
+        user_mention = ""
+        if api_data and api_data.get('user'):
+            user_mention = f"<@{api_data.get('user')}> "
+
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content=f"{emojis.Alert} **Error Processing Ticket** {emojis.Alert}"),
+                    Separator(divider=True),
+                    Text(content=(
+                        f"{user_mention}**Channel ID:** `{channel_id}`\n"
+                        f"**Thread ID:** `{thread_id if thread_id else 'No thread found'}`\n\n"
+                        f"**Status:** {'❌ Failed to store in database' if api_data else '❌ API unavailable'}\n\n"
+                        f"Please contact an administrator if this issue persists."
+                    )),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+
+    # Send message in the new channel
+    try:
+        await event.app.rest.create_message(
+            channel=event.channel.id,
+            components=components,
+            user_mentions=True  # Enable user mentions so the ping works
+        )
+        print(f"[DEBUG] Successfully sent message to channel {event.channel.id}")
+    except Exception as e:
+        print(f"[ERROR] Failed to send message to channel {event.channel.id}: {e}")
+
+# Alternative implementation using load/unload if you prefer this pattern
+# Comment out the @loader.listener decorator above and uncomment below:
+
+# def load(bot: hikari.GatewayBot) -> None:
+#     bot.subscribe(hikari.GuildChannelCreateEvent, on_channel_create_alt)
+#     print("[INFO] Ticket channel monitor loaded")
+#
+#
+# def unload(bot: hikari.GatewayBot) -> None:
+#     bot.unsubscribe(hikari.GuildChannelCreateEvent, on_channel_create_alt)
+#     print("[INFO] Ticket channel monitor unloaded")
+#
+#
+# async def on_channel_create_alt(event: hikari.GuildChannelCreateEvent) -> None:
+#     """Alternative handler using load/unload pattern"""
+#     # Same logic as above...
