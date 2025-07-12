@@ -242,7 +242,8 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
             if not player_clan:
                 print(f"[DEBUG] Player {player_tag} has not joined any clan")
                 # Process the "didn't join any clan" scenario
-                await process_no_clan_joined(recruit, event.app)
+                # FIX: Pass bid_data as second argument
+                await process_no_clan_joined(recruit, bid_data, event.app)
                 continue
 
             print(f"[DEBUG] Player {player_tag} joined clan: {player_clan['name']} ({player_clan['tag']})")
