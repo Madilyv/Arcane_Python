@@ -40,6 +40,7 @@ from utils.ai_prompts import ATTACK_STRATEGIES_PROMPT, CLAN_EXPECTATIONS_PROMPT
 RECRUITMENT_STAFF_ROLE = 999140213953671188  # Note: Role ID as integer, not string
 LOG_CHANNEL_ID = 1345589195695194113
 REMINDER_DELETE_TIMEOUT = 15  # Seconds before auto-deleting reminder messages
+REMINDER_TIMEOUT = 30  # Seconds before allowing another reminder to be sent
 
 # API Configuration
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -361,6 +362,60 @@ async def create_clan_expectations_components(summary: str, title: str, content:
     return components
 
 
+async def send_discord_skills_reminder(channel_id: int, user_id: int, bot_id: int, reaction_done: bool,
+                                       mention_done: bool):
+    """Send a reminder for discord skills and handle auto-deletion"""
+
+    missing = []
+    if not reaction_done:
+        missing.append("add a reaction to the message above")
+    if not mention_done:
+        missing.append(f"mention <@{bot_id}> (me) in a message")
+
+    reminder_components = [
+        Container(
+            accent_color=GOLD_ACCENT,
+            components=[
+                Text(content=f"<a:eyes_look_around:1393971191995302041> **Hey <@{user_id}>!**"),
+                Text(content=f"You still need to: {' and '.join(missing)}"),
+                Text(content=f"\n*Check the message above for instructions.*"),
+                Text(content=f"\n-# This reminder will delete in {REMINDER_DELETE_TIMEOUT} seconds")
+            ]
+        )
+    ]
+
+    try:
+        channel = await bot_instance.rest.fetch_channel(channel_id)
+        reminder_msg = await channel.send(
+            components=reminder_components,
+            user_mentions=True
+        )
+        print(f"[Questionnaire] Reminder sent with ID: {reminder_msg.id}")
+
+        # Update last reminder time in database
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {"$set": {"step_data.questionnaire.last_reminder_time": datetime.now(timezone.utc)}}
+        )
+
+        # Auto-delete reminder after configured timeout
+        async def delete_reminder(msg_id):
+            await asyncio.sleep(REMINDER_DELETE_TIMEOUT)
+            try:
+                await bot_instance.rest.delete_message(channel_id, msg_id)
+                print(f"[Questionnaire] Deleted discord skills reminder message {msg_id}")
+            except Exception as e:
+                print(f"[Questionnaire] Error deleting reminder {msg_id}: {e}")
+
+        # Create the task but don't await it - let it run independently
+        asyncio.create_task(delete_reminder(reminder_msg.id))
+
+    except Exception as e:
+        print(f"[Questionnaire] Error sending reminder: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 async def send_attack_strategies(channel_id: int, user_id: int):
     """Send the attack strategies question with AI processing"""
 
@@ -491,8 +546,7 @@ async def send_discord_skills_question(channel_id: int, user_id: int):
                     "step_data.questionnaire.discord_skills_reaction": False,
                     "step_data.questionnaire.discord_skills_mention": False,
                     "step_data.questionnaire.discord_skills_message_id": None,
-                    "step_data.questionnaire.discord_skills_reminder_sent": False,
-                    "step_data.questionnaire.discord_skills_message_count": 0  # Initialize counter
+                    "step_data.questionnaire.last_reminder_time": None  # Initialize reminder time tracking
                 }
             }
         )
@@ -548,11 +602,7 @@ async def send_discord_skills_question(channel_id: int, user_id: int):
 
 
 async def monitor_discord_skills(channel_id: int, user_id: int, message_id: int, bot_id: int):
-    """Monitor for reaction and mention completion"""
-    start_time = datetime.now(timezone.utc)
-    last_message_count = 0
-    reminder_sent_at_count = 0  # Track at what message count we sent the last reminder
-    last_reminder_time = None  # Track when we last sent a reminder
+    """Monitor for reaction and mention completion - ONLY for checking completion, not sending reminders"""
 
     print(f"[Questionnaire] Starting discord skills monitor for channel {channel_id}, user {user_id}")
 
@@ -568,10 +618,8 @@ async def monitor_discord_skills(channel_id: int, user_id: int, message_id: int,
         skills_data = ticket_state.get("step_data", {}).get("questionnaire", {})
         reaction_done = skills_data.get("discord_skills_reaction", False)
         mention_done = skills_data.get("discord_skills_mention", False)
-        message_count = skills_data.get("discord_skills_message_count", 0)
 
-        print(
-            f"[Questionnaire] Monitor check: reaction={reaction_done}, mention={mention_done}, msg_count={message_count}")
+        print(f"[Questionnaire] Monitor check: reaction={reaction_done}, mention={mention_done}")
 
         # If both completed, move to next question
         if reaction_done and mention_done:
@@ -618,93 +666,7 @@ async def monitor_discord_skills(channel_id: int, user_id: int, message_id: int,
             print(f"[Questionnaire] Breaking out of monitor loop")
             break  # EXIT THE LOOP
 
-        # Calculate time elapsed
-        time_elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
-
-        # Determine if we should send a reminder
-        should_send_reminder = False
-
-        # First reminder: after 2 messages OR 30 seconds (whichever comes first)
-        if reminder_sent_at_count == 0 and (message_count >= 2 or time_elapsed > 30):
-            should_send_reminder = True
-            print(f"[Questionnaire] First reminder triggered: msg_count={message_count}, time={time_elapsed}s")
-
-        # Subsequent reminders: when user sends a new message AND enough time has passed since last reminder
-        elif message_count > last_message_count and message_count > reminder_sent_at_count:
-            # Check if enough time has passed since last reminder (15 seconds + buffer)
-            if last_reminder_time is None or (
-                    datetime.now(timezone.utc) - last_reminder_time).total_seconds() > REMINDER_DELETE_TIMEOUT:
-                should_send_reminder = True
-                print(
-                    f"[Questionnaire] New message detected, sending reminder. Message count increased from {last_message_count} to {message_count}")
-            else:
-                time_since_reminder = (datetime.now(timezone.utc) - last_reminder_time).total_seconds()
-                print(
-                    f"[Questionnaire] New message but reminder still active ({time_since_reminder}s < {REMINDER_DELETE_TIMEOUT}s), not sending")
-
-        # Update last message count
-        last_message_count = message_count
-
-        # Only send reminder if needed AND requirements not met
-        if should_send_reminder and (not reaction_done or not mention_done):
-            print(f"[Questionnaire] Sending reminder - reaction={reaction_done}, mention={mention_done}")
-
-            missing = []
-            if not reaction_done:
-                missing.append("add a reaction to the message above")
-            if not mention_done:
-                missing.append(f"mention <@{bot_id}> (me) in a message")
-
-            reminder_components = [
-                Container(
-                    accent_color=GOLD_ACCENT,
-                    components=[
-                        Text(content=f"<a:eyes_look_around:1393971191995302041> **Hey <@{user_id}>!**"),
-                        # This will now ping
-                        Text(content=f"You still need to: {' and '.join(missing)}"),
-                        Text(content=f"\n*Check the message above for instructions.*"),
-                        Text(content=f"\n-# This reminder will delete in {REMINDER_DELETE_TIMEOUT} seconds")
-                    ]
-                )
-            ]
-
-            try:
-                channel = await bot_instance.rest.fetch_channel(channel_id)
-                reminder_msg = await channel.send(
-                    components=reminder_components,
-                    user_mentions=True
-                )
-                print(f"[Questionnaire] Reminder sent with ID: {reminder_msg.id}")
-
-                # Track when we sent this reminder
-                reminder_sent_at_count = message_count
-                last_reminder_time = datetime.now(timezone.utc)
-
-                # Update reminder sent flag in database
-                await mongo_client.ticket_automation_state.update_one(
-                    {"_id": str(channel_id)},
-                    {"$set": {"step_data.questionnaire.discord_skills_reminder_sent": True}}
-                )
-
-                # Auto-delete reminder after configured timeout - runs independently
-                async def delete_reminder(msg_id):
-                    await asyncio.sleep(REMINDER_DELETE_TIMEOUT)
-                    try:
-                        await bot_instance.rest.delete_message(channel_id, msg_id)
-                        print(f"[Questionnaire] Deleted discord skills reminder message {msg_id}")
-                    except Exception as e:
-                        print(f"[Questionnaire] Error deleting reminder {msg_id}: {e}")
-
-                # Create the task but don't await it - let it run independently
-                asyncio.create_task(delete_reminder(reminder_msg.id))
-
-            except Exception as e:
-                print(f"[Questionnaire] Error sending reminder: {e}")
-                import traceback
-                traceback.print_exc()
-
     print(f"[Questionnaire] Monitor task ending for channel {channel_id}")
-
 
 
 async def send_interview_selection_prompt(channel_id: int, user_id: int):
@@ -1313,15 +1275,6 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
         if expected_user_id and event.author_id == expected_user_id:
             print(f"[Questionnaire] Discord skills message from user {event.author_id}: {event.content}")
 
-            # Track message count for reminder
-            message_count = ticket_state.get("step_data", {}).get("questionnaire", {}).get(
-                "discord_skills_message_count", 0) + 1
-            await mongo_client.ticket_automation_state.update_one(
-                {"_id": str(event.channel_id)},
-                {"$set": {"step_data.questionnaire.discord_skills_message_count": message_count}}
-            )
-            print(f"[Questionnaire] Updated message count to {message_count}")
-
             # Get the bot's ID
             bot_id = bot_instance.get_me().id
             print(f"[Questionnaire] Bot ID is {bot_id}")
@@ -1346,10 +1299,39 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
             else:
                 print(f"[Questionnaire] No bot mention found in message")
 
+                # Check if we should send a reminder
+                last_reminder_time = ticket_state.get("step_data", {}).get("questionnaire", {}).get(
+                    "last_reminder_time")
+
+                should_send_reminder = False
+                if last_reminder_time is None:
+                    should_send_reminder = True
+                else:
+                    # Check if 30 seconds have passed since last reminder
+                    time_since_reminder = (datetime.now(timezone.utc) - last_reminder_time).total_seconds()
+                    if time_since_reminder >= REMINDER_TIMEOUT:
+                        should_send_reminder = True
+                        print(f"[Questionnaire] {time_since_reminder}s since last reminder, sending new one")
+                    else:
+                        print(f"[Questionnaire] Only {time_since_reminder}s since last reminder, waiting")
+
+                if should_send_reminder:
+                    # Get current state for reaction check
+                    reaction_done = ticket_state.get("step_data", {}).get("questionnaire", {}).get(
+                        "discord_skills_reaction", False)
+
+                    # Send reminder for missing requirements
+                    await send_discord_skills_reminder(
+                        event.channel_id,
+                        event.author_id,
+                        bot_id,
+                        reaction_done,
+                        False  # mention_done is False since we're here
+                    )
+
                 # React with a different emoji to show we saw it but it's not complete
-                # You can change this to any emoji you prefer
                 try:
-                    await event.message.add_reaction("❓")  # or "⏳" or "💭" or any other
+                    await event.message.add_reaction("❓")
                     print(f"[Questionnaire] Added incomplete reaction to non-mention message")
                 except Exception as e:
                     print(f"[Questionnaire] Error adding reaction: {e}")
@@ -1409,7 +1391,6 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
                 await send_questionnaire_question(event.channel_id, expected_user_id, next_question)
 
             print(f"[Questionnaire] Recorded response for {current_question} from user {event.author_id}")
-
 
 
 # Initialize when bot starts
