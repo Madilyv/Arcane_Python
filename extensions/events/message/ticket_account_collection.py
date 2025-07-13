@@ -24,6 +24,9 @@ from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT
 from utils.mongo import MongoClient
 from utils.emoji import emojis
 
+# Import the questionnaire trigger
+from extensions.events.message.ticket_questionnaire import trigger_questionnaire
+
 # Configuration
 ACCOUNT_PROMPT_DELETE_TIMEOUT = 60  # Seconds before account collection prompts auto-delete
 ERROR_MESSAGE_DELETE_TIMEOUT = 15  # Seconds before error messages auto-delete
@@ -40,67 +43,92 @@ async def send_account_collection_prompt(
         channel_id: int,
         user_id: int,
         ticket_info: Dict[str, Any]
-) -> hikari.Message:
+) -> Optional[hikari.Message]:
     """Send the account collection prompt message"""
 
-    user = await bot_instance.rest.fetch_user(user_id)
+    # Get bot instance from bot_data if not available globally
+    global bot_instance
+    if not bot_instance:
+        from utils import bot_data
+        bot_instance = bot_data.data.get("bot")
 
-    # Create unique action IDs for this ticket
-    action_id_base = f"{channel_id}_{user_id}"
+    if not bot_instance:
+        print(f"[Account Collection] ERROR: Bot instance not available!")
+        return None
 
-    components = [
-        Container(
-            accent_color=BLUE_ACCENT,
-            components=[
-                Text(content=f"{user.mention}"),
-                Text(content="## 🤔 **Do You Have Another Account?**"),
-                Separator(divider=True),
-                Text(content=(
-                    "If you'd like to apply with another account, let us know!\n\n"
-                    "• Click **Yes** if you want to provide the Player Tag of your other account.\n"
-                    "• Click **No** to move to the next step."
-                )),
-                Separator(divider=True),
-                Text(content="*Multiple accounts? No problem!*"),
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.SUCCESS,
-                            custom_id=f"add_account_yes:{action_id_base}",
-                            label="Yes, I have another account",
-                            emoji="✅"
-                        ),
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            custom_id=f"add_account_no:{action_id_base}",
-                            label="No, move on",
-                            emoji="➡️"
-                        )
-                    ]
-                ),
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
-            ]
+    try:
+        user = await bot_instance.rest.fetch_user(user_id)
+
+        # Create unique action IDs for this ticket
+        action_id_base = f"{channel_id}_{user_id}"
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"{user.mention}"),
+                    Text(content="## 🤔 **Do You Have Another Account?**"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "If you'd like to apply with another account, let us know!\n\n"
+                        "• Click **Yes** if you want to provide the Player Tag of your other account.\n"
+                        "• Click **No** to move to the next step."
+                    )),
+                    Separator(divider=True),
+                    Text(content="*Multiple accounts? No problem!*"),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SUCCESS,
+                                custom_id=f"add_account_yes:{action_id_base}",
+                                label="Yes, I have another account",
+                                emoji="✅"
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"add_account_no:{action_id_base}",
+                                label="No, move on",
+                                emoji="➡️"
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                ]
+            )
+        ]
+
+        message = await bot_instance.rest.create_message(
+            channel=channel_id,
+            components=components,
+            user_mentions=[user_id]
         )
-    ]
 
-    message = await bot_instance.rest.create_message(
-        channel=channel_id,
-        components=components,
-        user_mentions=[user_id]
-    )
+        # Get mongo client if needed
+        global mongo_client
+        if not mongo_client:
+            from utils import bot_data
+            mongo_client = bot_data.data.get("mongo")
 
-    # Store message ID in MongoDB for later reference
-    await mongo_client.ticket_automation_state.update_one(
-        {"_id": str(channel_id)},
-        {
-            "$set": {
-                "messages.account_collection": message.id,
-                "automation_state.current_step": "account_collection"
-            }
-        }
-    )
+        # Store message ID in MongoDB for later reference
+        if mongo_client:
+            await mongo_client.ticket_automation_state.update_one(
+                {"_id": str(channel_id)},
+                {
+                    "$set": {
+                        "messages.account_collection": str(message.id),
+                        "automation_state.current_step": "account_collection"
+                    }
+                }
+            )
 
-    return message
+        print(f"[Account Collection] Sent prompt message in channel {channel_id}")
+        return message
+
+    except Exception as e:
+        print(f"[Account Collection] ERROR sending prompt: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 # Handler for "Yes, I have another account" button
@@ -275,16 +303,6 @@ async def handle_account_modal_submit(
 
         await ctx.interaction.edit_initial_response(components=error_components)
 
-        # Auto-delete error message after timeout
-        async def delete_error():
-            await asyncio.sleep(ERROR_MESSAGE_DELETE_TIMEOUT)
-            try:
-                # Since this is an interaction response, we need to delete it differently
-                # We'll just send a new message that auto-deletes
-                pass
-            except:
-                pass
-
         # Resend the collection prompt after delay
         await asyncio.sleep(3)
         ticket_state = await mongo.ticket_automation_state.find_one({"_id": str(channel_id)})
@@ -306,7 +324,7 @@ async def handle_account_modal_submit(
         await ctx.interaction.edit_initial_response(components=error_components)
 
 
-# Handler for "No, move on" button
+# Handler for "No, move on" button - UPDATED TO TRIGGER QUESTIONNAIRE
 @register_action("add_account_no", no_return=True)
 @lightbulb.di.with_di
 async def handle_add_account_no(
@@ -327,13 +345,15 @@ async def handle_add_account_no(
         )
         return
 
+    print(f"[Account Collection] User clicked 'No, move on' - channel: {channel_id}")
+
     # Update the message to show completion
     completion_components = [
         Container(
             accent_color=GREEN_ACCENT,
             components=[
                 Text(content="## ✅ **Account Collection Complete**"),
-                Text(content="Moving to the next step..."),
+                Text(content="Moving to the interview process..."),
                 Media(items=[MediaItem(media="assets/Green_Footer.png")])
             ]
         )
@@ -346,7 +366,7 @@ async def handle_add_account_no(
         {"_id": str(channel_id)},
         {
             "$set": {
-                "automation_state.current_step": "questionnaire",  # Or whatever your next step is
+                "automation_state.current_step": "questionnaire",
                 "step_data.account_collection.completed": True
             },
             "$addToSet": {
@@ -362,30 +382,64 @@ async def handle_add_account_no(
         }
     )
 
-    # TODO: Trigger next step in the automation flow
-    # This would be where you call the next step's initialization function
+    print(f"[Account Collection] Updated MongoDB state to questionnaire")
+
+    # Wait a moment for smooth transition
+    await asyncio.sleep(2)
+
+    try:
+        # Trigger the questionnaire step
+        print(f"[Account Collection] Triggering questionnaire for channel {channel_id}")
+        await trigger_questionnaire(int(channel_id), int(user_id))
+        print(f"[Account Collection] Successfully triggered questionnaire")
+    except Exception as e:
+        print(f"[Account Collection] ERROR triggering questionnaire: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 async def trigger_account_collection(channel_id: int, user_id: int, ticket_info: Dict[str, Any]):
     """Trigger the account collection step for a ticket"""
 
-    # Update ticket state
-    await mongo_client.ticket_automation_state.update_one(
-        {"_id": str(channel_id)},
-        {
-            "$set": {
-                "automation_state.current_step": "account_collection",
-                "step_data.account_collection": {
-                    "started": True,
-                    "completed": False,
-                    "timestamp": datetime.now(timezone.utc)
+    print(f"[Account Collection] Triggering for channel {channel_id}, user {user_id}")
+
+    # Get mongo client from bot_data if needed
+    global mongo_client
+    if not mongo_client:
+        from utils import bot_data
+        mongo_client = bot_data.data.get("mongo")
+
+    if not mongo_client:
+        print(f"[Account Collection] ERROR: MongoDB client not available!")
+        return
+
+    try:
+        # Update ticket state
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {
+                "$set": {
+                    "automation_state.current_step": "account_collection",
+                    "step_data.account_collection": {
+                        "started": True,
+                        "completed": False,
+                        "timestamp": datetime.now(timezone.utc)
+                    }
                 }
             }
-        }
-    )
+        )
 
-    # Send the account collection prompt
-    await send_account_collection_prompt(channel_id, user_id, ticket_info)
+        # Send the account collection prompt
+        result = await send_account_collection_prompt(channel_id, user_id, ticket_info)
+        if result:
+            print(f"[Account Collection] Successfully triggered for channel {channel_id}")
+        else:
+            print(f"[Account Collection] Failed to send prompt for channel {channel_id}")
+
+    except Exception as e:
+        print(f"[Account Collection] ERROR in trigger: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 # Initialize global references when extension loads
@@ -397,3 +451,5 @@ async def on_started(event: hikari.StartedEvent):
     mongo_client = bot_data.data.get("mongo")
     bot_instance = bot_data.data.get("bot")
     coc_client = bot_data.data.get("coc_client")
+
+    print("[Account Collection] System initialized")

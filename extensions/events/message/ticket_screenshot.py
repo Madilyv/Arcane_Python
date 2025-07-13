@@ -203,43 +203,54 @@ async def handle_screenshot_upload(
         del deletion_tasks[reminder_msg_id]
         print(f"[Screenshot] Cancelled auto-deletion for reminder message {reminder_msg_id}")
 
-    # Wait to ensure user sees the success message
-    await asyncio.sleep(3)
+        # Wait to ensure user sees the success message
+        await asyncio.sleep(3)
 
-    # Trigger the account collection step with error handling
-    try:
-        await trigger_account_collection(
-            channel_id=channel_id,
-            user_id=user_id,
-            ticket_info=ticket_state["ticket_info"]
-        )
+        # Trigger the account collection step with error handling
+        try:
+            print(f"[Screenshot] Attempting to trigger account collection for channel {channel_id}")
 
-        # Log the progression
-        log_components = [
-            Container(
-                accent_color=BLUE_ACCENT,
-                components=[
-                    Text(content=(
-                        f"**Ticket Automation Progress**\n"
-                        f"Channel: <#{channel_id}>\n"
-                        f"User: <@{user_id}>\n"
-                        f"Step: Screenshot ✓ → Account Collection"
-                    )),
-                    Media(items=[MediaItem(media="assets/Blue_Footer.png")])
-                ]
+            # Check if trigger_account_collection is available
+            if trigger_account_collection is None:
+                print("[Screenshot] ERROR: trigger_account_collection is None!")
+                return
+
+            await trigger_account_collection(
+                channel_id=channel_id,
+                user_id=user_id,
+                ticket_info=ticket_state["ticket_info"]
             )
-        ]
 
-        log_channel = bot_instance.cache.get_guild_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            await bot_instance.rest.create_message(
-                channel=log_channel.id,
-                components=log_components
-            )
-    except Exception as e:
-        print(f"[Screenshot] Error triggering account collection: {e}")
-        # Don't let this error prevent the success message from being shown
-        # The success message was already sent above
+            print(f"[Screenshot] Successfully triggered account collection")
+
+            # Log the progression
+            log_components = [
+                Container(
+                    accent_color=BLUE_ACCENT,
+                    components=[
+                        Text(content=(
+                            f"**Ticket Automation Progress**\n"
+                            f"Channel: <#{channel_id}>\n"
+                            f"User: <@{user_id}>\n"
+                            f"Step: Screenshot ✓ → Account Collection"
+                        )),
+                        Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                    ]
+                )
+            ]
+
+            log_channel = bot_instance.cache.get_guild_channel(LOG_CHANNEL_ID)
+            if log_channel:
+                await bot_instance.rest.create_message(
+                    channel=log_channel.id,
+                    components=log_components
+                )
+        except Exception as e:
+            print(f"[Screenshot] Error triggering account collection: {e}")
+            import traceback
+            traceback.print_exc()
+            # Don't let this error prevent the success message from being shown
+            # The success message was already sent above
 
 
 @loader.listener(hikari.MessageCreateEvent)

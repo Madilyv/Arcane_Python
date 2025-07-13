@@ -17,6 +17,14 @@ class TicketStep(Enum):
     CANCELLED = "cancelled"
 
 
+class TicketStatus(Enum):
+    """Enum for ticket automation status"""
+    ACTIVE = "active"
+    HALTED = "halted"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
 class TicketState:
     """Manages ticket automation state"""
 
@@ -68,8 +76,10 @@ class TicketState:
             },
             "automation_state": {
                 "current_step": TicketStep.AWAITING_SCREENSHOT.value,
-                "status": "active",
-                "completed_steps": []
+                "status": TicketStatus.ACTIVE.value,
+                "completed_steps": [],
+                "halted_reason": None,
+                "halted_at": None
             },
             "step_data": {
                 "screenshot": {
@@ -86,18 +96,50 @@ class TicketState:
                 "questionnaire": {
                     "started": False,
                     "completed": False,
-                    "responses": {}
+                    "interview_type": None,  # "bot_driven" or "recruiter"
+                    "current_question": None,
+                    "awaiting_response": False,
+                    "responses": {
+                        # Will be populated with:
+                        # "attack_strategies": "user response",
+                        # "future_clan_expectations": "user response",
+                        # "discord_basic_skills": "completed_requirements",
+                        # "discord_basic_skills_2": "user response",
+                        # "age_bracket_timezone": "user response",
+                        # "leaders_checking_you_out": "acknowledged"
+                    },
+                    # Special tracking for discord skills
+                    "discord_skills_reaction": False,
+                    "discord_skills_mention": False
                 },
                 "clan_selection": {
                     "started": False,
                     "completed": False,
                     "selected_clan": None
+                },
+                "review": {
+                    "started": False,
+                    "completed": False,
+                    "reviewer": None,
+                    "notes": None
+                },
+                "final_placement": {
+                    "completed": False,
+                    "placed_clan": None,
+                    "placed_by": None,
+                    "placed_at": None
                 }
             },
             "messages": {
                 "screenshot_reminder": None,
                 "account_collection": None,
-                "questionnaire": None,
+                "interview_selection": None,
+                "questionnaire_attack_strategies": None,
+                "questionnaire_future_clan_expectations": None,
+                "questionnaire_discord_basic_skills": None,
+                "questionnaire_discord_basic_skills_2": None,
+                "questionnaire_age_bracket_timezone": None,
+                "questionnaire_leaders_checking_you_out": None,
                 "clan_selection": None
             },
             "interaction_history": []
@@ -133,3 +175,58 @@ class TicketState:
             update["$set"]["automation_state.current_step"] = next_step
 
         return update
+
+    @staticmethod
+    def halt_automation(
+            reason: str,
+            details: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Create update to halt automation"""
+        return {
+            "$set": {
+                "automation_state.status": TicketStatus.HALTED.value,
+                "automation_state.halted_reason": reason,
+                "automation_state.halted_at": datetime.now(timezone.utc)
+            },
+            "$push": {
+                "interaction_history": {
+                    "timestamp": datetime.now(timezone.utc),
+                    "action": "automation_halted",
+                    "reason": reason,
+                    "details": details or {}
+                }
+            }
+        }
+
+    @staticmethod
+    def resume_automation() -> Dict[str, Any]:
+        """Create update to resume automation"""
+        return {
+            "$set": {
+                "automation_state.status": TicketStatus.ACTIVE.value,
+                "automation_state.halted_reason": None,
+                "automation_state.halted_at": None
+            },
+            "$push": {
+                "interaction_history": {
+                    "timestamp": datetime.now(timezone.utc),
+                    "action": "automation_resumed",
+                    "details": {}
+                }
+            }
+        }
+
+    @staticmethod
+    def is_halted(state: Dict[str, Any]) -> bool:
+        """Check if automation is halted"""
+        return state.get("automation_state", {}).get("status") == TicketStatus.HALTED.value
+
+    @staticmethod
+    def get_current_step(state: Dict[str, Any]) -> Optional[str]:
+        """Get the current step from state"""
+        return state.get("automation_state", {}).get("current_step")
+
+    @staticmethod
+    def get_questionnaire_response(state: Dict[str, Any], question: str) -> Optional[str]:
+        """Get a specific questionnaire response"""
+        return state.get("step_data", {}).get("questionnaire", {}).get("responses", {}).get(question)
