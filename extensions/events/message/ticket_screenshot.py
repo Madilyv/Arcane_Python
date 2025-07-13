@@ -1,15 +1,22 @@
+# extensions/events/message/ticket_screenshot.py
 """
-Ticket Screenshot Verification System
-Waits for user to send a message, then reminds them to upload a screenshot if they didn't.
-Does NOT upload or store images - just verifies that an image was sent.
+Ticket screenshot automation system.
+
+Features:
+- Monitors TEST ticket channels for screenshot uploads
+- Sends reminders when users type without uploading screenshots
+- Auto-deletes reminder messages after REMINDER_DELETE_TIMEOUT seconds
+- Cooldown system to prevent spam (REMINDER_COOLDOWN_SECONDS)
+- Triggers account collection flow after successful screenshot upload
 """
 
 import asyncio
 import aiohttp
-from utils.mongo import MongoClient
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict, Set
 import hikari
 import lightbulb
-from datetime import datetime, timedelta
+
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
     ContainerComponentBuilder as Container,
@@ -19,434 +26,497 @@ from hikari.impl import (
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
 )
-from utils.constants import RED_ACCENT, GREEN_ACCENT
-from extensions.components import register_action
 
-# CONFIGURABLE TIMEOUT - Adjust this value as needed
-REMINDER_COOLDOWN_SECONDS = 10  # Don't send reminder again within this time
-SCREENSHOT_PROCESSING_DELAY = 1  # Wait this many seconds for image to fully upload
-REMINDER_DELETION_TIMEOUT = 15  # Auto-delete reminder after this many seconds
+from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT
+from utils.mongo import MongoClient
+from utils.emoji import emojis
+from extensions.events.message.ticket_account_collection import trigger_account_collection
 
-# Create loader
-loader = lightbulb.Loader()
-
-# Global variables to store instances (following your pattern)
-mongo_client = None
-bot_instance = None
-
-# Store active screenshot verification sessions
-screenshot_sessions = {}
-
-# Store last reminder times to prevent spam
-last_reminder_times = {}
-
-# Store users who have already uploaded screenshots
-completed_screenshots = {}  # Format: {ticket_id_user_id: True}
-
-# Active ticket patterns (same as ticket_close_monitor.py)
+# Configuration
 PATTERNS = {
     "TEST": "𝕋𝔼𝕊𝕋",
-    # "CLAN": "ℂ𝕃𝔸ℕ",  # Disabled for now
-    # "FWA": "𝔽𝕎𝔸",    # Disabled for now
+    "CLAN": "ℂ𝕃𝔸ℕ",
+    "FWA": "𝔽𝕎𝔸"
 }
+ACTIVE_PATTERNS = ["TEST"]  # Only TEST is active by default
+REMINDER_COOLDOWN_SECONDS = 10
+SCREENSHOT_PROCESSING_DELAY = 1
+REMINDER_DELETE_TIMEOUT = 15  # Seconds before reminder messages auto-delete
+LOG_CHANNEL_ID = 1345589195695194113
 
-# Define which patterns are currently active
-ACTIVE_PATTERNS = ["TEST"]
+# Global variables
+mongo_client: Optional[MongoClient] = None
+bot_instance: Optional[hikari.GatewayBot] = None
+loader = lightbulb.Loader()
 
-
-@loader.listener(hikari.StartedEvent)
-@lightbulb.di.with_di
-async def on_bot_started(
-        event: hikari.StartedEvent,
-        mongo: MongoClient = lightbulb.di.INJECTED
-) -> None:
-    """Store instances when bot starts"""
-    global mongo_client, bot_instance
-    mongo_client = mongo
-    bot_instance = event.app
-    print("[INFO] Ticket screenshot verification ready")
-
-    # Check for pending screenshot tickets
-    await check_pending_screenshot_tickets(bot_instance, mongo_client)
+# Session storage
+user_cooldowns: Dict[int, datetime] = {}
+completed_screenshots: Set[str] = set()  # channel_id strings that have completed screenshots
+deletion_tasks: Dict[int, asyncio.Task] = {}  # message_id -> deletion task mapping
 
 
-async def check_pending_screenshot_tickets(bot: hikari.GatewayBot, mongo_client):
-    """Check for tickets awaiting screenshots after bot restart"""
-    if not mongo_client:
-        return
-
+async def is_image_url(url: str) -> bool:
+    """Check if a URL points to an image"""
     try:
-        # Check if collection exists by trying to find one document
-        test = await mongo_client.ticket_automation_state.find_one({})
-        if test is None:
-            print("[Screenshot] ticket_automation_state collection is empty or doesn't exist")
-            return
-
-        # Find all active tickets in screenshot step
-        cursor = mongo_client.ticket_automation_state.find({
-            "automation_state.status": "active",
-            "automation_state.current_step": "awaiting_screenshot",
-            "step_data.screenshot.uploaded": False
-        })
-
-        # Convert cursor to list using async iteration
-        pending_tickets = []
-        async for ticket in cursor:
-            pending_tickets.append(ticket)
-
-        print(f"[Screenshot] Found {len(pending_tickets)} tickets awaiting screenshots after restart")
-
-        for ticket in pending_tickets:
-            channel_id = ticket["_id"]
-            user_id = ticket["ticket_info"]["user_id"]
-
-            # Restore to completed_screenshots if already uploaded
-            if ticket.get("step_data", {}).get("screenshot", {}).get("uploaded", False):
-                completed_key = f"{channel_id}_{user_id}"
-                completed_screenshots[completed_key] = True
-
-    except AttributeError as e:
-        print(f"[Screenshot] Collection 'ticket_automation_state' might not exist. Create it in MongoDB first.")
-        print(f"[Screenshot] Run: db.createCollection('ticket_automation_state') in MongoDB")
-    except Exception as e:
-        print(f"[Screenshot] Error checking pending tickets: {type(e).__name__}: {e}")
-
-
-@loader.listener(hikari.MessageCreateEvent)
-async def on_message_in_ticket(event: hikari.MessageCreateEvent) -> None:
-    """
-    Listen for messages in ticket channels.
-    If user sends a message without screenshot, remind them.
-    If user sends a screenshot, show success message.
-    """
-
-    # Ignore bot messages
-    if event.is_bot or event.is_webhook:
-        return
-
-    # Get channel info
-    try:
-        channel = await event.app.rest.fetch_channel(event.channel_id)
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url, timeout=5) as response:
+                content_type = response.headers.get('content-type', '')
+                return content_type.startswith('image/')
     except:
-        return
-
-    # Check if channel name contains any active pattern
-    is_ticket_channel = False
-    for pattern_key in ACTIVE_PATTERNS:
-        if pattern_key in PATTERNS and PATTERNS[pattern_key] in channel.name:
-            is_ticket_channel = True
-            break
-
-    if not is_ticket_channel:
-        return
-
-    # Use channel ID as ticket ID
-    ticket_id = str(event.channel_id)
-    user_id = event.author_id
-    session_key = f"{ticket_id}_{user_id}"
-
-    # Check ticket state from MongoDB
-    if mongo_client:
-        try:
-            ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": ticket_id})
-
-            if not ticket_state:
-                # No ticket state found, this might be an old ticket
-                print(f"[Screenshot] No ticket state found for channel {ticket_id}")
-                return
-
-            # Check if we're in the screenshot step
-            current_step = ticket_state.get("automation_state", {}).get("current_step")
-            if current_step != "awaiting_screenshot":
-                # Not in screenshot step, ignore messages
-                print(f"[Screenshot] Ticket {ticket_id} is in step '{current_step}', not awaiting screenshot")
-                return
-
-            # Check if screenshot already uploaded
-            screenshot_data = ticket_state.get("step_data", {}).get("screenshot", {})
-            if screenshot_data.get("uploaded"):
-                # Already uploaded, no need to process
-                return
-
-        except Exception as e:
-            print(f"[Screenshot] Error checking ticket state: {type(e).__name__}: {e}")
-            # Continue anyway in case it's a connection issue
-
-    # Check if message has image attachments
-    has_image = any(
-        attachment.media_type and attachment.media_type.startswith("image/")
-        for attachment in event.message.attachments
-    ) if event.message.attachments else False
-
-    if has_image:
-        # User sent a screenshot! Wait a moment for upload to complete
-        await asyncio.sleep(SCREENSHOT_PROCESSING_DELAY)  # Wait for image to fully upload
-        await handle_screenshot_upload(event, ticket_id, user_id, session_key)
-    else:
-        # User sent message without screenshot - check if we should remind them
-        await maybe_send_reminder(event, ticket_id, user_id, session_key)
+        return False
 
 
-async def maybe_send_reminder(event: hikari.MessageCreateEvent, ticket_id: str, user_id: int, session_key: str):
-    """Send reminder if cooldown has passed and user hasn't uploaded screenshot yet"""
-
-    # Check if user already uploaded screenshot for this ticket
-    completed_key = f"{ticket_id}_{user_id}"
-    if completed_key in completed_screenshots:
-        # User already uploaded, don't send reminder
-        return
-
-    # Check cooldown
-    last_reminder_key = f"{ticket_id}_{user_id}"
-    last_reminder = last_reminder_times.get(last_reminder_key)
-
-    if last_reminder:
-        time_since_reminder = (datetime.now() - last_reminder).total_seconds()
-        if time_since_reminder < REMINDER_COOLDOWN_SECONDS:
-            # Still in cooldown, don't send reminder
-            return
-
-    # Send reminder
-    reminder_session_key, reminder_msg_id = await send_screenshot_reminder(event.app, event.channel_id, user_id)
-
-    # Update last reminder time
-    last_reminder_times[last_reminder_key] = datetime.now()
-
-    # Update MongoDB with reminder info
-    if mongo_client and reminder_msg_id:
-        try:
-            await mongo_client.ticket_automation_state.update_one(
-                {"_id": ticket_id},
-                {
-                    "$set": {
-                        "step_data.screenshot.reminder_sent": True,
-                        "step_data.screenshot.last_reminder_at": datetime.now(),
-                        "messages.screenshot_reminder": str(reminder_msg_id),
-                        "last_updated": datetime.now()
-                    },
-                    "$inc": {
-                        "step_data.screenshot.reminder_count": 1
-                    },
-                    "$push": {
-                        "interaction_history": {
-                            "timestamp": datetime.now(),
-                            "action": "screenshot_reminder_sent",
-                            "details": f"Reminder sent to user {user_id}"
-                        }
-                    }
-                }
+async def send_screenshot_reminder(channel_id: int, user_id: int) -> Optional[hikari.Message]:
+    """Send a reminder to upload screenshot"""
+    try:
+        reminder_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content=(
+                        f"{emojis.Alert_Strobing} **Screenshot Required** {emojis.Alert_Strobing}\n\n"
+                        "Please upload a screenshot of your base to continue with your application.\n\n"
+                        "*This message will update once you upload an image.*"
+                    )),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
             )
-        except Exception as e:
-            print(f"[Screenshot] Error updating reminder info: {type(e).__name__}: {e}")
+        ]
 
-
-async def send_screenshot_reminder(bot: hikari.GatewayBot, channel_id: int, user_id: int):
-    """Send the 'waiting for screenshot' message"""
-
-    # Create session key
-    ticket_id = str(channel_id)
-    session_key = f"{ticket_id}_{user_id}_{int(datetime.now().timestamp())}"
-
-    # Create the RED "waiting" components with user ping
-    components = [
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Text(content=f"## <@{user_id}>"),
-                Text(content="📸 **Screenshot Required**"),
-                Text(content=(
-                    "Please upload a screenshot of your base to continue with your application.\n\n"
-                    "**Instructions:**\n"
-                    "• Take a clear screenshot of your Home Village\n"
-                    "• Upload it directly in this channel\n"
-                    "• The bot will automatically detect and process it"
-                )),
-                Separator(divider=True),
-                Text(content="Your base helps us match you to the best clan!"),
-                Text(content=f"-# This reminder will auto-delete in {REMINDER_DELETION_TIMEOUT} seconds"),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-            ]
+        message = await bot_instance.rest.create_message(
+            channel=channel_id,
+            components=reminder_components,
+            user_mentions=[user_id]
         )
-    ]
 
-    # Send the reminder message
-    reminder_msg = await bot.rest.create_message(
-        channel=channel_id,
-        components=components,
-        user_mentions=True  # Enable user ping
-    )
+        # Schedule auto-deletion
+        async def delete_reminder():
+            await asyncio.sleep(REMINDER_DELETE_TIMEOUT)
+            try:
+                await bot_instance.rest.delete_message(channel_id, message.id)
+                print(f"[Screenshot] Auto-deleted reminder message {message.id} after {REMINDER_DELETE_TIMEOUT}s")
+                # Clean up from tracking dict
+                if message.id in deletion_tasks:
+                    del deletion_tasks[message.id]
+            except hikari.NotFoundError:
+                # Message already deleted
+                pass
+            except Exception as e:
+                print(f"[Screenshot] Error deleting reminder: {e}")
+            finally:
+                # Clean up from tracking dict
+                if message.id in deletion_tasks:
+                    del deletion_tasks[message.id]
 
-    # Schedule auto-deletion
-    async def delete_reminder():
-        await asyncio.sleep(REMINDER_DELETION_TIMEOUT)
-        try:
-            await bot.rest.delete_message(channel_id, reminder_msg)
-            print(f"[Screenshot] Auto-deleted reminder message {reminder_msg.id}")
-        except Exception as e:
-            print(f"[Screenshot] Failed to auto-delete reminder: {e}")
+        # Create and store deletion task
+        deletion_task = asyncio.create_task(delete_reminder())
+        deletion_tasks[message.id] = deletion_task
 
-    # Start deletion task
-    asyncio.create_task(delete_reminder())
+        # Update MongoDB with reminder message ID
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {
+                "$set": {
+                    "messages.screenshot_reminder": message.id,
+                    "step_data.screenshot.reminder_sent": True,
+                    "step_data.screenshot.last_reminder": datetime.now(timezone.utc)
+                },
+                "$inc": {
+                    "step_data.screenshot.reminder_count": 1
+                }
+            }
+        )
 
-    # Store session info
-    screenshot_sessions[session_key] = {
-        "ticket_id": ticket_id,
-        "channel_id": channel_id,
-        "user_id": user_id,
-        "reminder_message_id": reminder_msg.id,
-        "timestamp": datetime.now(),
-        "screenshot_received": False
-    }
-
-    # Also store in MongoDB for persistence
-    if mongo_client:
-        await mongo_client.button_store.insert_one({
-            "_id": f"screenshot_session_{session_key}",
-            "message_id": reminder_msg.id,
-            "channel_id": channel_id,
-            "user_id": user_id,
-            "ticket_id": ticket_id,
-            "session_key": session_key
-        })
-
-    return session_key, reminder_msg.id
+        return message
+    except Exception as e:
+        print(f"Error sending screenshot reminder: {e}")
+        return None
 
 
-async def handle_screenshot_upload(event: hikari.MessageCreateEvent, ticket_id: str, user_id: int, session_key: str):
-    """Handle when user uploads a screenshot"""
+async def handle_screenshot_upload(
+        channel_id: int,
+        user_id: int,
+        message: hikari.Message,
+        ticket_state: Dict
+):
+    """Handle when a screenshot is uploaded"""
 
-    # Mark user as having uploaded screenshot
-    completed_key = f"{ticket_id}_{user_id}"
-    completed_screenshots[completed_key] = True
-
-    # Clear cooldown for this user
-    last_reminder_key = f"{ticket_id}_{user_id}"
-    if last_reminder_key in last_reminder_times:
-        del last_reminder_times[last_reminder_key]
+    # Mark as completed in memory
+    completed_screenshots.add(str(channel_id))
 
     # Update MongoDB state
-    if mongo_client:
-        try:
-            # Update that screenshot was uploaded
-            await mongo_client.ticket_automation_state.update_one(
-                {"_id": ticket_id},
-                {
-                    "$set": {
-                        "step_data.screenshot.uploaded": True,
-                        "step_data.screenshot.uploaded_at": datetime.now(),
-                        "automation_state.current_step": "clan_selection",  # Move to next step
-                        "last_updated": datetime.now()
-                    },
-                    "$push": {
-                        "automation_state.completed_steps": {
-                            "step_name": "screenshot_uploaded",
-                            "completed_at": datetime.now(),
-                            "data": {"user_id": str(user_id)}
-                        },
-                        "interaction_history": {
-                            "timestamp": datetime.now(),
-                            "action": "screenshot_uploaded",
-                            "details": f"User {user_id} uploaded screenshot"
-                        }
-                    },
-                    "$inc": {
-                        "automation_state.current_step_index": 1
+    await mongo_client.ticket_automation_state.update_one(
+        {"_id": str(channel_id)},
+        {
+            "$set": {
+                "step_data.screenshot.uploaded": True,
+                "step_data.screenshot.uploaded_at": datetime.now(timezone.utc),
+                "step_data.screenshot.message_id": message.id
+            },
+            "$addToSet": {
+                "automation_state.completed_steps": "screenshot"
+            },
+            "$push": {
+                "interaction_history": {
+                    "timestamp": datetime.now(timezone.utc),
+                    "action": "screenshot_uploaded",
+                    "details": {
+                        "message_id": message.id,
+                        "has_attachments": len(message.attachments) > 0,
+                        "has_embeds": len(message.embeds) > 0
                     }
                 }
-            )
-            print(f"[Screenshot] Updated ticket state to clan_selection")
-        except Exception as e:
-            print(f"[Screenshot] Error updating ticket state: {type(e).__name__}: {e}")
+            }
+        }
+    )
 
-    # Create the GREEN "success" components
+    # Get reminder message ID
+    reminder_msg_id = ticket_state.get("messages", {}).get("screenshot_reminder")
+
+    # Wait a moment to prevent race conditions
+    await asyncio.sleep(SCREENSHOT_PROCESSING_DELAY)
+
+    # Show success message as a NEW message
     success_components = [
         Container(
             accent_color=GREEN_ACCENT,
             components=[
-                Text(content="✅ **Thanks for the Screenshot!**"),
                 Text(content=(
-                    "Thank you for sharing your base screenshot! 🎉\n\n"
-                    "We're now ready to move forward with the next step of the process."
+                    "✅ **Screenshot Uploaded Successfully!**\n\n"
+                    "Thank you for providing your base screenshot."
                 )),
-                Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                Text(content="**Kings Alliance Recruitment - Let's keep things moving!**"),
-                ActionRow(components=[
-                    Button(
-                        style=hikari.ButtonStyle.PRIMARY,
-                        custom_id=f"continue_after_screenshot:{ticket_id}:{user_id}",
-                        label="Continue to Next Step"
-                    )
-                ]),
-                Media(items=[MediaItem(media="assets/Green_Footer.png")]),
+                Media(items=[MediaItem(media="assets/Green_Footer.png")])
             ]
         )
     ]
 
-    # Always send a new success message
+    # Send NEW success message
+    await bot_instance.rest.create_message(
+        channel=channel_id,
+        components=success_components
+    )
+    print(f"[Screenshot] Sent success message for screenshot upload")
+
+    # Cancel auto-deletion of reminder if it exists
+    if reminder_msg_id and reminder_msg_id in deletion_tasks:
+        deletion_tasks[reminder_msg_id].cancel()
+        del deletion_tasks[reminder_msg_id]
+        print(f"[Screenshot] Cancelled auto-deletion for reminder message {reminder_msg_id}")
+
+    # Wait to ensure user sees the success message
+    await asyncio.sleep(3)
+
+    # Trigger the account collection step with error handling
     try:
-        await event.app.rest.create_message(
-            channel=event.channel_id,
-            components=success_components
+        await trigger_account_collection(
+            channel_id=channel_id,
+            user_id=user_id,
+            ticket_info=ticket_state["ticket_info"]
         )
-        print(f"[Screenshot] User {user_id} sent screenshot in ticket {ticket_id} - sent success message")
 
-        # Clean up any sessions from memory
-        for key in list(screenshot_sessions.keys()):
-            if screenshot_sessions[key]["user_id"] == user_id and screenshot_sessions[key]["ticket_id"] == ticket_id:
-                del screenshot_sessions[key]
+        # Log the progression
+        log_components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=(
+                        f"**Ticket Automation Progress**\n"
+                        f"Channel: <#{channel_id}>\n"
+                        f"User: <@{user_id}>\n"
+                        f"Step: Screenshot ✓ → Account Collection"
+                    )),
+                    Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                ]
+            )
+        ]
 
-        # Clean up MongoDB button store entries
-        if mongo_client:
+        log_channel = bot_instance.cache.get_guild_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            await bot_instance.rest.create_message(
+                channel=log_channel.id,
+                components=log_components
+            )
+    except Exception as e:
+        print(f"[Screenshot] Error triggering account collection: {e}")
+        # Don't let this error prevent the success message from being shown
+        # The success message was already sent above
+
+
+@loader.listener(hikari.MessageCreateEvent)
+async def on_message_create(event: hikari.MessageCreateEvent):
+    """Listen for messages in ticket channels"""
+
+    if not mongo_client or not bot_instance:
+        return
+
+    # Ignore bot messages
+    if event.is_bot:
+        return
+
+    # Check if this is a ticket channel
+    if not event.channel_id:
+        return
+
+    channel_id = event.channel_id
+
+    # Skip if screenshot already completed for this channel
+    if str(channel_id) in completed_screenshots:
+        return
+
+    # Get ticket state from MongoDB
+    ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+    if not ticket_state:
+        # Not a ticket channel
+        return
+
+    # Check if we're in the screenshot awaiting state
+    if ticket_state["automation_state"]["current_step"] != "awaiting_screenshot":
+        return
+
+    # Check if screenshot already uploaded
+    if ticket_state["step_data"]["screenshot"]["uploaded"]:
+        completed_screenshots.add(str(channel_id))
+        return
+
+    # Verify the message is from the ticket creator
+    if event.author_id != int(ticket_state["ticket_info"]["user_id"]):
+        return
+
+    # Get ticket type - FIRST check stored type, THEN check channel name
+    ticket_pattern = None
+
+    # Method 1: Use stored ticket type from MongoDB (most reliable)
+    stored_type = ticket_state["ticket_info"].get("ticket_type")
+    if stored_type in ACTIVE_PATTERNS:
+        ticket_pattern = stored_type
+    else:
+        # Method 2: Check channel name for patterns
+        channel = bot_instance.cache.get_guild_channel(channel_id)
+        if channel and hasattr(channel, 'name'):
+            channel_name = channel.name
+
+            # Check for Unicode patterns
+            for pattern in ACTIVE_PATTERNS:
+                if pattern in PATTERNS and PATTERNS[pattern] in channel_name:
+                    ticket_pattern = pattern
+                    break
+
+            # Check for regular text patterns if no Unicode found
+            if not ticket_pattern:
+                for pattern in ACTIVE_PATTERNS:
+                    if pattern.lower() in channel_name.lower():
+                        ticket_pattern = pattern
+                        break
+
+    if not ticket_pattern:
+        print(f"[Screenshot] Warning: No valid pattern for ticket {channel_id}, type: {stored_type}")
+        # Since we have a valid ticket state, continue anyway
+        ticket_pattern = "TEST"  # Default fallback
+
+    # Check for image upload
+    has_image = False
+
+    # Check attachments
+    if event.message.attachments:
+        for attachment in event.message.attachments:
+            if attachment.media_type and attachment.media_type.startswith('image/'):
+                has_image = True
+                break
+
+    # Check embeds (for linked images)
+    if not has_image and event.message.embeds:
+        for embed in event.message.embeds:
+            if embed.image or (embed.url and await is_image_url(embed.url)):
+                has_image = True
+                break
+
+    if has_image:
+        # Handle screenshot upload
+        await handle_screenshot_upload(channel_id, event.author_id, event.message, ticket_state)
+    else:
+        # Check cooldown
+        user_id = event.author_id
+        now = datetime.now(timezone.utc)
+
+        if user_id in user_cooldowns:
+            time_since_last = (now - user_cooldowns[user_id]).total_seconds()
+            if time_since_last < REMINDER_COOLDOWN_SECONDS:
+                return
+
+        # Update cooldown
+        user_cooldowns[user_id] = now
+
+        # Send reminder if not already sent recently
+        last_reminder = ticket_state["step_data"]["screenshot"].get("last_reminder")
+        if last_reminder:
+            if isinstance(last_reminder, str):
+                # Handle string format from MongoDB
+                last_reminder_time = datetime.fromisoformat(last_reminder.replace('Z', '+00:00'))
+                # Ensure it's timezone-aware
+                if last_reminder_time.tzinfo is None:
+                    last_reminder_time = last_reminder_time.replace(tzinfo=timezone.utc)
+            else:
+                last_reminder_time = last_reminder
+                # Ensure it's timezone-aware
+                if last_reminder_time.tzinfo is None:
+                    last_reminder_time = last_reminder_time.replace(tzinfo=timezone.utc)
+
+            if (now - last_reminder_time).total_seconds() < REMINDER_COOLDOWN_SECONDS:
+                return
+
+        await send_screenshot_reminder(channel_id, user_id)
+
+
+async def check_pending_screenshot_tickets():
+    """Check for tickets still awaiting screenshots on startup"""
+    if not mongo_client:
+        return
+
+    try:
+        # Find all active tickets awaiting screenshots
+        pending_tickets = await mongo_client.ticket_automation_state.find({
+            "automation_state.current_step": "awaiting_screenshot",
+            "automation_state.status": "active",
+            "step_data.screenshot.uploaded": False
+        }).to_list(length=None)
+
+        for ticket in pending_tickets:
+            channel_id = ticket["ticket_info"]["channel_id"]
+
+            # Check if channel still exists
             try:
-                # Delete any screenshot session entries for this user/ticket
-                await mongo_client.button_store.delete_many({
-                    "_id": {"$regex": f"^screenshot_session_"},
-                    "user_id": user_id,
-                    "ticket_id": ticket_id
-                })
-            except Exception as e:
-                print(f"[Screenshot] Error cleaning up button store: {e}")
+                channel = bot_instance.cache.get_guild_channel(int(channel_id)) or \
+                          await bot_instance.rest.fetch_channel(int(channel_id))
+                if not channel:
+                    continue
+            except:
+                continue
+
+            # Add to completed if already uploaded
+            if ticket["step_data"]["screenshot"]["uploaded"]:
+                completed_screenshots.add(str(channel_id))
+
+        print(f"Loaded {len(pending_tickets)} pending screenshot tickets")
 
     except Exception as e:
-        print(f"[Screenshot] Failed to send success message: {e}")
+        print(f"Error checking pending tickets: {e}")
 
 
-# ╔══════════════════════════════════════════════════════════╗
-# ║                Continue Button Handler                    ║
-# ╚══════════════════════════════════════════════════════════╝
-
-@register_action("continue_after_screenshot", no_return=True)
-async def continue_after_screenshot(
-        ctx: lightbulb.components.MenuContext,
-        action_id: str,
-        **kwargs
+# Debug commands
+@loader.command
+class TicketDiagnostics(
+    lightbulb.SlashCommand,
+    name="ticket-debug",
+    description="Debug ticket screenshot automation"
 ):
-    """Handle the continue button after screenshot verification"""
-    # Parse action_id: "ticket_id:user_id"
-    parts = action_id.split(":")
-    ticket_id = parts[0]
-    user_id = parts[1]
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+            self,
+            ctx: lightbulb.Context,
+            mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        channel_id = ctx.channel_id
 
-    # Use DEFERRED_MESSAGE_UPDATE to update the current message
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
+        # Check if ticket state exists
+        ticket_state = await mongo.ticket_automation_state.find_one({"_id": str(channel_id)})
 
-    # Update message to show next step
-    # TODO: Replace this with your actual next step
-    next_components = [
-        Container(
-            accent_color=GREEN_ACCENT,
-            components=[
-                Text(content="🚀 **Moving Forward!**"),
-                Text(content=(
-                    "Great! We've verified your screenshot.\n\n"
-                    "The next step in your recruitment process will appear here."
-                )),
-                # Add your next step components here
-                Media(items=[MediaItem(media="assets/Green_Footer.png")]),
-            ]
-        )
-    ]
+        if not ticket_state:
+            await ctx.respond(
+                "❌ **No ticket state found for this channel!**\n"
+                "This channel is not registered as a ticket channel.",
+                ephemeral=True
+            )
+            return
 
-    await ctx.interaction.edit_initial_response(components=next_components)
+        # Get channel info
+        channel = ctx.app.cache.get_guild_channel(channel_id)
+        channel_name = channel.name if channel else "Unknown"
+
+        # Check patterns
+        found_patterns = []
+        for pattern, unicode_pattern in PATTERNS.items():
+            if unicode_pattern in channel_name:
+                found_patterns.append(f"{pattern} ({unicode_pattern})")
+
+        # Build diagnostic info
+        diagnostic_info = f"""**Ticket Screenshot Diagnostics**
+
+**Channel Info:**
+- Name: `{channel_name}`
+- ID: `{channel_id}`
+- Found Patterns: {', '.join(found_patterns) if found_patterns else 'None'}
+- Active Patterns: {', '.join(ACTIVE_PATTERNS)}
+- Stored Type: `{ticket_state['ticket_info'].get('ticket_type', 'None')}`
+
+**Ticket State:**
+- Current Step: `{ticket_state['automation_state']['current_step']}`
+- Status: `{ticket_state['automation_state']['status']}`
+- Ticket Creator: <@{ticket_state['ticket_info']['user_id']}> (ID: `{ticket_state['ticket_info']['user_id']}`)
+
+**Screenshot Status:**
+- Uploaded: `{ticket_state['step_data']['screenshot']['uploaded']}`
+- Reminder Sent: `{ticket_state['step_data']['screenshot']['reminder_sent']}`
+- Reminder Count: `{ticket_state['step_data']['screenshot']['reminder_count']}`
+- In Completed Set: `{str(channel_id) in completed_screenshots}`
+
+**Expected Pattern:** One of {[PATTERNS[p] for p in ACTIVE_PATTERNS]}
+"""
+
+        await ctx.respond(diagnostic_info, ephemeral=True)
+
+
+@loader.command
+class TriggerReminder(
+    lightbulb.SlashCommand,
+    name="trigger-reminder",
+    description="Manually trigger screenshot reminder (admin only)"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+            self,
+            ctx: lightbulb.Context,
+            mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        channel_id = ctx.channel_id
+
+        # Check ticket state
+        ticket_state = await mongo.ticket_automation_state.find_one({"_id": str(channel_id)})
+        if not ticket_state:
+            await ctx.respond("❌ This is not a ticket channel!", ephemeral=True)
+            return
+
+        user_id = int(ticket_state['ticket_info']['user_id'])
+
+        # Force send reminder
+        await send_screenshot_reminder(channel_id, user_id)
+        await ctx.respond("✅ Screenshot reminder sent!", ephemeral=True)
+
+
+# Initialize when bot starts
+@loader.listener(hikari.StartedEvent)
+async def on_started(event: hikari.StartedEvent):
+    global mongo_client, bot_instance
+
+    # Get instances from bot_data
+    from utils import bot_data
+    mongo_client = bot_data.data.get("mongo")
+    bot_instance = bot_data.data.get("bot")
+
+    if mongo_client and bot_instance:
+        await check_pending_screenshot_tickets()
+        print("Screenshot automation system initialized")
+
+
+# Cleanup on stop
+@loader.listener(hikari.StoppingEvent)
+async def on_stopping(event: hikari.StoppingEvent):
+    # Cancel all pending deletion tasks
+    for task in deletion_tasks.values():
+        task.cancel()
+
+    user_cooldowns.clear()
+    completed_screenshots.clear()
+    deletion_tasks.clear()
+    print("Screenshot automation system stopped")
