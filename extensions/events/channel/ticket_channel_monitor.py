@@ -294,7 +294,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
             Container(
                 accent_color=RED_ACCENT,
                 components=[
-                    Text(content=f"## <@{api_data.get('user', '')}>\n\n"),
+                    Text(content=f"<@{api_data.get('user', '')}>\n\n"),
                     Separator(divider=True, spacing=hikari.SpacingType.LARGE),
                     Text(content=(
                         f"{emojis.Alert_Strobing} **SCREENSHOT REQUIRED** {emojis.Alert_Strobing}\n"

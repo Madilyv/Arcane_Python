@@ -76,8 +76,8 @@ async def send_screenshot_reminder(channel_id: int, user_id: int) -> Optional[hi
                     Text(content=(
                         f"{emojis.Alert_Strobing} **Screenshot Required** {emojis.Alert_Strobing}\n\n"
                         "Please upload a screenshot of your base to continue with your application.\n\n"
-                        "*This message will update once you upload an image.*"
                     )),
+                    Text(content=f"\n-# This reminder will delete in {REMINDER_DELETE_TIMEOUT} seconds"),
                     Media(items=[MediaItem(media="assets/Red_Footer.png")])
                 ]
             )

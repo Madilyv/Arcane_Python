@@ -252,8 +252,9 @@ async def process_clan_expectations_with_ai(existing_summary: str, new_input: st
         return existing_summary if existing_summary else ""
 
 
-async def create_attack_strategy_components(summary: str, title: str, show_done_button: bool = True) -> list:
-    """Create components for displaying attack strategies with optional Done button"""
+async def create_attack_strategy_components(summary: str, title: str, show_done_button: bool = True,
+                                            include_user_ping: bool = False, user_id: Optional[int] = None) -> list:
+    """Create components for displaying attack strategies with optional Done button and user ping"""
 
     # Replace placeholders in the summary
     formatted_summary = summary.replace("{red_arrow}", str(emojis.red_arrow_right))
@@ -274,12 +275,19 @@ async def create_attack_strategy_components(summary: str, title: str, show_done_
         # Once user starts typing, ONLY show their responses
         display_content = f"**Your strategies:**\n\n{formatted_summary}"
 
-    components_list = [
+    components_list = []
+
+    # Add user ping if requested
+    if include_user_ping and user_id:
+        components_list.append(Text(content=f"<@{user_id}>"))
+        components_list.append(Separator(divider=True))
+
+    components_list.extend([
         Text(content=title),
         Separator(divider=True),
         Text(content=display_content),
         Text(content="\n💡 _Type your strategies in chat and I'll add them automatically!_")
-    ]
+    ])
 
     if show_done_button:
         components_list.append(
@@ -311,8 +319,9 @@ async def create_attack_strategy_components(summary: str, title: str, show_done_
 
 
 async def create_clan_expectations_components(summary: str, title: str, content: str,
-                                              show_done_button: bool = True) -> list:
-    """Create components for displaying clan expectations with optional Done button"""
+                                              show_done_button: bool = True,
+                                              include_user_ping: bool = False, user_id: Optional[int] = None) -> list:
+    """Create components for displaying clan expectations with optional Done button and user ping"""
 
     # Replace placeholders in the summary
     formatted_summary = summary.replace("{red_arrow}", str(emojis.red_arrow_right))
@@ -326,12 +335,19 @@ async def create_clan_expectations_components(summary: str, title: str, content:
         # Once user starts typing, ONLY show their responses, not the examples
         display_content = f"**Your responses:**\n\n{formatted_summary}"
 
-    components_list = [
+    components_list = []
+
+    # Add user ping if requested
+    if include_user_ping and user_id:
+        components_list.append(Text(content=f"<@{user_id}>"))
+        components_list.append(Separator(divider=True))
+
+    components_list.extend([
         Text(content=title),
         Separator(divider=True),
         Text(content=display_content),
         Text(content="\n💡 _Type your preferences in chat and I'll categorize them automatically!_")
-    ]
+    ])
 
     if show_done_button:
         components_list.append(
@@ -451,8 +467,13 @@ async def send_attack_strategies(channel_id: int, user_id: int):
                                                                                           False)
         print(f"[Questionnaire] Verified collecting_strategies={collecting_flag} for channel {channel_id}")
 
-        # Create initial components with empty summary
-        components = await create_attack_strategy_components("", question_data["title"])
+        # Create initial components with empty summary AND user ping
+        components = await create_attack_strategy_components(
+            "",
+            question_data["title"],
+            include_user_ping=True,
+            user_id=user_id
+        )
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
         msg = await channel.send(
@@ -506,11 +527,13 @@ async def send_clan_expectations(channel_id: int, user_id: int):
             }
         )
 
-        # Create initial components with empty summary but showing examples
+        # Create initial components with empty summary but showing examples AND user ping
         components = await create_clan_expectations_components(
             "",
             question_data["title"],
-            content
+            content,
+            include_user_ping=True,
+            user_id=user_id
         )
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
@@ -837,11 +860,12 @@ async def handle_attack_strategies_done(
     # Get the current attack summary to display
     current_summary = ticket_state.get("step_data", {}).get("questionnaire", {}).get("attack_summary", "")
 
-    # Create the same components but without the Done button
+    # Create the same components but without the Done button AND without ping
     final_components = await create_attack_strategy_components(
         current_summary,
         QUESTIONNAIRE_QUESTIONS["attack_strategies"]["title"],
-        show_done_button=False  # Add parameter to hide button
+        show_done_button=False,
+        include_user_ping=False  # No ping on final version
     )
 
     # Update the message to remove the Done button (interaction already deferred by component_handler)
@@ -914,12 +938,13 @@ async def handle_clan_expectations_done(
         blank=str(emojis.blank)
     )
 
-    # Create the same components but without the Done button
+    # Create the same components but without the Done button AND without ping
     final_components = await create_clan_expectations_components(
         current_summary,
         question_data["title"],
         content,
-        show_done_button=False
+        show_done_button=False,
+        include_user_ping=False  # No ping on final version
     )
 
     # Update the message to remove the Done button
@@ -1161,13 +1186,14 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
             }
         )
 
-        # Update the message with new components
+        # Update the message with new components - NO PING on updates
         msg_id = ticket_state.get("messages", {}).get("questionnaire_attack_strategies")
         if msg_id:
             try:
                 components = await create_attack_strategy_components(
                     new_summary,
-                    QUESTIONNAIRE_QUESTIONS["attack_strategies"]["title"]
+                    QUESTIONNAIRE_QUESTIONS["attack_strategies"]["title"],
+                    include_user_ping=False  # No ping on updates
                 )
                 await bot_instance.rest.edit_message(event.channel_id, int(msg_id), components=components)
                 print(f"[Questionnaire] Updated attack strategy display")
@@ -1223,7 +1249,7 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
             }
         )
 
-        # Update the message with new components
+        # Update the message with new components - NO PING on updates
         msg_id = ticket_state.get("messages", {}).get("questionnaire_future_clan_expectations")
         if msg_id:
             try:
@@ -1237,7 +1263,8 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
                 components = await create_clan_expectations_components(
                     new_summary,
                     question_data["title"],
-                    content
+                    content,
+                    include_user_ping=False  # No ping on updates
                 )
                 await bot_instance.rest.edit_message(event.channel_id, int(msg_id), components=components)
                 print(f"[Questionnaire] Updated clan expectations display")
