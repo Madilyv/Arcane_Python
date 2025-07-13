@@ -67,9 +67,11 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
 
     # Check if the channel name contains any of the active patterns
     matched = False
+    matched_pattern = None
     for pattern_key in ACTIVE_PATTERNS:
         if pattern_key in PATTERNS and PATTERNS[pattern_key] in channel_name:
             matched = True
+            matched_pattern = pattern_key
             print(f"[DEBUG] Channel matches pattern: {pattern_key}")
             break
 
@@ -78,7 +80,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         return
 
     # Wait 3 seconds before proceeding
-    await asyncio.sleep(3)
+    await asyncio.sleep(5)
 
     # Get the channel ID
     channel_id = event.channel.id
@@ -204,6 +206,81 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
             print(f"[DEBUG] Stored new recruit in MongoDB: {result.inserted_id}")
             stored_in_db = True
 
+            # Create ticket automation state
+            try:
+                automation_doc = {
+                    "_id": str(channel_id),
+                    "ticket_info": {
+                        "channel_id": str(channel_id),
+                        "thread_id": str(api_data.get('thread', '')),
+                        "user_id": str(api_data.get('user')),
+                        "ticket_type": matched_pattern,  # TEST, CLAN, or FWA
+                        "ticket_number": api_data.get('number'),
+                        "created_at": now,
+                        "last_updated": now
+                    },
+                    "player_info": {
+                        "player_tag": api_data.get('apply_account'),
+                        "player_name": player_data.name if player_data else None,
+                        "town_hall": player_data.town_hall if player_data else None,
+                        "clan_tag": player_data.clan.tag if player_data and player_data.clan else None,
+                        "clan_name": player_data.clan.name if player_data and player_data.clan else None
+                    },
+                    "automation_state": {
+                        "current_step": "awaiting_screenshot",
+                        "current_step_index": 1,
+                        "total_steps": 5,
+                        "status": "active",
+                        "completed_steps": [
+                            {
+                                "step_name": "ticket_created",
+                                "completed_at": now,
+                                "data": {"api_response": api_data}
+                            }
+                        ]
+                    },
+                    "step_data": {
+                        "screenshot": {
+                            "uploaded": False,
+                            "uploaded_at": None,
+                            "reminder_sent": False,
+                            "reminder_count": 0,
+                            "last_reminder_at": None
+                        },
+                        "clan_selection": {
+                            "selected_clan_type": None,
+                            "selected_at": None
+                        },
+                        "questionnaire": {
+                            "responses": {},
+                            "completed_at": None
+                        },
+                        "final_placement": {
+                            "assigned_clan": None,
+                            "assigned_at": None,
+                            "approved_by": None
+                        }
+                    },
+                    "messages": {
+                        "initial_prompt": str(event.channel.id)  # The message we're about to send
+                    },
+                    "interaction_history": [
+                        {
+                            "timestamp": now,
+                            "action": "ticket_created",
+                            "details": f"Ticket created for user {api_data.get('user')}"
+                        }
+                    ]
+                }
+
+                # Insert the automation state
+                await mongo_client.ticket_automation_state.insert_one(automation_doc)
+                print(f"[DEBUG] Created ticket automation state for channel {channel_id}")
+
+            except Exception as e:
+                print(f"[ERROR] Failed to create ticket automation state: {e}")
+                # Don't fail the whole process if automation state fails
+
         except Exception as e:
             print(f"[ERROR] Failed to store in MongoDB: {e}")
             stored_in_db = False
@@ -264,20 +341,3 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         print(f"[DEBUG] Successfully sent message to channel {event.channel.id}")
     except Exception as e:
         print(f"[ERROR] Failed to send message to channel {event.channel.id}: {e}")
-
-# Alternative implementation using load/unload if you prefer this pattern
-# Comment out the @loader.listener decorator above and uncomment below:
-
-# def load(bot: hikari.GatewayBot) -> None:
-#     bot.subscribe(hikari.GuildChannelCreateEvent, on_channel_create_alt)
-#     print("[INFO] Ticket channel monitor loaded")
-#
-#
-# def unload(bot: hikari.GatewayBot) -> None:
-#     bot.unsubscribe(hikari.GuildChannelCreateEvent, on_channel_create_alt)
-#     print("[INFO] Ticket channel monitor unloaded")
-#
-#
-# async def on_channel_create_alt(event: hikari.GuildChannelCreateEvent) -> None:
-#     """Alternative handler using load/unload pattern"""
-#     # Same logic as above...

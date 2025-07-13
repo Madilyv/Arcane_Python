@@ -62,6 +62,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.events.message.task_manager",
         "extensions.events.channel.ticket_channel_monitor",
         "extensions.events.channel.ticket_close_monitor",
+        "extensions.events.message.ticket_screenshot",
         "extensions.commands.clan.dashboard.dashboard",
         "extensions.commands.recruit.questions",
         "extensions.tasks.band_monitor",
