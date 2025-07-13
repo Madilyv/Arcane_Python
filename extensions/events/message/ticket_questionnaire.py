@@ -400,7 +400,10 @@ async def send_attack_strategies(channel_id: int, user_id: int):
         components = await create_attack_strategy_components("", question_data["title"])
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
-        msg = await channel.send(components=components)
+        msg = await channel.send(
+            components=components,
+            user_mentions=True
+        )
 
         # Store message ID
         await mongo_client.ticket_automation_state.update_one(
@@ -456,7 +459,10 @@ async def send_clan_expectations(channel_id: int, user_id: int):
         )
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
-        msg = await channel.send(components=components)
+        msg = await channel.send(
+            components=components,
+            user_mentions=True
+        )
 
         # Store message ID
         await mongo_client.ticket_automation_state.update_one(
@@ -516,7 +522,10 @@ async def send_discord_skills_question(channel_id: int, user_id: int):
         ]
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
-        msg = await channel.send(components=components)
+        msg = await channel.send(
+            components=components,
+            user_mentions=True
+        )
 
         # Store message ID for reaction checking
         await mongo_client.ticket_automation_state.update_one(
@@ -1032,7 +1041,10 @@ async def send_questionnaire_question(channel_id: int, user_id: int, question_ke
 
         # Send the message
         channel = await bot_instance.rest.fetch_channel(channel_id)
-        msg = await channel.send(components=components)
+        msg = await channel.send(
+            components=components,
+            user_mentions=True
+        )
 
         # Store message ID
         await mongo_client.ticket_automation_state.update_one(
@@ -1085,7 +1097,10 @@ async def send_questionnaire_completion(channel_id: int, user_id: int):
         ]
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
-        await channel.send(components=completion_components)
+        await channel.send(
+            components=completion_components,
+            user_mentions=True
+        )
 
         print(f"[Questionnaire] Sent completion message for user {user_id} in channel {channel_id}")
 
