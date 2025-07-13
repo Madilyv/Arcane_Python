@@ -6,6 +6,7 @@ Features:
 - Interview process selection (Bot-driven vs Speak with Recruiter)
 - AI-powered attack strategies analysis using Claude
 - AI-powered clan expectations analysis using Claude
+- Discord skills verification (reactions and mentions)
 - Automation halt functionality for manual takeover
 - Sequential question flow management
 """
@@ -29,7 +30,7 @@ from hikari.impl import (
     MediaGalleryItemBuilder as MediaItem,
 )
 
-from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT
+from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLD_ACCENT
 from utils.mongo import MongoClient
 from utils.emoji import emojis
 from extensions.components import register_action
@@ -38,6 +39,7 @@ from utils.ai_prompts import ATTACK_STRATEGIES_PROMPT, CLAN_EXPECTATIONS_PROMPT
 # Configuration
 RECRUITMENT_STAFF_ROLE = 999140213953671188  # Note: Role ID as integer, not string
 LOG_CHANNEL_ID = 1345589195695194113
+REMINDER_DELETE_TIMEOUT = 15  # Seconds before auto-deleting reminder messages
 
 # API Configuration
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -86,6 +88,47 @@ QUESTIONNAIRE_QUESTIONS = {
             "{blank}{white_arrow} FWA _Type **What is FWA** to learn more._\n\n"
             "*The more specific, the better we can match you!*"
         ),
+        "next": "discord_basic_skills"
+    },
+    "discord_basic_skills": {
+        "title": "## 💬 **Discord Basic Skills**",
+        "content": (
+            "Let's make sure you're comfortable with Discord basics!\n\n"
+            "{red_arrow} **React to this message with any emoji**\n"
+            "{blank}{white_arrow} This shows you know how to add reactions\n\n"
+            "{red_arrow} **Reply mentioning me (the bot)**\n"
+            "{blank}{white_arrow} This shows you know how to mention users\n\n"
+            "*These skills are essential for clan communication!*"
+        ),
+        "next": "discord_basic_skills_2",
+        "requires_reaction": True,
+        "requires_mention": True
+    },
+    "discord_basic_skills_2": {
+        "title": "## 💬 **Discord Roles & Mobile App**",
+        "content": (
+            "Great job! Now let's cover a few more Discord essentials:\n\n"
+            "{red_arrow} **Do you understand how Discord roles work?**\n"
+            "{blank}{white_arrow} Roles give you access to different channels and features\n\n"
+            "{red_arrow} **Do you have Discord on your mobile device?**\n"
+            "{blank}{white_arrow} This helps you stay connected with your clan on the go\n\n"
+            "*Just type your responses in chat!*"
+        ),
+        "next": "age_bracket_timezone"
+    },
+    "age_bracket_timezone": {
+        "title": "## 🌍 **Age & Timezone**",
+        "content": (
+            "This helps us match you with clans in your region and age group:\n\n"
+            "{red_arrow} **What's your age bracket?**\n"
+            "{blank}{white_arrow} Under 18\n"
+            "{blank}{white_arrow} 18-25\n"
+            "{blank}{white_arrow} 26-35\n"
+            "{blank}{white_arrow} 36+\n\n"
+            "{red_arrow} **What's your timezone?**\n"
+            "{blank}{white_arrow} _e.g. EST, PST, GMT+2, etc._\n\n"
+            "*This ensures you're matched with active players in your time zone!*"
+        ),
         "next": "leaders_checking_you_out"
     },
     "leaders_checking_you_out": {
@@ -124,52 +167,6 @@ async def trigger_questionnaire(channel_id: int, user_id: int):
         print(f"[Questionnaire] Error triggering questionnaire: {e}")
         import traceback
         traceback.print_exc()
-
-
-# Question definitions matching recruit questions command
-QUESTIONNAIRE_QUESTIONS = {
-    "attack_strategies": {
-        "title": "## ⚔️ **Attack Strategy Breakdown**",
-        "content": (
-            "Help us understand your go-to attack strategies!\n\n"
-            "{red_arrow} **Main Village strategies**\n"
-            "{blank}{white_arrow} _e.g. Hybrid, Queen Charge w/ Hydra, Lalo_\n\n"
-            "{red_arrow} **Clan Capital Attack Strategies**\n"
-            "{blank}{white_arrow} _e.g. Super Miners w/ Freeze_\n\n"
-            "{red_arrow} **Highest Clan Capital Hall level you've attacked**\n"
-            "{blank}{white_arrow} _e.g. CH 8, CH 9, etc._\n\n"
-            "*Your detailed breakdown helps us match you to the perfect clan!*"
-        ),
-        "next": "future_clan_expectations"
-    },
-    "future_clan_expectations": {
-        "title": "## 🔮 **Future Clan Expectations**",
-        "content": (
-            "Help us tailor your clan experience! Please answer the following:\n\n"
-            "{red_arrow} **What do you expect from your future clan?**\n"
-            "{blank}{white_arrow} _(e.g., Active wars, good communication, strategic support.)_\n\n"
-            "{red_arrow} **Minimum clan level you're looking for?**\n"
-            "{blank}{white_arrow} _e.g. Level 5, Level 10_\n\n"
-            "{red_arrow} **Minimum Clan Capital Hall level?**\n"
-            "{blank}{white_arrow} _e.g. CH 8 or higher_\n\n"
-            "{red_arrow} **CWL league preference?**\n"
-            "{blank}{white_arrow} _e.g. Crystal, Masters, Champions_\n\n"
-            "*The more specific, the better we can match you!*"
-        ),
-        "next": "leaders_checking_you_out"
-    },
-    "leaders_checking_you_out": {
-        "title": "## 👑 **Leaders Checking You Out**",
-        "content": (
-            "Heads up! Our clan leaders will be reviewing your profile:\n\n"
-            "• **In-game profile** – Town Hall, hero levels, war stars\n"
-            "• **Discord activity** – How you communicate and engage\n"
-            "• **Application responses** – The info you've shared with us\n\n"
-            "*Make sure your profile reflects your best! Leaders appreciate active, engaged members.*"
-        ),
-        "next": None  # This is the last question
-    }
-}
 
 
 async def process_attack_strategies_with_ai(existing_summary: str, new_input: str) -> str:
@@ -475,6 +472,232 @@ async def send_clan_expectations(channel_id: int, user_id: int):
         traceback.print_exc()
 
 
+async def send_discord_skills_question(channel_id: int, user_id: int):
+    """Send the Discord basic skills question that requires reaction and mention"""
+    try:
+        # Update state to track this specific step
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {
+                "$set": {
+                    "step_data.questionnaire.current_question": "discord_basic_skills",
+                    "step_data.questionnaire.awaiting_response": True,
+                    "step_data.questionnaire.discord_skills_reaction": False,
+                    "step_data.questionnaire.discord_skills_mention": False,
+                    "step_data.questionnaire.discord_skills_message_id": None,
+                    "step_data.questionnaire.discord_skills_reminder_sent": False,
+                    "step_data.questionnaire.discord_skills_message_count": 0  # Initialize counter
+                }
+            }
+        )
+
+        question_data = QUESTIONNAIRE_QUESTIONS["discord_basic_skills"]
+        content = question_data["content"].format(
+            red_arrow=str(emojis.red_arrow_right),
+            white_arrow=str(emojis.white_arrow_right),
+            blank=str(emojis.blank)
+        )
+
+        # Get the bot's ID
+        bot_id = bot_instance.get_me().id
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"<@{user_id}>"),
+                    Separator(divider=True),
+                    Text(content=question_data["title"]),
+                    Text(content=content),
+                    Text(content=f"\n*-# Reply and mention me (<@{bot_id}>) to show you can mention users*"),
+                    Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                ]
+            )
+        ]
+
+        channel = await bot_instance.rest.fetch_channel(channel_id)
+        msg = await channel.send(components=components)
+
+        # Store message ID for reaction checking
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {
+                "$set": {
+                    f"messages.questionnaire_discord_basic_skills": str(msg.id),
+                    "step_data.questionnaire.discord_skills_message_id": str(msg.id)
+                }
+            }
+        )
+
+        # Start monitoring for reaction and mention (pass bot_id)
+        asyncio.create_task(monitor_discord_skills(channel_id, user_id, msg.id, bot_id))
+
+    except Exception as e:
+        print(f"[Questionnaire] Error sending discord skills question: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def monitor_discord_skills(channel_id: int, user_id: int, message_id: int, bot_id: int):
+    """Monitor for reaction and mention completion"""
+    start_time = datetime.now(timezone.utc)
+    last_message_count = 0
+    reminder_sent_at_count = 0  # Track at what message count we sent the last reminder
+    last_reminder_time = None  # Track when we last sent a reminder
+
+    print(f"[Questionnaire] Starting discord skills monitor for channel {channel_id}, user {user_id}")
+
+    while True:
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+        # Get FRESH state from database each time
+        ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+        if not ticket_state:
+            print(f"[Questionnaire] Monitor: No ticket state found for channel {channel_id}")
+            break
+
+        skills_data = ticket_state.get("step_data", {}).get("questionnaire", {})
+        reaction_done = skills_data.get("discord_skills_reaction", False)
+        mention_done = skills_data.get("discord_skills_mention", False)
+        message_count = skills_data.get("discord_skills_message_count", 0)
+
+        print(
+            f"[Questionnaire] Monitor check: reaction={reaction_done}, mention={mention_done}, msg_count={message_count}")
+
+        # If both completed, move to next question
+        if reaction_done and mention_done:
+            print(f"[Questionnaire] Discord skills completed for user {user_id}")
+
+            # Update the message to show completion
+            try:
+                completion_components = [
+                    Container(
+                        accent_color=GREEN_ACCENT,
+                        components=[
+                            Text(content=f"<@{user_id}>"),
+                            Separator(divider=True),
+                            Text(content="## ✅ **Discord Skills Verified!**"),
+                            Text(content=(
+                                "Great job! You've successfully:\n"
+                                "• Added a reaction ✓\n"
+                                f"• Mentioned <@{bot_id}> ✓\n\n"
+                                "*Moving to the next question...*"
+                            )),
+                            Media(items=[MediaItem(media="assets/Green_Footer.png")])
+                        ]
+                    )
+                ]
+
+                await bot_instance.rest.edit_message(
+                    channel_id,
+                    message_id,
+                    components=completion_components,
+                    user_mentions=True
+                )
+                print(f"[Questionnaire] Updated discord skills completion message")
+            except Exception as e:
+                print(f"[Questionnaire] Error updating discord skills message: {e}")
+                import traceback
+                traceback.print_exc()
+
+            # Wait a moment then move to next question
+            await asyncio.sleep(2)
+
+            print(f"[Questionnaire] Sending next question: discord_basic_skills_2")
+            await send_questionnaire_question(channel_id, user_id, "discord_basic_skills_2")
+
+            print(f"[Questionnaire] Breaking out of monitor loop")
+            break  # EXIT THE LOOP
+
+        # Calculate time elapsed
+        time_elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+
+        # Determine if we should send a reminder
+        should_send_reminder = False
+
+        # First reminder: after 2 messages OR 30 seconds (whichever comes first)
+        if reminder_sent_at_count == 0 and (message_count >= 2 or time_elapsed > 30):
+            should_send_reminder = True
+            print(f"[Questionnaire] First reminder triggered: msg_count={message_count}, time={time_elapsed}s")
+
+        # Subsequent reminders: when user sends a new message AND enough time has passed since last reminder
+        elif message_count > last_message_count and message_count > reminder_sent_at_count:
+            # Check if enough time has passed since last reminder (15 seconds + buffer)
+            if last_reminder_time is None or (
+                    datetime.now(timezone.utc) - last_reminder_time).total_seconds() > REMINDER_DELETE_TIMEOUT:
+                should_send_reminder = True
+                print(
+                    f"[Questionnaire] New message detected, sending reminder. Message count increased from {last_message_count} to {message_count}")
+            else:
+                time_since_reminder = (datetime.now(timezone.utc) - last_reminder_time).total_seconds()
+                print(
+                    f"[Questionnaire] New message but reminder still active ({time_since_reminder}s < {REMINDER_DELETE_TIMEOUT}s), not sending")
+
+        # Update last message count
+        last_message_count = message_count
+
+        # Only send reminder if needed AND requirements not met
+        if should_send_reminder and (not reaction_done or not mention_done):
+            print(f"[Questionnaire] Sending reminder - reaction={reaction_done}, mention={mention_done}")
+
+            missing = []
+            if not reaction_done:
+                missing.append("add a reaction to the message above")
+            if not mention_done:
+                missing.append(f"mention <@{bot_id}> (me) in a message")
+
+            reminder_components = [
+                Container(
+                    accent_color=GOLD_ACCENT,
+                    components=[
+                        Text(content=f"<a:eyes_look_around:1393971191995302041> **Hey <@{user_id}>!**"),
+                        # This will now ping
+                        Text(content=f"You still need to: {' and '.join(missing)}"),
+                        Text(content=f"\n*Check the message above for instructions.*"),
+                        Text(content=f"\n-# This reminder will delete in {REMINDER_DELETE_TIMEOUT} seconds")
+                    ]
+                )
+            ]
+
+            try:
+                channel = await bot_instance.rest.fetch_channel(channel_id)
+                reminder_msg = await channel.send(
+                    components=reminder_components,
+                    user_mentions=True
+                )
+                print(f"[Questionnaire] Reminder sent with ID: {reminder_msg.id}")
+
+                # Track when we sent this reminder
+                reminder_sent_at_count = message_count
+                last_reminder_time = datetime.now(timezone.utc)
+
+                # Update reminder sent flag in database
+                await mongo_client.ticket_automation_state.update_one(
+                    {"_id": str(channel_id)},
+                    {"$set": {"step_data.questionnaire.discord_skills_reminder_sent": True}}
+                )
+
+                # Auto-delete reminder after configured timeout - runs independently
+                async def delete_reminder(msg_id):
+                    await asyncio.sleep(REMINDER_DELETE_TIMEOUT)
+                    try:
+                        await bot_instance.rest.delete_message(channel_id, msg_id)
+                        print(f"[Questionnaire] Deleted discord skills reminder message {msg_id}")
+                    except Exception as e:
+                        print(f"[Questionnaire] Error deleting reminder {msg_id}: {e}")
+
+                # Create the task but don't await it - let it run independently
+                asyncio.create_task(delete_reminder(reminder_msg.id))
+
+            except Exception as e:
+                print(f"[Questionnaire] Error sending reminder: {e}")
+                import traceback
+                traceback.print_exc()
+
+    print(f"[Questionnaire] Monitor task ending for channel {channel_id}")
+
+
+
 async def send_interview_selection_prompt(channel_id: int, user_id: int):
     """Send the interview process selection message"""
     try:
@@ -515,7 +738,10 @@ async def send_interview_selection_prompt(channel_id: int, user_id: int):
         ]
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
-        await channel.send(components=components)
+        await channel.send(
+            components=components,
+            user_mentions=True
+        )
 
         print(f"[Questionnaire] Sent interview selection prompt to channel {channel_id}")
 
@@ -752,6 +978,11 @@ async def send_questionnaire_question(channel_id: int, user_id: int, question_ke
             await send_clan_expectations(channel_id, user_id)
             return
 
+        # Special handling for discord_basic_skills
+        if question_key == "discord_basic_skills":
+            await send_discord_skills_question(channel_id, user_id)
+            return
+
         question = QUESTIONNAIRE_QUESTIONS.get(question_key)
         if not question:
             print(f"[Questionnaire] Unknown question key: {question_key}")
@@ -862,6 +1093,38 @@ async def send_questionnaire_completion(channel_id: int, user_id: int):
         print(f"[Questionnaire] Error sending completion message: {e}")
         import traceback
         traceback.print_exc()
+
+
+@loader.listener(hikari.GuildReactionAddEvent)
+async def on_reaction_add(event: hikari.GuildReactionAddEvent):
+    """Monitor for reactions on discord skills message"""
+
+    if not mongo_client or not bot_instance:
+        return
+
+    if event.user_id == bot_instance.get_me().id:
+        return
+
+    # Get ticket state
+    ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(event.channel_id)})
+    if not ticket_state:
+        return
+
+    # Check if this is the discord skills message
+    skills_msg_id = ticket_state.get("step_data", {}).get("questionnaire", {}).get("discord_skills_message_id")
+    if skills_msg_id and str(event.message_id) == skills_msg_id:
+        # Verify it's the right user
+        expected_user_id = int(ticket_state.get("discord_id", 0) or
+                               ticket_state.get("ticket_info", {}).get("user_id", 0) or
+                               ticket_state.get("user_id", 0))
+
+        if event.user_id == expected_user_id:
+            # Update reaction completed
+            await mongo_client.ticket_automation_state.update_one(
+                {"_id": str(event.channel_id)},
+                {"$set": {"step_data.questionnaire.discord_skills_reaction": True}}
+            )
+            print(f"[Questionnaire] User {event.user_id} completed reaction requirement")
 
 
 @loader.listener(hikari.GuildMessageCreateEvent)
@@ -1014,19 +1277,124 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
 
         return  # Exit here, don't process as normal response
 
-    # Check if we're in questionnaire step and awaiting response
-    if (ticket_state.get("automation_state", {}).get("current_step") != "questionnaire" or
-            not ticket_state.get("step_data", {}).get("questionnaire", {}).get("awaiting_response") or
-            ticket_state.get("automation_state", {}).get("status") == "halted"):
-        return
+    # MOVED UP: Check if this is a discord skills mention BEFORE general handler
+    if (ticket_state.get("step_data", {}).get("questionnaire", {}).get("current_question") == "discord_basic_skills" and
+            not ticket_state.get("step_data", {}).get("questionnaire", {}).get("discord_skills_mention", False)):
 
-    # Verify message is from ticket creator (double check)
-    if "ticket_info" in ticket_state and event.author_id != int(ticket_state["ticket_info"]["user_id"]):
-        return
+        expected_user_id = (
+                ticket_state.get("discord_id") or
+                ticket_state.get("ticket_info", {}).get("user_id") or
+                ticket_state.get("user_id")
+        )
 
-    current_question = ticket_state["step_data"]["questionnaire"].get("current_question")
+        # Convert to int for comparison
+        if expected_user_id:
+            try:
+                expected_user_id = int(expected_user_id)
+            except (ValueError, TypeError):
+                print(f"[Questionnaire] Error converting user_id: {expected_user_id}")
+                expected_user_id = None
 
-    # [Rest of the questionnaire response handling code remains the same...]
+        if expected_user_id and event.author_id == expected_user_id:
+            print(f"[Questionnaire] Discord skills message from user {event.author_id}: {event.content}")
+
+            # Track message count for reminder
+            message_count = ticket_state.get("step_data", {}).get("questionnaire", {}).get(
+                "discord_skills_message_count", 0) + 1
+            await mongo_client.ticket_automation_state.update_one(
+                {"_id": str(event.channel_id)},
+                {"$set": {"step_data.questionnaire.discord_skills_message_count": message_count}}
+            )
+            print(f"[Questionnaire] Updated message count to {message_count}")
+
+            # Get the bot's ID
+            bot_id = bot_instance.get_me().id
+            print(f"[Questionnaire] Bot ID is {bot_id}")
+
+            # Check if message contains a mention of the bot
+            if f"<@{bot_id}>" in event.content or f"<@!{bot_id}>" in event.content:
+                print(f"[Questionnaire] Found bot mention in message!")
+
+                # Update mention completed
+                await mongo_client.ticket_automation_state.update_one(
+                    {"_id": str(event.channel_id)},
+                    {"$set": {"step_data.questionnaire.discord_skills_mention": True}}
+                )
+                print(f"[Questionnaire] User {event.author_id} completed mention requirement")
+
+                # Add the eyes emoji reaction to show completion
+                try:
+                    await event.message.add_reaction("👀")
+                    print(f"[Questionnaire] Added eyes reaction to mention message")
+                except Exception as e:
+                    print(f"[Questionnaire] Error adding reaction: {e}")
+            else:
+                print(f"[Questionnaire] No bot mention found in message")
+
+                # React with a different emoji to show we saw it but it's not complete
+                # You can change this to any emoji you prefer
+                try:
+                    await event.message.add_reaction("❓")  # or "⏳" or "💭" or any other
+                    print(f"[Questionnaire] Added incomplete reaction to non-mention message")
+                except Exception as e:
+                    print(f"[Questionnaire] Error adding reaction: {e}")
+
+            # DO NOT DELETE THE MESSAGE FOR DISCORD SKILLS - We want to show they completed it!
+            return
+
+    # Check if we're in questionnaire step and awaiting response for standard questions
+    # This is now AFTER the discord skills check
+    if (ticket_state.get("automation_state", {}).get("current_step") == "questionnaire" and
+            ticket_state.get("step_data", {}).get("questionnaire", {}).get("awaiting_response") and
+            ticket_state.get("automation_state", {}).get("status") != "halted"):
+
+        # Skip if this is discord_basic_skills (already handled above)
+        current_question = ticket_state["step_data"]["questionnaire"].get("current_question")
+        if current_question == "discord_basic_skills":
+            print(f"[Questionnaire] Skipping general handler for discord_basic_skills")
+            return
+
+        # Verify message is from ticket creator
+        expected_user_id = (
+                ticket_state.get("discord_id") or
+                ticket_state.get("ticket_info", {}).get("user_id") or
+                ticket_state.get("user_id")
+        )
+
+        if expected_user_id:
+            try:
+                expected_user_id = int(expected_user_id)
+            except (ValueError, TypeError):
+                expected_user_id = None
+
+        if expected_user_id and event.author_id == expected_user_id:
+            # Store the response
+            await mongo_client.ticket_automation_state.update_one(
+                {"_id": str(event.channel_id)},
+                {
+                    "$set": {
+                        f"step_data.questionnaire.responses.{current_question}": event.content,
+                        "step_data.questionnaire.awaiting_response": False
+                    }
+                }
+            )
+
+            # For discord_basic_skills_2, age_bracket_timezone - keep messages visible
+            # Only delete for other questions
+            if current_question not in ["discord_basic_skills_2", "age_bracket_timezone"]:
+                try:
+                    await event.message.delete()
+                except:
+                    pass
+
+            # Move to next question
+            next_question = QUESTIONNAIRE_QUESTIONS.get(current_question, {}).get("next")
+            if next_question:
+                await asyncio.sleep(1)  # Brief pause
+                await send_questionnaire_question(event.channel_id, expected_user_id, next_question)
+
+            print(f"[Questionnaire] Recorded response for {current_question} from user {event.author_id}")
+
 
 
 # Initialize when bot starts

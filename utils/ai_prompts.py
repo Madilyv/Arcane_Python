@@ -144,6 +144,9 @@ You MUST categorize all input into these specific sections based on content:
    - "FWA", "Zen", "Competitive", "Casual" → Always Clan Style Preference
 4. **Merge Similar Entries**: Combine related points rather than listing duplicates
 5. **Ignore Invalid Input**: Skip unrelated text or nonsense
+6. **Capital Hall Level Formatting**:
+   - For Capital Hall levels 1-9: Format as "Capital Hall X or higher"
+   - For Capital Hall 10: Format as "Capital Hall 10" (no "or higher" since it's maximum)
 
 ### Output Format (EXACT - NO MODIFICATIONS):
 
