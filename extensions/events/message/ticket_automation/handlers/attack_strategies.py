@@ -13,6 +13,7 @@ from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.emoji import emojis
 from ..core.state_manager import StateManager
+# REMOVED: from ..core.questionnaire_manager import send_question
 from ..ai.processors import process_attack_strategies_with_ai
 from ..components.builders import create_attack_strategy_components
 from ..utils.constants import QUESTIONNAIRE_QUESTIONS
@@ -127,7 +128,9 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
                 components = await create_attack_strategy_components(
                     new_summary,
                     QUESTIONNAIRE_QUESTIONS["attack_strategies"]["title"],
-                    include_user_ping=False  # No ping on updates
+                    include_user_ping=False,  # No ping on updates
+                    channel_id=channel_id,
+                    user_id=user_id
                 )
                 await bot_instance.rest.edit_message(
                     channel_id,
@@ -137,6 +140,8 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
                 print(f"[AttackStrategies] Updated display for channel {channel_id}")
             except Exception as e:
                 print(f"[AttackStrategies] Error updating message: {e}")
+                import traceback
+                traceback.print_exc()
 
     except Exception as e:
         print(f"[AttackStrategies] Error processing input: {e}")
@@ -185,7 +190,9 @@ async def handle_attack_strategies_done(
         current_summary,
         QUESTIONNAIRE_QUESTIONS["attack_strategies"]["title"],
         show_done_button=False,
-        include_user_ping=False
+        include_user_ping=False,
+        channel_id=channel_id,
+        user_id=user_id
     )
 
     # Update the message to remove the Done button
@@ -197,6 +204,8 @@ async def handle_attack_strategies_done(
     # Move to next question
     next_question = QUESTIONNAIRE_QUESTIONS["attack_strategies"]["next"]
     if next_question:
-        await QuestionFlow.send_question(channel_id, user_id, next_question)
+        # Lazy import to avoid circular dependency
+        from ..core.questionnaire_manager import send_question
+        await send_question(channel_id, user_id, next_question)
 
     print(f"[AttackStrategies] User {user_id} completed attack strategies")

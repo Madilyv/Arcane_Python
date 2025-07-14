@@ -59,19 +59,19 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
     if not state_manager:
         _initialize_from_bot_data()
 
-    if not mongo_client or not bot_instance or not state_manager:
+    if not mongo_client or not bot_instance:
         return
 
     # Skip bot messages unless checking for Friend Time bot
     if event.is_bot:
-        # Check for Friend Time bot confirmation
+        # Check for Friend Time bot confirmation (for timezone question)
         if await timezone_handler.check_friend_time_confirmation(event):
             return
         # Skip other bot messages
         return
 
     # Get ticket state
-    ticket_state = await state_manager.get_ticket_state(event.channel_id)
+    ticket_state = await StateManager.get_ticket_state(str(event.channel_id))
     if not ticket_state:
         return
 
@@ -94,24 +94,49 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
     # Check if we're awaiting text response
     if not await is_awaiting_text_response(event.channel_id):
         # Might be waiting for reactions/mentions for discord skills
-        if current_question == "discord_skills":
+        if current_question == "discord_basic_skills":
             # These are handled by reaction/mention events
             pass
         return
 
-    # Validate user
-    expected_user = await state_manager.get_user_id(event.channel_id)
+    # Validate user - check multiple locations for user ID
+    expected_user = await StateManager.get_user_id(event.channel_id)
     if expected_user and event.author_id != expected_user:
+        print(f"[Message Events] Ignoring message from wrong user: {event.author_id} != {expected_user}")
         return
 
     print(f"[Message Events] Processing response for question: {current_question}")
 
-    # Route to appropriate handler
-    if current_question == "attack_strategies":
-        await attack_strategies_handler.process_user_input(event.channel_id, event.author_id, event.content)
-    elif current_question == "clan_expectations":
-        await clan_expectations_handler.process_user_input(event.channel_id, event.author_id, event.content)
-    # Other text-based questions are handled by their respective handlers
+    # Route to appropriate handler based on current question
+    if current_question == "attack_strategies" and questionnaire_data.get("collecting_strategies", False):
+        print(f"[Message Events] Processing attack strategy from user {event.author_id}: {event.content}")
+
+        await attack_strategies_handler.process_user_input(
+            event.channel_id,
+            event.author_id,
+            event.content
+        )
+
+        # Delete the user's message to keep channel clean
+        try:
+            await event.message.delete()
+        except Exception as e:
+            print(f"[Message Events] Could not delete message: {e}")
+
+    elif current_question == "future_clan_expectations" and questionnaire_data.get("collecting_expectations", False):
+        print(f"[Message Events] Processing clan expectation from user {event.author_id}: {event.content}")
+
+        await clan_expectations_handler.process_user_input(
+            event.channel_id,
+            event.author_id,
+            event.content
+        )
+
+        # Delete the user's message to keep channel clean
+        try:
+            await event.message.delete()
+        except Exception as e:
+            print(f"[Message Events] Could not delete message: {e}")
 
 
 @loader.listener(hikari.GuildReactionAddEvent)

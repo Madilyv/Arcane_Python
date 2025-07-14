@@ -13,7 +13,7 @@ import lightbulb
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.emoji import emojis
-from utils.constants import GOLD_ACCENT, BLUE_ACCENT
+from utils.constants import GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT
 from ..core.state_manager import StateManager
 from ..components.builders import create_container_component
 from ..utils.constants import (
@@ -45,18 +45,28 @@ async def send_discord_skills_question(channel_id: int, user_id: int) -> None:
         question_key = "discord_basic_skills"
         question_data = QUESTIONNAIRE_QUESTIONS[question_key]
 
-        # Format content
+        # Get bot name for personalized mention
+        bot_user = bot_instance.get_me()
+        bot_name = bot_user.username if bot_user else "the bot"
+
+        # Format content with bot name
         content = question_data["content"].format(
             red_arrow=str(emojis.red_arrow_right),
             white_arrow=str(emojis.white_arrow_right),
             blank=str(emojis.blank)
         )
 
+        # Replace generic bot mention with specific name
+        content = content.replace(
+            "**Reply mentioning me (the bot)**",
+            f"**Reply mentioning {bot_name} (me)**"
+        )
+
         # Create components
         template = {
             "title": question_data["title"],
             "content": content,
-            "footer": question_data.get("footer", "React to this message and mention the bot to continue!")
+            "footer": f"React to this message and mention {bot_name} to continue!"
         }
 
         components = create_container_component(
@@ -151,7 +161,13 @@ async def monitor_discord_skills_completion(channel_id: int, user_id: int) -> No
 
             # Wait a bit then move to next question
             await asyncio.sleep(3)
-            await QuestionFlow.send_next_question(channel_id, user_id, "discord_basic_skills")
+
+            # Lazy import to avoid circular dependency
+            from ..core.questionnaire_manager import send_question
+            question_key = "discord_basic_skills"  # FIXED: Define question_key
+            next_question = QUESTIONNAIRE_QUESTIONS[question_key].get("next")
+            if next_question:
+                await send_question(channel_id, user_id, next_question)
 
             break
 
@@ -181,7 +197,7 @@ async def send_skills_completion_message(channel_id: int, user_id: int) -> None:
 
         components = create_container_component(
             template,
-            accent_color=BLUE_ACCENT
+            accent_color=GREEN_ACCENT
         )
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
@@ -211,7 +227,16 @@ async def check_and_send_reminder(
 
     # Check if enough time has passed since last reminder
     if last_reminder:
-        last_reminder_dt = last_reminder
+        # Ensure last_reminder_dt is timezone-aware
+        if isinstance(last_reminder, datetime):
+            # If it's timezone-naive, make it timezone-aware (assuming UTC)
+            if last_reminder.tzinfo is None:
+                last_reminder_dt = last_reminder.replace(tzinfo=timezone.utc)
+            else:
+                last_reminder_dt = last_reminder
+        else:
+            last_reminder_dt = last_reminder
+
         if (datetime.now(timezone.utc) - last_reminder_dt).total_seconds() < REMINDER_TIMEOUT:
             return
 
@@ -220,7 +245,9 @@ async def check_and_send_reminder(
     if not reaction_done:
         missing.append("✅ React to the message above")
     if not mention_done:
-        missing.append(f"💬 Reply with {bot_instance.get_me().mention}")
+        bot_user = bot_instance.get_me()
+        bot_name = bot_user.username if bot_user else "the bot"
+        missing.append(f"💬 Reply with a mention of {bot_name}")
 
     if not missing:
         return
@@ -264,57 +291,64 @@ async def check_and_send_reminder(
         print(f"[DiscordSkills] Error sending reminder: {e}")
 
 
-async def handle_reaction_add(event: hikari.GuildReactionAddEvent) -> None:
-    """Handle reaction additions for Discord skills verification"""
+async def check_reaction_completion(channel_id: int, message_id: int, user_id: int, emoji: str) -> None:
+    """Check if the reaction requirement is completed"""
 
-    if not mongo_client or not bot_instance:
-        return
-
-    # Skip bot reactions
-    if event.user_id == bot_instance.get_me().id:
+    if not mongo_client:
         return
 
     # Get ticket state
-    ticket_state = await StateManager.get_ticket_state(str(event.channel_id))
+    ticket_state = await StateManager.get_ticket_state(str(channel_id))
     if not ticket_state:
         return
 
     # Check if this is the Discord skills message
-    skills_msg_id = ticket_state.get("step_data", {}).get("questionnaire", {}).get("discord_skills_message_id")
-    if skills_msg_id and str(event.message_id) == skills_msg_id:
+    skills_msg_id = await StateManager.get_message_id(channel_id, "discord_skills_message_id")
+    if skills_msg_id and str(message_id) == skills_msg_id:
         # Verify it's the right user
-        expected_user_id = await StateManager.get_user_id(event.channel_id)
+        expected_user_id = await StateManager.get_user_id(channel_id)
 
-        if event.user_id == expected_user_id:
+        if user_id == expected_user_id:
             # Update reaction completed
             await mongo_client.ticket_automation_state.update_one(
-                {"_id": str(event.channel_id)},
+                {"_id": str(channel_id)},
                 {"$set": {"step_data.questionnaire.discord_skills_reaction": True}}
             )
-            print(f"[DiscordSkills] User {event.user_id} completed reaction requirement")
+            print(f"[DiscordSkills] User {user_id} completed reaction requirement")
 
 
-async def handle_mention_message(channel_id: int, user_id: int, message: hikari.Message) -> None:
-    """Handle mention messages for Discord skills verification"""
+async def check_mention_completion(channel_id: int, user_id: int) -> None:
+    """Check if the mention requirement is completed"""
 
     if not mongo_client or not bot_instance:
         return
 
-    # Check if bot is mentioned
-    bot_user = bot_instance.get_me()
-    if bot_user.id not in message.user_mentions_ids:
+    # Verify this is during discord skills question
+    ticket_state = await StateManager.get_ticket_state(str(channel_id))
+    if not ticket_state:
         return
 
-    # Update mention completed
-    await mongo_client.ticket_automation_state.update_one(
-        {"_id": str(channel_id)},
-        {"$set": {"step_data.questionnaire.discord_skills_mention": True}}
-    )
+    questionnaire_data = ticket_state.get("step_data", {}).get("questionnaire", {})
+    if questionnaire_data.get("current_question") != "discord_basic_skills":
+        return
 
-    print(f"[DiscordSkills] User {user_id} completed mention requirement")
+    # Verify it's the right user
+    expected_user_id = await StateManager.get_user_id(channel_id)
+    if user_id == expected_user_id:
+        # Update mention completed
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {"$set": {"step_data.questionnaire.discord_skills_mention": True}}
+        )
+        print(f"[DiscordSkills] User {user_id} completed mention requirement")
 
-    # Delete the mention message to keep channel clean
-    try:
-        await message.delete()
-    except:
-        pass
+        # React with eyes emoji to confirm we saw the mention
+        try:
+            # Get the last message from the user in this channel
+            messages = await bot_instance.rest.fetch_messages(channel_id).limit(10).reverse()
+            async for message in messages:
+                if message.author.id == user_id:
+                    await message.add_reaction("👀")
+                    break
+        except Exception as e:
+            print(f"[DiscordSkills] Error adding confirmation reaction: {e}")

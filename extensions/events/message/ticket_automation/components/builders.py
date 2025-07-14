@@ -256,16 +256,10 @@ async def create_attack_strategy_components(
                 content="📝 **Tell us about your attack strategies!**\n\n*Continue typing or click Done when finished.*")
         )
 
-        # Add current summary
+        # Add current summary - FIXED: NO SECTION, just Text components
         components_list.append(Separator(divider=True))
-        components_list.append(
-            Section(
-                components=[
-                    Text(content="**📋 Your Attack Strategies:**"),
-                    Text(content=formatted_summary)
-                ]
-            )
-        )
+        components_list.append(Text(content="**📋 Your Attack Strategies:**"))
+        components_list.append(Text(content=formatted_summary))
 
     # Add footer image
     components_list.append(
@@ -365,16 +359,10 @@ async def create_clan_expectations_components(
                 content="📝 **Share what you're looking for in a clan!**\n\n*Continue typing or click Done when finished.*")
         )
 
-        # Add current summary
+        # Add current summary - FIXED: NO SECTION, just Text components
         components_list.append(Separator(divider=True))
-        components_list.append(
-            Section(
-                components=[
-                    Text(content="**📋 Your Clan Expectations:**"),
-                    Text(content=formatted_summary)
-                ]
-            )
-        )
+        components_list.append(Text(content="**📋 Your Clan Expectations:**"))
+        components_list.append(Text(content=formatted_summary))
 
     # Add footer image
     components_list.append(

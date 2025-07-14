@@ -13,6 +13,7 @@ from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.emoji import emojis
 from ..core.state_manager import StateManager
+# REMOVED: from ..core.questionnaire_manager import send_question
 from ..ai.processors import process_clan_expectations_with_ai
 from ..components.builders import create_clan_expectations_components
 from ..utils.constants import QUESTIONNAIRE_QUESTIONS
@@ -71,7 +72,8 @@ async def send_clan_expectations(channel_id: int, user_id: int) -> None:
             question_data["title"],
             content,
             include_user_ping=True,
-            user_id=user_id
+            user_id=user_id,
+            channel_id=channel_id
         )
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
@@ -139,7 +141,9 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
                     new_summary,
                     question_data["title"],
                     content,
-                    include_user_ping=False  # No ping on updates
+                    include_user_ping=False,  # No ping on updates
+                    channel_id=channel_id,
+                    user_id=user_id
                 )
                 await bot_instance.rest.edit_message(
                     channel_id,
@@ -205,7 +209,9 @@ async def handle_clan_expectations_done(
         question_data["title"],
         content,
         show_done_button=False,
-        include_user_ping=False
+        include_user_ping=False,
+        channel_id=channel_id,
+        user_id=user_id
     )
 
     # Update the message
@@ -217,6 +223,8 @@ async def handle_clan_expectations_done(
     # Move to next question
     next_question = QUESTIONNAIRE_QUESTIONS["future_clan_expectations"]["next"]
     if next_question:
-        await QuestionFlow.send_question(channel_id, user_id, next_question)
+        # Lazy import to avoid circular dependency
+        from ..core.questionnaire_manager import send_question
+        await send_question(channel_id, user_id, next_question)
 
     print(f"[ClanExpectations] User {user_id} completed clan expectations")
