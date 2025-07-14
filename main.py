@@ -1,4 +1,6 @@
-# Import the libraries
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 import os
 import hikari
 import lightbulb

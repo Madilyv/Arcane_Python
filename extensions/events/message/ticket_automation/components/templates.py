@@ -3,9 +3,10 @@
 Message templates for consistent formatting across the automation.
 These templates can be reused and customized as needed.
 """
+from typing import Dict, List
 
 # Interview selection template
-INTERVIEW_SELECTION_TEMPLATE = {
+INTERVIEW_SELECTION_TEMPLATE: dict[str, list[dict[str, str] | dict[str, str]] | str | None] = {
     "title": "## 🎯 **Choose Your Interview Type**",
     "content": (
         "Welcome to the recruitment process! You have two options:\n\n"
@@ -23,15 +24,15 @@ INTERVIEW_SELECTION_TEMPLATE = {
     "buttons": [
         {
             "style": "PRIMARY",
-            "label": "Bot Interview",
+            "label": "Bot-Driven Interview",
             "emoji": "🤖",
-            "action": "bot_interview_select"
+            "action": "select_bot_interview"
         },
         {
             "style": "SECONDARY",
-            "label": "Live Recruiter",
+            "label": "Speak with Recruiter",
             "emoji": "💬",
-            "action": "recruiter_interview_select"
+            "action": "select_recruiter_interview"
         }
     ]
 }

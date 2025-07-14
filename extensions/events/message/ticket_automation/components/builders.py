@@ -60,7 +60,28 @@ def create_container_component(
     if template.get("footer"):
         components_list.append(Text(content=f"-# {template['footer']}"))
 
-    # Add media (GIF or image)
+    # Handle buttons if present in template - ADD TO COMPONENTS LIST
+    if template.get("buttons"):
+        row = ActionRow()
+        for button_data in template["buttons"]:
+            # Get button style
+            style = getattr(hikari.ButtonStyle, button_data["style"])
+
+            # Build custom_id with channel and user info
+            custom_id = f"{button_data['action']}:{channel_id}_{user_id}"
+
+            # Create and add button with all parameters
+            row.add_interactive_button(
+                style,  # Positional argument
+                custom_id,  # Positional argument
+                label=button_data["label"],  # Keyword argument
+                emoji=button_data.get("emoji")  # Keyword argument
+            )
+
+        # Add the ActionRow to the components list BEFORE media
+        components_list.append(row)
+
+    # Add media (GIF or image) - AFTER buttons
     if template.get("gif_url"):
         components_list.append(
             Media(items=[MediaItem(media=template["gif_url"])])
@@ -76,6 +97,7 @@ def create_container_component(
             Media(items=[MediaItem(media=footer_image)])
         )
 
+    # Create and return the container with ALL components inside
     return [
         Container(
             accent_color=accent_color,
@@ -192,13 +214,11 @@ async def create_attack_strategy_components(
     # Add Done button if requested
     if show_done_button:
         row = ActionRow()
-        row.add_button(
-            create_button(
-                style=hikari.ButtonStyle.SUCCESS,
-                label="Done",
-                custom_id="attack_strategies_done:done",
-                emoji="✅"
-            )
+        row.add_interactive_button(
+            style=hikari.ButtonStyle.SUCCESS,
+            label="Done",
+            custom_id="attack_strategies_done:done",
+            emoji="✅"
         )
         components.append(row)
 
@@ -260,13 +280,11 @@ async def create_clan_expectations_components(
     # Add Done button if requested
     if show_done_button:
         row = ActionRow()
-        row.add_button(
-            create_button(
-                style=hikari.ButtonStyle.SUCCESS,
-                label="Done",
-                custom_id="clan_expectations_done:done",
-                emoji="✅"
-            )
+        row.add_interactive_button(
+            style=hikari.ButtonStyle.SUCCESS,
+            label="Done",
+            custom_id="clan_expectations_done:done",
+            emoji="✅"
         )
         components.append(row)
 
