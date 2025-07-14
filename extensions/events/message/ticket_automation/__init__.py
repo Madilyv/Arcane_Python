@@ -44,17 +44,17 @@ def initialize(mongo_client: MongoClient, bot: hikari.GatewayBot):
 
     # Initialize core modules
     questionnaire_manager.initialize(mongo_client, bot)
-    state_manager_instance = state_manager.StateManager(mongo_client)
-    question_flow.initialize(state_manager_instance, bot)
+    state_manager.StateManager.initialize(mongo_client, bot)
+    question_flow.QuestionFlow.initialize(mongo_client, bot)
 
-    # Initialize all handlers
-    interview_selection.initialize(state_manager_instance, bot)
-    attack_strategies.initialize(state_manager_instance, bot)
-    clan_expectations.initialize(state_manager_instance, bot)
-    discord_skills.initialize(state_manager_instance, bot)
-    age_bracket.initialize(state_manager_instance, bot)
-    timezone.initialize(state_manager_instance, bot)
-    completion.initialize(state_manager_instance, bot)
+    # Initialize all handlers (they take mongo and bot, not state_manager)
+    interview_selection.initialize(mongo_client, bot)
+    attack_strategies.initialize(mongo_client, bot)
+    clan_expectations.initialize(mongo_client, bot)
+    discord_skills.initialize(mongo_client, bot)
+    age_bracket.initialize(mongo_client, bot)
+    timezone.initialize(mongo_client, bot)
+    completion.initialize(mongo_client, bot)
 
     print("[Ticket Automation] All modules initialized")
 

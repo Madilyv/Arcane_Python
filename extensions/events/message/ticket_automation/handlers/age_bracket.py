@@ -14,7 +14,6 @@ from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.constants import BLUE_ACCENT, GREEN_ACCENT
 from ..core.state_manager import StateManager
-from ..core.question_flow import QuestionFlow
 from ..components.builders import create_container_component, create_button
 from ..utils.constants import QUESTIONNAIRE_QUESTIONS
 from .timezone import send_timezone_question

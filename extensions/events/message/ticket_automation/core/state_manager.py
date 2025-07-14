@@ -213,3 +213,31 @@ class StateManager:
                 except (ValueError, TypeError):
                     pass
         return None
+
+
+# Add this function at the module level (not inside StateManager class)
+async def is_awaiting_text_response(channel_id: int) -> bool:
+    """Check if waiting for text input from user"""
+    if not mongo_client:
+        return False
+
+    state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+    if not state:
+        return False
+
+    # Check if we're in questionnaire and awaiting response
+    questionnaire = state.get("step_data", {}).get("questionnaire", {})
+    if not questionnaire.get("awaiting_response"):
+        return False
+
+    # Text-based questions that collect continuous input
+    current_question = questionnaire.get("current_question")
+    text_questions = ["attack_strategies", "future_clan_expectations"]
+
+    # Also check for collecting flags
+    collecting_strategies = questionnaire.get("collecting_strategies", False)
+    collecting_expectations = questionnaire.get("collecting_expectations", False)
+
+    return (current_question in text_questions or
+            collecting_strategies or
+            collecting_expectations)

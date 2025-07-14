@@ -23,7 +23,7 @@ mongo_client: Optional[MongoClient] = None
 bot_instance: Optional[hikari.GatewayBot] = None
 
 
-async def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
+def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     """Initialize the questionnaire manager with required instances"""
     global mongo_client, bot_instance
     mongo_client = mongo

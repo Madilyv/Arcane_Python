@@ -19,7 +19,7 @@ from .ticket_automation.handlers import (
     clan_expectations as clan_expectations_handler,
     discord_skills as discord_skills_handler
 )
-from .ticket_automation.core.question_flow import is_awaiting_text_response
+from .ticket_automation.core.state_manager import is_awaiting_text_response
 
 # Global instances - will be initialized from bot_data
 mongo_client: Optional[MongoClient] = None
@@ -39,13 +39,9 @@ def _initialize_from_bot_data():
         bot_instance = bot_data.data["bot"]
 
     if mongo_client and bot_instance:
-        state_manager = StateManager(mongo_client)
+        StateManager.initialize(mongo_client, bot_instance)
         # Initialize all handlers
         init_automation(mongo_client, bot_instance)
-
-
-# Try to initialize immediately if bot_data is already populated
-_initialize_from_bot_data()
 
 
 @loader.listener(hikari.StartingEvent)

@@ -15,7 +15,6 @@ from utils.mongo import MongoClient
 from utils.emoji import emojis
 from utils.constants import GOLD_ACCENT, BLUE_ACCENT
 from ..core.state_manager import StateManager
-from ..core.question_flow import QuestionFlow
 from ..components.builders import create_container_component
 from ..utils.constants import (
     QUESTIONNAIRE_QUESTIONS,

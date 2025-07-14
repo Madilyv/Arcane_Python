@@ -13,7 +13,6 @@ from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.emoji import emojis
 from ..core.state_manager import StateManager
-from ..core.question_flow import QuestionFlow
 from ..ai.processors import process_attack_strategies_with_ai
 from ..components.builders import create_attack_strategy_components
 from ..utils.constants import QUESTIONNAIRE_QUESTIONS

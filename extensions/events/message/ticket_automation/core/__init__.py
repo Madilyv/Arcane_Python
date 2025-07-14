@@ -8,15 +8,11 @@ from .questionnaire_manager import (
     trigger_questionnaire,
     send_interview_selection_prompt
 )
-from .question_flow import (
-    send_next_question,
-    is_awaiting_text_response
-)
+from .question_flow import QuestionFlow
 
 __all__ = [
     'StateManager',
     'trigger_questionnaire',
     'send_interview_selection_prompt',
-    'send_next_question',
-    'is_awaiting_text_response'
+    'QuestionFlow'  # ✅ Export the class, not the method
 ]
