@@ -272,9 +272,9 @@ async def check_friend_time_confirmation(event: hikari.GuildMessageCreateEvent) 
 
             # Move to next question
             from ..core import questionnaire_manager
-            next_question = QUESTIONNAIRE_QUESTIONS["timezone"]["next"]
+            next_question = QUESTIONNAIRE_QUESTIONS["timezone"]["next"]  # This will now be "leaders_checking_you_out"
             if next_question:
-                await questionnaire_manager.send_question(event.channel_id, user_id, next_question)
+                await questionnaire_manager.send_question(int(event.channel_id), user_id, next_question)
 
         return True
 

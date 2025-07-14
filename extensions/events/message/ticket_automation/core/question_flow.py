@@ -94,15 +94,23 @@ class QuestionFlow:
             return
 
         # Import here to avoid circular dependency
-        from ..components.builders import create_question_component
+        from ..components.builders import create_container_component
 
         try:
             # Update state
             await StateManager.set_current_question(channel_id, question_key)
 
+            # Create template for the question
+            template = {
+                "title": question.get("title"),
+                "content": question.get("content"),
+                "footer": question.get("footer"),
+                "gif_url": question.get("gif_url")
+            }
+
             # Create and send the question
-            components = create_question_component(
-                question,
+            components = create_container_component(
+                template,
                 user_id=user_id
             )
 
@@ -121,10 +129,16 @@ class QuestionFlow:
 
             print(f"[QuestionFlow] Sent standard question {question_key}")
 
+            # If this is the final question, wait and then send completion
+            if question.get("is_final"):
+                await asyncio.sleep(10)  # Give user time to read
+                await completion.send_completion_message(channel_id, user_id)
+
         except Exception as e:
             print(f"[QuestionFlow] Error sending standard question: {e}")
             import traceback
             traceback.print_exc()
+
 
     @classmethod
     def get_next_question(cls, current_question: str) -> Optional[str]:

@@ -67,46 +67,82 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
     if not mongo_client or not bot_instance or not is_initialized:
         return
 
-    # Skip bot messages unless checking for Friend Time bot
+    # Get ticket state using StateManager
+    ticket_state = await StateManager.get_ticket_state(str(event.channel_id))
+    if not ticket_state:
+        return
+
+    # SPECIAL HANDLING FOR BOT MESSAGES - Check Friend Time bot
     if event.is_bot:
-        # Check for Friend Time bot confirmation
-        if await timezone_handler.check_friend_time_confirmation(event):
-            return
+        # Check if we're waiting for timezone confirmation
+        if ticket_state.get("step_data", {}).get("questionnaire", {}).get("awaiting_timezone_confirmation", False):
+            # Log bot messages for debugging
+            content_preview = event.content[:100] if event.content else "(no content - possibly embed)"
+            print(
+                f"[Message Events] Bot message in channel {event.channel_id} from {event.author.username}: {content_preview}...")
+
+            # Check for Friend Time bot confirmation
+            if await timezone_handler.check_friend_time_confirmation(event):
+                print("[Message Events] Friend Time confirmation processed")
+                return
         # Skip other bot messages
         return
 
-    # Get ticket state using StateManager
-    ticket_state = await StateManager.get_ticket_state(event.channel_id)
-    if not ticket_state:
-        return
+    # From here on, we're only dealing with user messages
+    print(f"[Message Events] User message in channel {event.channel_id} from {event.author.username}")
 
     # Check if automation is active
     automation_state = ticket_state.get("automation_state", {})
     if automation_state.get("status") != "active":
+        print(f"[Message Events] Automation not active, status: {automation_state.get('status')}")
         return
 
     # Check if we're in questionnaire step
     if automation_state.get("current_step") != "questionnaire":
+        print(f"[Message Events] Not in questionnaire step, current step: {automation_state.get('current_step')}")
         return
 
     # Get questionnaire data
     questionnaire_data = ticket_state.get("step_data", {}).get("questionnaire", {})
     current_question = questionnaire_data.get("current_question")
 
+    print(f"[Message Events] Current question: {current_question}")
+
     if not current_question:
         return
 
     # Special handling for discord skills - check ANY message during this question
     if current_question == "discord_basic_skills":
-        # Validate user first
-        expected_user = await StateManager.get_user_id(event.channel_id)
-        if expected_user and event.author_id == expected_user:
+        print(f"[Message Events] Processing Discord skills message from user {event.author_id}")
+
+        # Get expected user from multiple locations
+        expected_user = (
+                ticket_state.get("discord_id") or
+                ticket_state.get("user_id") or
+                ticket_state.get("ticket_info", {}).get("user_id") or
+                ticket_state.get("step_data", {}).get("user_id")
+        )
+
+        if expected_user:
+            try:
+                expected_user = int(expected_user)
+            except (ValueError, TypeError):
+                print(f"[Message Events] Error converting expected_user: {expected_user}")
+                expected_user = None
+
+        print(f"[Message Events] Expected user: {expected_user}, Message author: {event.author_id}")
+
+        # Check if it's the right user or if we don't have an expected user
+        if not expected_user or event.author_id == expected_user:
+            print(f"[Message Events] Calling check_mention_completion")
             # Check this message for mentions
             await discord_skills_handler.check_mention_completion(
                 event.channel_id,
                 event.author_id,
                 event.message  # Pass the message object
             )
+        else:
+            print(f"[Message Events] User mismatch, skipping")
         return
 
     # Check if we're awaiting text response for other questions
@@ -114,17 +150,32 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
         return
 
     # Validate user
-    expected_user = await StateManager.get_user_id(event.channel_id)
-    if expected_user and event.author_id != expected_user:
-        return
+    expected_user = ticket_state.get("discord_id") or ticket_state.get("user_id")
+    if expected_user:
+        try:
+            expected_user = int(expected_user)
+            if event.author_id != expected_user:
+                return
+        except (ValueError, TypeError):
+            pass
 
     print(f"[Message Events] Processing response for question: {current_question}")
 
     # Route to appropriate handler
     if current_question == "attack_strategies":
         await attack_strategies_handler.process_user_input(event.channel_id, event.author_id, event.content)
-    elif current_question == "clan_expectations":
+        # Delete the user's message after processing
+        try:
+            await event.message.delete()
+        except:
+            pass
+    elif current_question == "future_clan_expectations":
         await clan_expectations_handler.process_user_input(event.channel_id, event.author_id, event.content)
+        # Delete the user's message after processing
+        try:
+            await event.message.delete()
+        except:
+            pass
     # Other text-based questions are handled by their respective handlers
 
 
@@ -132,20 +183,16 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
 async def on_discord_skills_reaction(event: hikari.GuildReactionAddEvent):
     """Handle reactions for Discord skills verification."""
 
+    # Initialize if not already done
     if not is_initialized:
         _initialize_from_bot_data()
 
-    if not is_initialized:
+    if not mongo_client or not bot_instance or not is_initialized:
         return
 
-    # Check if this is for a discord skills message
+    # Call the handler to check the reaction
     await discord_skills_handler.check_reaction_completion(
-        int(event.channel_id),  # Ensure it's an int
-        int(event.message_id),  # Ensure it's an int
-        int(event.user_id),  # Ensure it's an int
-        str(event.emoji_name)
+        event.channel_id,
+        event.user_id,
+        event.message_id
     )
-
-
-# Re-export loader for use in main.py extensions
-__all__ = ['loader']

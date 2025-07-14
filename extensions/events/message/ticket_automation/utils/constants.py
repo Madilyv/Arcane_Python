@@ -18,34 +18,6 @@ TIMEZONE_CONFIRMATION_TIMEOUT = 60  # Seconds to wait for Friend Time bot confir
 FRIEND_TIME_BOT_ID = 481439443015942166
 FRIEND_TIME_SET_COMMAND_ID = 924862149292085268
 
-# Age Bracket Responses
-AGE_RESPONSES = {
-    "16_under": {
-        "title": "🎉 **16 & Under Registered!**",
-        "content": (
-            "Got it! You're bringing that youthful energy!\n\n"
-            "We'll find you a family-friendly clan that's the perfect fit for you.\n\n"
-        ),
-        "gif": "https://c.tenor.com/oxxT2JPSQccAAAAC/tenor.gif"
-    },
-    "17_25": {
-        "title": "🎮 **17–25 Confirmed**",
-        "content": (
-            "Understood! You're in prime gaming years!\n\n"
-            "Time to conquer the Clash world! 🏆\n\n"
-        ),
-        "gif": "https://c.tenor.com/twdtlMLE8UIAAAAC/tenor.gif"
-    },
-    "over_25": {
-        "title": "🏅 **Age Locked In**",
-        "content": (
-            "Awesome! Experience meets strategy!\n\n"
-            "Welcome to the veteran league of Clashers! 💪\n\n"
-        ),
-        "gif": "https://c.tenor.com/m6o-4dKGdVAAAAAC/tenor.gif"
-    }
-}
-
 # Questionnaire Questions
 QUESTIONNAIRE_QUESTIONS = {
     "interview_selection": {
@@ -73,51 +45,47 @@ QUESTIONNAIRE_QUESTIONS = {
             "{red_arrow} **War frequency preferences**\n"
             "{blank}{white_arrow} _e.g. Daily wars, 2-3 times a week, CWL only_\n\n"
             "{red_arrow} **Social atmosphere**\n"
-            "{blank}{white_arrow} _e.g. Competitive, casual, chatty, quiet focus_\n\n"
-            "{red_arrow} **Goals & priorities**\n"
-            "{blank}{white_arrow} _e.g. Push trophies, max clan games, learn strategies_\n\n"
-            "*Share as much detail as you'd like - it helps us find your perfect match!*"
+            "{blank}{white_arrow} _e.g. Competitive, casual, chatty, quiet_\n\n"
+            "{red_arrow} **Play style**\n"
+            "{blank}{white_arrow} _e.g. Trophy pushing, farming, war-focused_\n\n"
+            "{red_arrow} **Special interests**\n"
+            "{blank}{white_arrow} _e.g. Base building, FC practice, clan games_\n\n"
+            "{red_arrow} **Anything else we should know?**\n"
+            "{blank}{white_arrow} _e.g. Time zone preferences, language, activity level_\n\n"
+            "*The more details you share, the better we can match you!*"
         ),
         "next": "discord_basic_skills",
         "requires_done": False
     },
     "discord_basic_skills": {
-        "title": "## 🎯 **Quick Discord Skills Check**",
+        "title": "## 🎮 **Discord Basic Skills Check**",
         "content": (
-            "Let's make sure you're comfortable with Discord basics!\n\n"
-            "**Please complete these two simple tasks:**\n\n"
-            "{red_arrow} **React to this message** with any emoji\n"
-            "{red_arrow} **Mention the bot** by typing @ and selecting the bot\n\n"
-            "*These skills help you stay connected with your clan!*\n\n"
-            "-# To continue, type **done**"
+            "Let's make sure you know the Discord basics!\n\n"
+            "{red_arrow} **Step 1:** React to this message with any emoji\n"
+            "{white_arrow} _Click the smiley face below to add a reaction_\n\n"
+            "{red_arrow} **Step 2:** Reply and mention the bot\n"
+            "{white_arrow} _Type a message with @Arcane Bot (that's me!)_\n\n"
+            "*This ensures you can interact properly in your new clan!*"
         ),
-        "next": "age_bracket",
-        "requires_done": True
+        "footer": "React to this message and mention the bot to continue!",
+        "next": "age_bracket"
     },
     "age_bracket": {
         "title": "## ⏳ **What's Your Age Bracket?**",
         "content": "**What age bracket do you fall into?**\n\n",
-        "next": "timezone",  # Will proceed to timezone after selection
+        "next": "timezone",
         "is_button_question": True
     },
     "timezone": {
-        "title": "## 🌐 **Set Your Time Zone**",
-        "content": "To help us match you with the right clan and events, let's set your timezone.\n\n",
-        "next": "completion",
-        "is_friend_time": True
-    },
-    "completion": {
-        "title": "## ✅ **Questionnaire Complete!**",
+        "title": "## 🌍 **Set Your Timezone**",
         "content": (
-            "🎉 **Congratulations!** You've completed the recruitment questionnaire!\n\n"
-            "**What happens next:**\n"
-            "• Our recruitment team will review your responses\n"
-            "• We'll match you with clans that fit your preferences\n"
-            "• A recruiter will reach out with clan recommendations\n\n"
-            "*Thank you for taking the time to share about yourself!*"
+            "Let's set your timezone so clan leaders know when you're active!\n\n"
+            "{red_arrow} **Click the button below** to open Friend Time\n"
+            "{red_arrow} **Select your timezone** from the dropdown\n"
+            "{red_arrow} **Wait for confirmation** from Friend Time bot\n\n"
+            "*This helps with war timing and coordinating attacks!*"
         ),
-        "next": None,
-        "is_completion": True
+        "next": "leaders_checking_you_out"
     },
     "leaders_checking_you_out": {
         "title": "## 👑 **Leaders Checking You Out**",
@@ -128,7 +96,36 @@ QUESTIONNAIRE_QUESTIONS = {
             "• **Application responses** – The info you've shared with us\n\n"
             "*Make sure your profile reflects your best! Leaders appreciate active, engaged members.*"
         ),
-        "next": "completion",
-        "requires_done": False
+        "footer": "You've completed the questionnaire! A recruiter will be with you shortly.",
+        "next": None,
+        "is_final": True
+    }
+}
+
+# Age Bracket Responses (moved back here from age_bracket.py)
+AGE_RESPONSES = {
+    "16_under": {
+        "title": "🎉 **16 & Under Registered!**",
+        "content": (
+            "Got it! You're bringing that youthful energy!\n\n"
+            "We'll find you a family-friendly clan that's the perfect fit for you.\n\n"
+        ),
+        "gif": "https://c.tenor.com/oxxT2JPSQccAAAAC/tenor.gif"
+    },
+    "17_25": {
+        "title": "🎮 **17–25 Confirmed**",
+        "content": (
+            "Understood! You're in prime gaming years!\n\n"
+            "Time to conquer the Clash world! 🏆\n\n"
+        ),
+        "gif": "https://c.tenor.com/twdtlMLE8UIAAAAC/tenor.gif"
+    },
+    "over_25": {
+        "title": "🏅 **Age Locked In**",
+        "content": (
+            "Awesome! Experience meets strategy!\n\n"
+            "Welcome to the veteran league of Clashers! 💪\n\n"
+        ),
+        "gif": "https://c.tenor.com/m6o-4dKGdVAAAAAC/tenor.gif"
     }
 }

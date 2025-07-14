@@ -25,39 +25,11 @@ from utils.mongo import MongoClient
 from utils.emoji import emojis
 from utils.constants import BLUE_ACCENT, GREEN_ACCENT
 from ..core.state_manager import StateManager
-from ..utils.constants import QUESTIONNAIRE_QUESTIONS
+from ..utils.constants import QUESTIONNAIRE_QUESTIONS, AGE_RESPONSES
 
 # Global instances
 mongo_client: Optional[MongoClient] = None
 bot_instance: Optional[hikari.GatewayBot] = None
-
-# Age bracket responses with GIFs (matching old version)
-AGE_RESPONSES = {
-    "16_under": {
-        "title": "🎉 **16 & Under Registered!**",
-        "content": (
-            "Got it! You're bringing that youthful energy!\n\n"
-            "We'll find you a family-friendly clan that's the perfect fit for you.\n\n"
-        ),
-        "gif": "https://c.tenor.com/oxxT2JPSQccAAAAC/tenor.gif"
-    },
-    "17_25": {
-        "title": "🎮 **17–25 Confirmed**",
-        "content": (
-            "Understood! You're in prime gaming years!\n\n"
-            "Time to conquer the Clash world! 🏆\n\n"
-        ),
-        "gif": "https://c.tenor.com/twdtlMLE8UIAAAAC/tenor.gif"
-    },
-    "over_25": {
-        "title": "🏅 **Age Locked In**",
-        "content": (
-            "Awesome! Experience meets strategy!\n\n"
-            "Welcome to the veteran league of Clashers! 💪\n\n"
-        ),
-        "gif": "https://c.tenor.com/m6o-4dKGdVAAAAAC/tenor.gif"
-    }
-}
 
 
 def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
