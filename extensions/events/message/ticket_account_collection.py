@@ -25,7 +25,7 @@ from utils.mongo import MongoClient
 from utils.emoji import emojis
 
 # Import the questionnaire trigger
-from extensions.events.message.ticket_questionnaire import trigger_questionnaire
+#from extensions.events.message.ticket_automation import trigger_questionnaire
 
 # Configuration
 ACCOUNT_PROMPT_DELETE_TIMEOUT = 60  # Seconds before account collection prompts auto-delete
