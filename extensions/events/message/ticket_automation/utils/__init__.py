@@ -1,42 +1,53 @@
 # extensions/events/message/ticket_automation/utils/__init__.py
-"""Utility functions and constants for ticket automation"""
+"""
+Utility modules for ticket automation.
+"""
 
 from .constants import (
-    QUESTIONNAIRE_QUESTIONS,
     RECRUITMENT_STAFF_ROLE,
     LOG_CHANNEL_ID,
     REMINDER_DELETE_TIMEOUT,
     REMINDER_TIMEOUT,
-    TIMEZONE_CONFIRMATION_TIMEOUT
+    TIMEZONE_CONFIRMATION_TIMEOUT,
+    QUESTIONNAIRE_QUESTIONS,
+    AGE_RESPONSES
 )
 
 from .helpers import (
     format_user_mention,
-    format_channel_mention,
     calculate_time_difference,
-    clean_message_content
+    get_current_timestamp
 )
 
 from .validators import (
     validate_user_id,
+    is_automation_active,
     validate_channel_id,
-    is_valid_timezone,
-    is_automation_active
+    is_friend_time_bot,
+    validate_timestamp,
+    is_valid_ticket_type,
+    validate_questionnaire_step
 )
 
 __all__ = [
-    'QUESTIONNAIRE_QUESTIONS',
+    # Constants
     'RECRUITMENT_STAFF_ROLE',
     'LOG_CHANNEL_ID',
     'REMINDER_DELETE_TIMEOUT',
     'REMINDER_TIMEOUT',
     'TIMEZONE_CONFIRMATION_TIMEOUT',
+    'QUESTIONNAIRE_QUESTIONS',
+    'AGE_RESPONSES',
+    # Helpers
     'format_user_mention',
-    'format_channel_mention',
     'calculate_time_difference',
-    'clean_message_content',
+    'get_current_timestamp',
+    # Validators
     'validate_user_id',
+    'is_automation_active',
     'validate_channel_id',
-    'is_valid_timezone',
-    'is_automation_active'
+    'is_friend_time_bot',
+    'validate_timestamp',
+    'is_valid_ticket_type',
+    'validate_questionnaire_step'
 ]

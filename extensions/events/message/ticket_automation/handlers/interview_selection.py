@@ -14,7 +14,6 @@ from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT
 from ..core.state_manager import StateManager
-from ..core.question_flow import QuestionFlow
 from ..components.builders import create_container_component
 from ..utils.constants import RECRUITMENT_STAFF_ROLE, LOG_CHANNEL_ID
 

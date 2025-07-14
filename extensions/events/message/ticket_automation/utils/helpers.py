@@ -6,6 +6,16 @@ Provides common utilities used across different handlers.
 
 import re
 from datetime import datetime, timezone, timedelta
+
+def get_current_timestamp() -> datetime:
+    """
+    Get the current UTC timestamp.
+
+    Returns:
+        datetime: Current timezone-aware datetime in UTC
+    """
+    return datetime.now(timezone.utc)
+
 from typing import Optional, Union
 
 

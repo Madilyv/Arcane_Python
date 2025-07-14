@@ -1,200 +1,153 @@
 # extensions/events/message/message_events.py
 """
-Main message event handler that routes to appropriate automation handlers.
-Updated to use the new modular ticket automation structure.
+Message event handlers for ticket automation.
 """
 
 import hikari
 import lightbulb
+from typing import Optional
+
+from utils.mongo import MongoClient
 from utils import bot_data
 
-# Import the new ticket automation modules
+# Import from refactored structure
+from .ticket_automation import trigger_questionnaire, initialize as init_automation
 from .ticket_automation.core import StateManager
-from .ticket_automation.handlers import attack_strategies, clan_expectations, discord_skills
-from .ticket_automation.handlers.timezone import FRIEND_TIME_BOT_ID, handle_friend_time_message
+from .ticket_automation.handlers import (
+    timezone as timezone_handler,
+    attack_strategies as attack_strategies_handler,
+    clan_expectations as clan_expectations_handler,
+    discord_skills as discord_skills_handler
+)
+from .ticket_automation.core.question_flow import is_awaiting_text_response
 
+# Global instances - will be initialized from bot_data
+mongo_client: Optional[MongoClient] = None
+bot_instance: Optional[hikari.GatewayBot] = None
+state_manager: Optional[StateManager] = None
 loader = lightbulb.Loader()
 
 
+# Initialize on module load using bot_data
+def _initialize_from_bot_data():
+    """Initialize using bot_data if available."""
+    global mongo_client, bot_instance, state_manager
+
+    if "mongo" in bot_data.data:
+        mongo_client = bot_data.data["mongo"]
+    if "bot" in bot_data.data:
+        bot_instance = bot_data.data["bot"]
+
+    if mongo_client and bot_instance:
+        state_manager = StateManager(mongo_client)
+        # Initialize all handlers
+        init_automation(mongo_client, bot_instance)
+
+
+# Try to initialize immediately if bot_data is already populated
+_initialize_from_bot_data()
+
+
+@loader.listener(hikari.StartingEvent)
+async def on_starting(event: hikari.StartingEvent):
+    """Initialize on bot startup."""
+    _initialize_from_bot_data()
+    print("[Message Events] Ticket automation initialized")
+
+
 @loader.listener(hikari.GuildMessageCreateEvent)
-async def on_message_create(event: hikari.GuildMessageCreateEvent) -> None:
-    """Handle all guild message create events"""
+async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
+    """Listen for questionnaire responses in ticket channels."""
 
-    # Skip bot messages (except Friend Time bot)
-    if event.is_bot and event.author_id != FRIEND_TIME_BOT_ID:
+    # Initialize if not already done
+    if not state_manager:
+        _initialize_from_bot_data()
+
+    if not mongo_client or not bot_instance or not state_manager:
         return
 
-    # Get MongoDB and bot instances
-    mongo = bot_data.data.get("mongo")
-    bot = bot_data.data.get("bot")
-
-    if not mongo or not bot:
+    # Skip bot messages unless checking for Friend Time bot
+    if event.is_bot:
+        # Check for Friend Time bot confirmation
+        if await timezone_handler.check_friend_time_confirmation(event):
+            return
+        # Skip other bot messages
         return
 
-    # Initialize StateManager if needed
-    StateManager.initialize(mongo, bot)
-
-    # Get ticket state for this channel
-    ticket_state = await StateManager.get_ticket_state(str(event.channel_id))
+    # Get ticket state
+    ticket_state = await state_manager.get_ticket_state(event.channel_id)
     if not ticket_state:
         return
 
     # Check if automation is active
-    if not await StateManager.is_automation_active(event.channel_id):
+    automation_state = ticket_state.get("automation_state", {})
+    if automation_state.get("status") != "active":
         return
 
-    # Handle Friend Time bot messages
-    if event.author_id == FRIEND_TIME_BOT_ID:
-        await handle_friend_time_message(event.message)
+    # Check if we're in questionnaire step
+    if automation_state.get("current_step") != "questionnaire":
         return
 
-    # Get expected user ID for this ticket
-    expected_user_id = await StateManager.get_user_id(event.channel_id)
-    if not expected_user_id or event.author_id != expected_user_id:
-        return
-
-    # Get current questionnaire state
+    # Get questionnaire data
     questionnaire_data = ticket_state.get("step_data", {}).get("questionnaire", {})
     current_question = questionnaire_data.get("current_question")
 
-    # Route to appropriate handler based on current state
+    if not current_question:
+        return
 
-    # Check if collecting attack strategies
-    if questionnaire_data.get("collecting_strategies", False):
-        print(f"[MessageEvents] Processing attack strategy: {event.content}")
-        await attack_strategies.process_user_input(
-            event.channel_id,
-            event.author_id,
-            event.content
-        )
-        # Delete the user's message to keep channel clean
-        try:
-            await event.message.delete()
-        except:
+    # Check if we're awaiting text response
+    if not await is_awaiting_text_response(event.channel_id):
+        # Might be waiting for reactions/mentions for discord skills
+        if current_question == "discord_skills":
+            # These are handled by reaction/mention events
             pass
         return
 
-    # Check if collecting clan expectations
-    if questionnaire_data.get("collecting_expectations", False):
-        print(f"[MessageEvents] Processing clan expectation: {event.content}")
-        await clan_expectations.process_user_input(
-            event.channel_id,
-            event.author_id,
-            event.content
-        )
-        # Delete the user's message
-        try:
-            await event.message.delete()
-        except:
-            pass
+    # Validate user
+    expected_user = await state_manager.get_user_id(event.channel_id)
+    if expected_user and event.author_id != expected_user:
         return
 
-    # Check for Discord skills mention requirement
-    if (current_question == "discord_basic_skills" and
-            not questionnaire_data.get("discord_skills_mention", False)):
-        await discord_skills.handle_mention_message(
-            event.channel_id,
-            event.author_id,
-            event.message
-        )
-        return
+    print(f"[Message Events] Processing response for question: {current_question}")
 
-    # Handle standard text responses
-    if questionnaire_data.get("awaiting_response", False) and current_question:
-        print(f"[MessageEvents] Processing response for {current_question}: {event.content}")
-
-        # Special handling for discord_basic_skills_2 "done" requirement
-        if current_question == "discord_basic_skills_2" and event.content.lower().strip() == "done":
-            # Record the response
-            await StateManager.store_response(
-                event.channel_id,
-                current_question,
-                "done"
-            )
-
-            # Import QuestionFlow to move to next question
-            from .ticket_automation.core import QuestionFlow
-            QuestionFlow.initialize(mongo, bot)
-
-            # Move to next question
-            await QuestionFlow.send_next_question(
-                event.channel_id,
-                event.author_id,
-                current_question
-            )
-
-            # Keep the "done" message visible
-            return
-
-        # Handle timezone responses
-        elif current_question == "timezone":
-            # Store the timezone response
-            await StateManager.store_response(
-                event.channel_id,
-                current_question,
-                event.content
-            )
-            # Don't delete - Friend Time bot needs to see it
-            return
-
-        # Handle other text responses
-        else:
-            # Store the response
-            await StateManager.store_response(
-                event.channel_id,
-                current_question,
-                event.content
-            )
-
-            # Delete message for clean channel (except special cases)
-            if current_question not in ["discord_basic_skills_2", "age_bracket", "timezone"]:
-                try:
-                    await event.message.delete()
-                except:
-                    pass
-
-            # Move to next question if applicable
-            from .ticket_automation.core import QuestionFlow
-            QuestionFlow.initialize(mongo, bot)
-
-            next_question = QuestionFlow.get_next_question(current_question)
-            if next_question:
-                await QuestionFlow.send_question(
-                    event.channel_id,
-                    event.author_id,
-                    next_question
-                )
+    # Route to appropriate handler
+    if current_question == "attack_strategies":
+        await attack_strategies_handler.process_user_input(event.channel_id, event.author_id, event.content)
+    elif current_question == "clan_expectations":
+        await clan_expectations_handler.process_user_input(event.channel_id, event.author_id, event.content)
+    # Other text-based questions are handled by their respective handlers
 
 
 @loader.listener(hikari.GuildReactionAddEvent)
-async def on_reaction_add(event: hikari.GuildReactionAddEvent) -> None:
-    """Monitor for reactions on discord skills message"""
+async def on_discord_skills_reaction(event: hikari.GuildReactionAddEvent):
+    """Handle reactions for Discord skills verification."""
 
-    # Get MongoDB and bot instances
-    mongo = bot_data.data.get("mongo")
-    bot = bot_data.data.get("bot")
-
-    if not mongo or not bot:
+    if not state_manager:
         return
 
-    # Skip bot reactions
-    if event.user_id == bot.get_me().id:
+    # Check if this is for a discord skills message
+    await discord_skills_handler.check_reaction_completion(
+        event.channel_id,
+        event.message_id,
+        event.user_id,
+        str(event.emoji_name)
+    )
+
+
+@loader.listener(hikari.GuildMessageCreateEvent)
+async def on_discord_skills_mention(event: hikari.GuildMessageCreateEvent):
+    """Handle mentions for Discord skills verification."""
+
+    if event.is_bot:
         return
 
-    # Pass to discord skills handler
-    await discord_skills.handle_reaction_add(event)
+    if not state_manager or not bot_instance:
+        return
+
+    # Check for bot mention
+    if bot_instance.get_me() and bot_instance.get_me().id in event.message.user_mentions_ids:
+        await discord_skills_handler.check_mention_completion(event.channel_id, event.author_id)
 
 
-@loader.listener(hikari.StartedEvent)
-async def on_started(event: hikari.StartedEvent) -> None:
-    """Initialize message event handlers when bot starts"""
-
-    mongo = bot_data.data.get("mongo")
-    bot = bot_data.data.get("bot")
-
-    if mongo and bot:
-        # Initialize all the ticket automation modules
-        from .ticket_automation.core import QuestionnaireManager
-        await QuestionnaireManager.initialize(mongo, bot)
-
-        print("[MessageEvents] Ticket automation message handlers initialized")
+# Re-export loader for use in main.py extensions
+__all__ = ['loader']

@@ -1,23 +1,56 @@
 # extensions/events/message/ticket_automation/utils/constants.py
 """
-Constants specific to ticket automation questionnaire.
-Separated from main constants for modularity.
+Constants for ticket automation system.
 """
+
+from utils.emoji import emojis
 
 # Role and Channel IDs
 RECRUITMENT_STAFF_ROLE = 999140213953671188
 LOG_CHANNEL_ID = 1345589195695194113
 
-# Timing Configuration
+# Timing Constants (in seconds)
 REMINDER_DELETE_TIMEOUT = 15  # Seconds before auto-deleting reminder messages
-REMINDER_TIMEOUT = 30  # Seconds before allowing another reminder
-TIMEZONE_CONFIRMATION_TIMEOUT = 60  # Seconds to wait for Friend Time bot
+REMINDER_TIMEOUT = 30  # Seconds before allowing another reminder to be sent
+TIMEZONE_CONFIRMATION_TIMEOUT = 60  # Seconds to wait for Friend Time bot confirmation
 
-# Friend Time Bot ID
+# Friend Time Bot Configuration
 FRIEND_TIME_BOT_ID = 481439443015942166
+FRIEND_TIME_SET_COMMAND_ID = 924862149292085268
 
-# Question Definitions
+# Age Bracket Responses
+AGE_RESPONSES = {
+    "16_under": {
+        "title": "🎉 **16 & Under Registered!**",
+        "content": (
+            "Got it! You're bringing that youthful energy!\n\n"
+            "We'll find you a family-friendly clan that's the perfect fit for you.\n\n"
+        ),
+        "gif": "https://c.tenor.com/oxxT2JPSQccAAAAC/tenor.gif"
+    },
+    "17_25": {
+        "title": "🎮 **17–25 Confirmed**",
+        "content": (
+            "Understood! You're in prime gaming years!\n\n"
+            "Time to conquer the Clash world! 🏆\n\n"
+        ),
+        "gif": "https://c.tenor.com/twdtlMLE8UIAAAAC/tenor.gif"
+    },
+    "over_25": {
+        "title": "🏅 **Age Locked In**",
+        "content": (
+            "Awesome! Experience meets strategy!\n\n"
+            "Welcome to the veteran league of Clashers! 💪\n\n"
+        ),
+        "gif": "https://c.tenor.com/m6o-4dKGdVAAAAAC/tenor.gif"
+    }
+}
+
+# Questionnaire Questions
 QUESTIONNAIRE_QUESTIONS = {
+    "interview_selection": {
+        "next": "attack_strategies"  # Start with attack strategies after selection
+    },
     "attack_strategies": {
         "title": "## ⚔️ **Attack Strategy Breakdown**",
         "content": (
@@ -30,86 +63,72 @@ QUESTIONNAIRE_QUESTIONS = {
             "{blank}{white_arrow} _e.g. CH 8, CH 9, etc._\n\n"
             "*Your detailed breakdown helps us match you to the perfect clan!*"
         ),
-        "type": "ai_continuous",
-        "next": "future_clan_expectations"
+        "next": "future_clan_expectations",
+        "requires_done": False
     },
     "future_clan_expectations": {
-        "title": "## 🏰 **What are you looking for in a Future clan?**",
+        "title": "## 🏰 **What Are You Looking For?**",
         "content": (
-            "Tell us your ideal clan experience!\n\n"
-            "{red_arrow} **Examples to consider:**\n"
-            "{blank}{white_arrow} Activity level _(wars, CWL, raids, games)_\n"
-            "{blank}{white_arrow} Social atmosphere _(chatty, quiet, mature)_\n"
-            "{blank}{white_arrow} Competition level _(casual to hardcore)_\n"
-            "{blank}{white_arrow} Special preferences _(time zones, leadership style)_\n\n"
-            "*Share what matters most to you!*"
+            "Tell us what you're hoping to find in your next clan!\n\n"
+            "{red_arrow} **War frequency preferences**\n"
+            "{blank}{white_arrow} _e.g. Daily wars, 2-3 times a week, CWL only_\n\n"
+            "{red_arrow} **Social atmosphere**\n"
+            "{blank}{white_arrow} _e.g. Competitive, casual, chatty, quiet focus_\n\n"
+            "{red_arrow} **Goals & priorities**\n"
+            "{blank}{white_arrow} _e.g. Push trophies, max clan games, learn strategies_\n\n"
+            "*Share as much detail as you'd like - it helps us find your perfect match!*"
         ),
-        "type": "ai_continuous",
-        "next": "discord_basic_skills"
+        "next": "discord_basic_skills",
+        "requires_done": False
     },
     "discord_basic_skills": {
-        "title": "## 🎯 **Discord Basic Skills Check**",
+        "title": "## 🎯 **Quick Discord Skills Check**",
         "content": (
-            "Let's verify you know the Discord basics!\n\n"
-            "{red_arrow} **Complete these two simple tasks:**\n\n"
-            "{blank}1️⃣ **React** to this message with any emoji\n"
-            "{blank}2️⃣ **Reply** and mention me in your message\n\n"
-            "*These skills are essential for clan communication!*"
+            "Let's make sure you're comfortable with Discord basics!\n\n"
+            "**Please complete these two simple tasks:**\n\n"
+            "{red_arrow} **React to this message** with any emoji\n"
+            "{red_arrow} **Mention the bot** by typing @ and selecting the bot\n\n"
+            "*These skills help you stay connected with your clan!*\n\n"
+            "-# To continue, type **done**"
         ),
-        "type": "skill_check",
-        "footer": "React to this message and mention the bot to continue!",
-        "next": "discord_basic_skills_2"
-    },
-    "discord_basic_skills_2": {
-        "title": "## 💬 **Quick Communication Check**",
-        "content": (
-            "One more Discord skill to verify!\n\n"
-            "**Can you see and use our custom emojis?**\n\n"
-            "These are special to our server:\n"
-            "• Clash emojis for troops and spells\n"
-            "• Rank indicators\n"
-            "• Clan badges\n\n"
-            "-# To continue, type `done` below"
-        ),
-        "type": "text_response",
-        "expected_response": "done",
-        "next": "age_bracket"
+        "next": "age_bracket",
+        "requires_done": True
     },
     "age_bracket": {
-        "title": "## 🎂 **Select Your Age Bracket**",
-        "content": (
-            "This helps us find age-appropriate clans for you.\n\n"
-            "*Your selection is kept private and only used for clan matching.*"
-        ),
-        "type": "button_selection",
-        "has_gif": True,
-        "next": "timezone"
+        "title": "## ⏳ **What's Your Age Bracket?**",
+        "content": "**What age bracket do you fall into?**\n\n",
+        "next": "timezone",  # Will proceed to timezone after selection
+        "is_button_question": True
     },
     "timezone": {
-        "title": "## 🌍 **What's Your Time Zone?**",
+        "title": "## 🌐 **Set Your Time Zone**",
+        "content": "To help us match you with the right clan and events, let's set your timezone.\n\n",
+        "next": "completion",
+        "is_friend_time": True
+    },
+    "completion": {
+        "title": "## ✅ **Questionnaire Complete!**",
         "content": (
-            "Help us coordinate clan activities at convenient times!\n\n"
-            "**Please type one of these formats:**\n"
-            "• Your timezone code: `EST`, `CST`, `PST`, `GMT`\n"
-            "• UTC offset: `UTC-5`, `UTC+2`\n"
-            "• Major city: `New York`, `London`, `Sydney`\n\n"
-            "*Friend Time bot will save this for easy conversions!*"
+            "🎉 **Congratulations!** You've completed the recruitment questionnaire!\n\n"
+            "**What happens next:**\n"
+            "• Our recruitment team will review your responses\n"
+            "• We'll match you with clans that fit your preferences\n"
+            "• A recruiter will reach out with clan recommendations\n\n"
+            "*Thank you for taking the time to share about yourself!*"
         ),
-        "type": "text_response",
-        "wait_for_bot": True,
-        "bot_id": FRIEND_TIME_BOT_ID,
-        "next": "leaders_checking_you_out"
+        "next": None,
+        "is_completion": True
     },
     "leaders_checking_you_out": {
-        "title": "## 👀 **Clan Leaders are Checking You Out!**",
+        "title": "## 👑 **Leaders Checking You Out**",
         "content": (
-            "Your application is looking great!\n\n"
-            "Our clan leaders are reviewing your responses to find the perfect match.\n\n"
-            "*Get ready to join an amazing community!*"
+            "Heads up! Our clan leaders will be reviewing your profile:\n\n"
+            "• **In-game profile** – Town Hall, hero levels, war stars\n"
+            "• **Discord activity** – How you communicate and engage\n"
+            "• **Application responses** – The info you've shared with us\n\n"
+            "*Make sure your profile reflects your best! Leaders appreciate active, engaged members.*"
         ),
-        "type": "final_message",
-        "has_gif": True,
-        "gif_url": "https://media1.tenor.com/m/BkGs-OUqeZ0AAAAC/well.gif",
-        "next": None
+        "next": "completion",
+        "requires_done": False
     }
 }

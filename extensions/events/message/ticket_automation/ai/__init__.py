@@ -1,10 +1,7 @@
 # extensions/events/message/ticket_automation/ai/__init__.py
-"""AI processing functionality for ticket automation"""
-
-from .processors import (
-    process_attack_strategies_with_ai,
-    process_clan_expectations_with_ai
-)
+"""
+AI processing modules for ticket automation.
+"""
 
 from .prompts import (
     ATTACK_STRATEGIES_PROMPT,
@@ -12,8 +9,6 @@ from .prompts import (
 )
 
 __all__ = [
-    'process_attack_strategies_with_ai',
-    'process_clan_expectations_with_ai',
     'ATTACK_STRATEGIES_PROMPT',
     'CLAN_EXPECTATIONS_PROMPT'
 ]
