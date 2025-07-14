@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from ..core.state_manager import StateManager
-from ..core.question_flow import QuestionFlow
+from ..core import questionnaire_manager
 from ..utils.constants import RECRUITMENT_STAFF_ROLE
 
 # Global instances
@@ -41,16 +41,16 @@ async def handle_bot_interview_selection(ctx: lightbulb.components.MenuContext, 
         return
 
     # Update the state
-    await StateManager.update_questionnaire_data(channel_id, {
-        "interview_type": "bot_driven",
+    await StateManager.update_questionnaire_data(int(channel_id), {
+        "interview_type": "bot",
         "started": True
     })
 
     # Record interaction
-    await StateManager.add_interaction(channel_id, "selected_bot_interview", {"user_id": user_id})
+    await StateManager.add_interaction(int(channel_id), "selected_bot_interview", {"user_id": user_id})
 
-    # Send first question
-    await QuestionFlow.send_next_question(channel_id, user_id, "attack_strategies")
+    # Send first question using questionnaire manager
+    await questionnaire_manager.send_question(int(channel_id), int(user_id), "attack_strategies")
 
 
 @register_action("select_recruiter_interview", no_return=True)
@@ -71,13 +71,13 @@ async def handle_recruiter_interview_selection(ctx: lightbulb.components.MenuCon
         return
 
     # Update the state
-    await StateManager.update_questionnaire_data(channel_id, {
+    await StateManager.update_questionnaire_data(int(channel_id), {
         "interview_type": "recruiter",
         "started": True
     })
 
     # Halt automation for manual handling
-    await StateManager.halt_automation(channel_id, "User selected recruiter interview")
+    await StateManager.halt_automation(int(channel_id), "User selected recruiter interview")
 
     # Notify recruitment staff
     await ctx.respond(

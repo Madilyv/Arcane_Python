@@ -34,6 +34,14 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     QuestionFlow.initialize(mongo, bot)
 
 
+async def send_question(channel_id: int, user_id: int, question_key: str) -> None:
+    """
+    Wrapper to send a specific question.
+    This avoids circular imports by providing access to QuestionFlow.
+    """
+    await QuestionFlow.send_question(channel_id, user_id, question_key)
+
+
 async def trigger_questionnaire(channel_id: int, user_id: int) -> None:
     """
     Trigger the questionnaire automation flow for a user.
@@ -106,35 +114,14 @@ async def halt_automation(channel_id: int, reason: str, user_id: Optional[int] =
     if not mongo_client or not bot_instance:
         return
 
-    try:
-        # Update automation state
-        await StateManager.halt_automation(channel_id, reason)
+    await StateManager.halt_automation(channel_id, reason)
 
-        # Send notification to log channel
-        if LOG_CHANNEL_ID:
-            log_channel = await bot_instance.rest.fetch_channel(LOG_CHANNEL_ID)
-
-            halt_message = create_container_component({
-                "title": "🛑 **Automation Halted**",
-                "content": f"**Channel:** <#{channel_id}>\n**Reason:** {reason}",
-                "footer": f"Halted at {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
-            }, accent_color=GREEN_ACCENT)
-
-            await log_channel.send(components=halt_message)
-
-        print(f"[Questionnaire] Automation halted for channel {channel_id}: {reason}")
-
-    except Exception as e:
-        print(f"[Questionnaire] Error halting automation: {e}")
-
-
-async def resume_automation(channel_id: int) -> None:
-    """Resume a halted automation process"""
-    if not mongo_client:
-        return
-
-    try:
-        await StateManager.resume_automation(channel_id)
-        print(f"[Questionnaire] Automation resumed for channel {channel_id}")
-    except Exception as e:
-        print(f"[Questionnaire] Error resuming automation: {e}")
+    # Log the halt
+    if user_id:
+        log_channel = await bot_instance.rest.fetch_channel(LOG_CHANNEL_ID)
+        await log_channel.send(
+            f"🛑 **Automation Halted**\n"
+            f"Channel: <#{channel_id}>\n"
+            f"User: <@{user_id}>\n"
+            f"Reason: {reason}"
+        )

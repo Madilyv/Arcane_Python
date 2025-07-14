@@ -63,10 +63,11 @@ async def send_attack_strategies(channel_id: int, user_id: int) -> None:
 
         # Create initial components with empty summary and user ping
         components = await create_attack_strategy_components(
-            "",
-            question_data["title"],
+            summary="",
+            title=question_data["title"],
             include_user_ping=True,
-            user_id=user_id
+            user_id=user_id,
+            channel_id=channel_id
         )
 
         channel = await bot_instance.rest.fetch_channel(channel_id)

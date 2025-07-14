@@ -8,7 +8,6 @@ from typing import Optional, Dict, Any, List
 import hikari
 
 from hikari.impl import (
-    MessageActionRowBuilder as ActionRow,
     ContainerComponentBuilder as Container,
     InteractiveButtonBuilder as Button,
     TextDisplayComponentBuilder as Text,
@@ -60,28 +59,78 @@ def create_container_component(
     if template.get("footer"):
         components_list.append(Text(content=f"-# {template['footer']}"))
 
-    # Handle buttons if present in template - ADD TO COMPONENTS LIST
+    # Handle buttons if present in template - Components V2 style with Sections
     if template.get("buttons"):
-        row = ActionRow()
-        for button_data in template["buttons"]:
-            # Get button style
-            style = getattr(hikari.ButtonStyle, button_data["style"])
+        # For two buttons side by side, we create two sections
+        if len(template["buttons"]) == 2:
+            # First button
+            button1_data = template["buttons"][0]
+            style1 = getattr(hikari.ButtonStyle, button1_data["style"])
+            custom_id1 = f"{button1_data['action']}:{channel_id}_{user_id}"
 
-            # Build custom_id with channel and user info
-            custom_id = f"{button_data['action']}:{channel_id}_{user_id}"
-
-            # Create and add button with all parameters
-            row.add_interactive_button(
-                style,  # Positional argument
-                custom_id,  # Positional argument
-                label=button_data["label"],  # Keyword argument
-                emoji=button_data.get("emoji")  # Keyword argument
+            button1 = Button(
+                style=style1,
+                label=button1_data["label"],
+                custom_id=custom_id1,
             )
+            if button1_data.get("emoji"):
+                button1.set_emoji(button1_data["emoji"])
 
-        # Add the ActionRow to the components list BEFORE media
-        components_list.append(row)
+            # Second button
+            button2_data = template["buttons"][1]
+            style2 = getattr(hikari.ButtonStyle, button2_data["style"])
+            custom_id2 = f"{button2_data['action']}:{channel_id}_{user_id}"
 
-    # Add media (GIF or image) - AFTER buttons
+            button2 = Button(
+                style=style2,
+                label=button2_data["label"],
+                custom_id=custom_id2,
+            )
+            if button2_data.get("emoji"):
+                button2.set_emoji(button2_data["emoji"])
+
+            # Create sections for the buttons
+            components_list.append(
+                Section(
+                    components=[
+                        Text(content="Option 1: Speak with Recruiter")
+                    ],
+                    accessory=button2
+                )
+            )
+            components_list.append(
+                Section(
+                    components=[
+                        Text(content="Option 2: Bot-Driven Interview")
+                    ],
+                    accessory=button1
+                )
+            )
+        else:
+            # For single button or multiple buttons, create a section for each
+            for i, button_data in enumerate(template["buttons"]):
+                style = getattr(hikari.ButtonStyle, button_data["style"])
+                custom_id = f"{button_data['action']}:{channel_id}_{user_id}"
+
+                button = Button(
+                    style=style,
+                    label=button_data["label"],
+                    custom_id=custom_id,
+                )
+                if button_data.get("emoji"):
+                    button.set_emoji(button_data["emoji"])
+
+                # Create section with descriptive text and button
+                components_list.append(
+                    Section(
+                        components=[
+                            Text(content=f"Option {i + 1}")
+                        ],
+                        accessory=button
+                    )
+                )
+
+    # Add media (GIF or image)
     if template.get("gif_url"):
         components_list.append(
             Media(items=[MediaItem(media=template["gif_url"])])
@@ -158,9 +207,13 @@ async def create_attack_strategy_components(
         title: str,
         show_done_button: bool = True,
         include_user_ping: bool = False,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        **kwargs
 ) -> List[Any]:
     """Create components for attack strategy display with AI summary"""
+
+    # Extract channel_id from kwargs
+    channel_id = kwargs.get('channel_id')
 
     # Format summary with emojis
     formatted_summary = summary.replace("{red_arrow}", str(emojis.red_arrow_right))
@@ -178,16 +231,32 @@ async def create_attack_strategy_components(
     components_list.append(Text(content=title))
     components_list.append(Separator(divider=True))
 
-    # Add instruction text
-    instruction = (
-        "📝 **Tell us about your attack strategies!**\n\n"
-        "*Type your strategies below and I'll organize them for you.*\n"
-        "*Click Done when finished.*"
-    )
-    components_list.append(Text(content=instruction))
+    # If no summary yet, show the full detailed prompt with examples
+    if not summary or summary.strip() == "":
+        # Show the full formatted content with all the details
+        detailed_content = (
+            "Help us understand your go-to attack strategies!\n\n"
+            f"{str(emojis.red_arrow_right)} **Main Village strategies**\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} _e.g. Hybrid, Queen Charge w/ Hydra, Lalo_\n\n"
+            f"{str(emojis.red_arrow_right)} **Clan Capital Attack Strategies**\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} _e.g. Super Miners w/ Freeze_\n\n"
+            f"{str(emojis.red_arrow_right)} **Highest Clan Capital Hall level you've attacked**\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} _e.g. CH 8, CH 9, etc._\n\n"
+            "*Your detailed breakdown helps us match you to the perfect clan!*"
+        )
+        components_list.append(Text(content=detailed_content))
 
-    # Add current summary if exists
-    if summary:
+        # Add instruction at the bottom
+        components_list.append(
+            Text(content="\n💡 _Type your strategies below and I'll organize them for you. Click Done when finished._"))
+    else:
+        # Once user starts typing, show their organized summary
+        components_list.append(
+            Text(
+                content="📝 **Tell us about your attack strategies!**\n\n*Continue typing or click Done when finished.*")
+        )
+
+        # Add current summary
         components_list.append(Separator(divider=True))
         components_list.append(
             Section(
@@ -198,31 +267,40 @@ async def create_attack_strategy_components(
             )
         )
 
-    # Add footer
+    # Add footer image
     components_list.append(
         Media(items=[MediaItem(media="assets/Blue_Footer.png")])
     )
 
-    # Create container
-    components = [
+    # Add Done button if requested - Must be in a Section
+    if show_done_button:
+        # Use proper custom_id format with channel_id and user_id
+        custom_id = f"attack_strategies_done:{channel_id}_{user_id}" if channel_id and user_id else "attack_strategies_done:done"
+
+        done_button = Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            label="Done",
+            custom_id=custom_id,
+        )
+        done_button.set_emoji("✅")
+
+        # Add button in a Section
+        components_list.append(
+            Section(
+                components=[
+                    Text(content="Ready to continue? Click the button when you've finished entering your strategies.")
+                ],
+                accessory=done_button
+            )
+        )
+
+    # Create and return container with all components inside
+    return [
         Container(
             accent_color=BLUE_ACCENT,
             components=components_list
         )
     ]
-
-    # Add Done button if requested
-    if show_done_button:
-        row = ActionRow()
-        row.add_interactive_button(
-            style=hikari.ButtonStyle.SUCCESS,
-            label="Done",
-            custom_id="attack_strategies_done:done",
-            emoji="✅"
-        )
-        components.append(row)
-
-    return components
 
 
 async def create_clan_expectations_components(
@@ -231,9 +309,18 @@ async def create_clan_expectations_components(
         content: str,
         show_done_button: bool = True,
         include_user_ping: bool = False,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        **kwargs
 ) -> List[Any]:
     """Create components for clan expectations display with AI summary"""
+
+    # Extract channel_id from kwargs
+    channel_id = kwargs.get('channel_id')
+
+    # Format summary with emojis
+    formatted_summary = summary.replace("{red_arrow}", str(emojis.red_arrow_right))
+    formatted_summary = formatted_summary.replace("{white_arrow}", str(emojis.white_arrow_right))
+    formatted_summary = formatted_summary.replace("{blank}", str(emojis.blank))
 
     components_list = []
 
@@ -246,46 +333,80 @@ async def create_clan_expectations_components(
     components_list.append(Text(content=title))
     components_list.append(Separator(divider=True))
 
-    # Add content with examples if no summary yet
-    if not summary:
-        components_list.append(Text(content=content))
-    else:
-        # Show instruction and summary
-        components_list.append(
-            Text(content="📝 **Share what you're looking for in a clan!**\n\n*Type below and click Done when finished.*")
+    # If no summary yet, show the full detailed prompt with all questions
+    if not summary or summary.strip() == "":
+        # Show the full formatted content with all the detailed questions
+        detailed_content = (
+            "Help us tailor your clan experience! Please answer the following:\n\n"
+            f"{str(emojis.red_arrow_right)} **What do you expect from your future clan?**\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} _(e.g., Active wars, good communication, strategic support.)_\n\n"
+            f"{str(emojis.red_arrow_right)} **Minimum clan level you're looking for?**\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} _e.g. Level 5, Level 10_\n\n"
+            f"{str(emojis.red_arrow_right)} **Minimum Clan Capital Hall level?**\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} _e.g. CH 8 or higher_\n\n"
+            f"{str(emojis.red_arrow_right)} **CWL league preference?**\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} _e.g. Crystal, Masters, Champions_\n\n"
+            f"{str(emojis.red_arrow_right)} **Preferred playstyle?**\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} Competitive\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} Casual\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} Zen _Type **What is Zen** to learn more._\n"
+            f"{str(emojis.blank)}{str(emojis.white_arrow_right)} FWA _Type **What is FWA** to learn more._\n\n"
+            "*The more specific, the better we can match you!*"
         )
+        components_list.append(Text(content=detailed_content))
+
+        # Add instruction at the bottom
+        components_list.append(Text(
+            content="\n💡 _Type your preferences below and I'll categorize them automatically! Click Done when finished._"))
+    else:
+        # Once user starts typing, show their organized summary
+        components_list.append(
+            Text(
+                content="📝 **Share what you're looking for in a clan!**\n\n*Continue typing or click Done when finished.*")
+        )
+
+        # Add current summary
         components_list.append(Separator(divider=True))
         components_list.append(
             Section(
                 components=[
                     Text(content="**📋 Your Clan Expectations:**"),
-                    Text(content=summary)
+                    Text(content=formatted_summary)
                 ]
             )
         )
 
-    # Add footer
+    # Add footer image
     components_list.append(
         Media(items=[MediaItem(media="assets/Blue_Footer.png")])
     )
 
-    # Create container
-    components = [
+    # Add Done button if requested - Must be in a Section
+    if show_done_button:
+        # Use proper custom_id format with channel_id and user_id
+        custom_id = f"clan_expectations_done:{channel_id}_{user_id}" if channel_id and user_id else "clan_expectations_done:done"
+
+        done_button = Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            label="Done",
+            custom_id=custom_id,
+        )
+        done_button.set_emoji("✅")
+
+        # Add button in a Section
+        components_list.append(
+            Section(
+                components=[
+                    Text(content="Finished sharing your expectations? Click Done to proceed to the next question.")
+                ],
+                accessory=done_button
+            )
+        )
+
+    # Create and return container with all components inside
+    return [
         Container(
             accent_color=BLUE_ACCENT,
             components=components_list
         )
     ]
-
-    # Add Done button if requested
-    if show_done_button:
-        row = ActionRow()
-        row.add_interactive_button(
-            style=hikari.ButtonStyle.SUCCESS,
-            label="Done",
-            custom_id="clan_expectations_done:done",
-            emoji="✅"
-        )
-        components.append(row)
-
-    return components

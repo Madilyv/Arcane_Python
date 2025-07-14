@@ -33,6 +33,44 @@ class StateManager:
 
         return await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
 
+    # In extensions/events/message/ticket_automation/core/state_manager.py
+    # Add this to the StateManager class:
+
+    @classmethod
+    async def update_questionnaire_data(cls, channel_id: int, data: dict) -> None:
+        """Update questionnaire data in the ticket automation state."""
+        if not mongo_client:
+            return
+
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {"$set": {f"step_data.questionnaire.{k}": v for k, v in data.items()}},
+            upsert=True
+        )
+
+    @classmethod
+    async def add_interaction(cls, channel_id: int, interaction_type: str, data: dict = None) -> bool:
+        """Record an interaction in the ticket state"""
+        if not mongo_client:
+            return False
+
+        try:
+            interaction = {
+                "type": interaction_type,
+                "timestamp": datetime.now(timezone.utc),
+                "data": data or {}
+            }
+
+            result = await mongo_client.ticket_automation_state.update_one(
+                {"_id": str(channel_id)},
+                {"$push": {"interactions": interaction}},
+                upsert=True
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            print(f"[StateManager] Error adding interaction: {e}")
+            return False
+
     @classmethod
     async def update_step(cls, channel_id: int, step_name: str, step_data: Dict[str, Any]) -> bool:
         """Update the current automation step"""
