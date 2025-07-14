@@ -9,7 +9,7 @@ from typing import Optional
 import hikari
 
 from utils.mongo import MongoClient
-from utils.constants import GREEN_ACCENT
+from utils.constants import GREEN_ACCENT, BLUE_ACCENT
 from ..core.state_manager import StateManager
 from ..components.builders import create_container_component
 from ..utils.constants import QUESTIONNAIRE_QUESTIONS
@@ -27,39 +27,17 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
 
 
 async def send_completion_message(channel_id: int, user_id: int) -> None:
-    """Send the final completion message"""
+    """Send the final completion message including leaders checking you out"""
 
     if not mongo_client or not bot_instance:
         print("[Completion] Error: Not initialized")
         return
 
     try:
-        # Send the final "leaders checking you out" message first
+        # Send the final "leaders checking you out" message
         await send_leaders_message(channel_id, user_id)
 
-        # Then send the completion message
-        completion_template = {
-            "title": "🎉 **Questionnaire Complete!**",
-            "content": (
-                "Thank you for completing the recruitment questionnaire!\n\n"
-                "Our team will review your responses and match you with the perfect clan.\n\n"
-                "*You'll hear from us soon!*"
-            ),
-            "footer": None
-        }
-
-        components = create_container_component(
-            completion_template,
-            accent_color=GREEN_ACCENT
-        )
-
-        channel = await bot_instance.rest.fetch_channel(channel_id)
-        await channel.send(
-            components=components,
-            user_mentions=True
-        )
-
-        # Update automation state
+        # Update automation state to mark completion
         await mongo_client.ticket_automation_state.update_one(
             {"_id": str(channel_id)},
             {
@@ -91,13 +69,19 @@ async def send_leaders_message(channel_id: int, user_id: int) -> None:
     try:
         question_data = QUESTIONNAIRE_QUESTIONS.get("leaders_checking_you_out", {})
 
+        # Format the content with emoji replacements if needed
+        content = question_data.get("content", "Your application is being reviewed by our clan leaders.")
+        footer = question_data.get("footer", "You've completed the questionnaire! A recruiter will be with you shortly.")
+
         template = {
-            "title": question_data.get("title", "## 👀 **Clan Leaders are Checking You Out!**"),
-            "content": question_data.get("content", "Your application is being reviewed by our clan leaders."),
-            "gif_url": question_data.get("gif_url"),
-            "footer": None
+            "title": question_data.get("title", "## 👑 **Leaders Checking You Out**"),
+            "content": content,
+            "footer": footer,
+            "gif_url": question_data.get("gif_url")
         }
 
+        # Use appropriate accent color based on context
+        # Since this is the final message, use GREEN_ACCENT to indicate completion
         components = create_container_component(
             template,
             accent_color=GREEN_ACCENT,
@@ -113,5 +97,16 @@ async def send_leaders_message(channel_id: int, user_id: int) -> None:
         # Store this as a response
         await StateManager.store_response(channel_id, "leaders_checking_you_out", "viewed")
 
+        # Store message ID
+        await StateManager.store_message_id(
+            channel_id,
+            "questionnaire_leaders_checking_you_out",
+            "completed"
+        )
+
+        print(f"[Completion] Sent leaders checking you out message")
+
     except Exception as e:
         print(f"[Completion] Error sending leaders message: {e}")
+        import traceback
+        traceback.print_exc()

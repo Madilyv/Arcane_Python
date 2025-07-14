@@ -6,6 +6,7 @@ Handles routing to appropriate handlers based on question type.
 
 import asyncio
 from typing import Optional, Dict, Any
+from datetime import datetime, timezone
 import hikari
 
 from utils.mongo import MongoClient
@@ -38,7 +39,7 @@ class QuestionFlow:
         "discord_basic_skills_2": None,  # Handled by standard flow
         "age_bracket": age_bracket.send_age_bracket_question,
         "timezone": timezone.send_timezone_question,
-        "leaders_checking_you_out": None,  # Final message, no handler needed
+        "leaders_checking_you_out": None,  # Will be handled by completion handler
     }
 
     @classmethod
@@ -59,51 +60,78 @@ class QuestionFlow:
     @classmethod
     async def send_next_question(cls, channel_id: int, user_id: int, current_question: str) -> None:
         """Send the next question in the flow"""
-        next_question = cls.get_next_question(current_question)
+        try:
+            # Get the next question key
+            question_data = QUESTIONNAIRE_QUESTIONS.get(current_question)
+            if not question_data:
+                print(f"[QuestionFlow] No data found for question: {current_question}")
+                return
 
-        if next_question:
+            next_question = question_data.get("next")
+            if not next_question:
+                print(f"[QuestionFlow] No next question after {current_question}")
+                return
+
             await cls.send_question(channel_id, user_id, next_question)
-        else:
-            # No more questions, complete the questionnaire
-            await completion.send_completion_message(channel_id, user_id)
+
+        except Exception as e:
+            print(f"[QuestionFlow] Error sending next question: {e}")
+            import traceback
+            traceback.print_exc()
 
     @classmethod
     async def send_question(cls, channel_id: int, user_id: int, question_key: str) -> None:
-        """Route to the appropriate question handler"""
-        print(f"[QuestionFlow] Sending question: {question_key}")
+        """Send a specific question"""
+        try:
+            print(f"[QuestionFlow] Sending question: {question_key}")
 
-        # Check if this question has a special handler
-        handler = cls.QUESTION_HANDLERS.get(question_key)
+            # Update current question in state
+            await StateManager.set_current_question(channel_id, question_key)
 
-        if handler:
-            # Use the specific handler
-            await handler(channel_id, user_id)
-        else:
-            # Use the standard question sender
-            await cls.send_standard_question(channel_id, user_id, question_key)
+            # Special case: leaders_checking_you_out should go straight to completion handler
+            if question_key == "leaders_checking_you_out":
+                print(f"[QuestionFlow] Routing to completion handler for leaders message")
+                await completion.send_completion_message(channel_id, user_id)
+                return
+
+            # Check if we have a specific handler for this question
+            handler = cls.QUESTION_HANDLERS.get(question_key)
+            if handler:
+                await handler(channel_id, user_id)
+            else:
+                # Use standard question flow
+                await cls._send_standard_question(channel_id, user_id, question_key)
+
+        except Exception as e:
+            print(f"[QuestionFlow] Error sending question {question_key}: {e}")
+            import traceback
+            traceback.print_exc()
 
     @classmethod
-    async def send_standard_question(cls, channel_id: int, user_id: int, question_key: str) -> None:
-        """Send a standard text-based question"""
-        if not bot_instance:
-            return
-
-        question = QUESTIONNAIRE_QUESTIONS.get(question_key)
-        if not question:
-            print(f"[QuestionFlow] Unknown question key: {question_key}")
-            return
-
-        # Import here to avoid circular dependency
+    async def _send_standard_question(cls, channel_id: int, user_id: int, question_key: str) -> None:
+        """Send a standard question using the template"""
         from ..components.builders import create_container_component
 
         try:
-            # Update state
-            await StateManager.set_current_question(channel_id, question_key)
+            question = QUESTIONNAIRE_QUESTIONS.get(question_key)
+            if not question:
+                print(f"[QuestionFlow] Question {question_key} not found")
+                return
 
-            # Create template for the question
+            # Format the content with emoji replacements
+            content = question.get("content", "")
+            if content:
+                from utils.emoji import emojis
+                content = content.format(
+                    red_arrow=emojis.red_arrow_right,
+                    white_arrow=emojis.white_arrow_right,
+                    blank=emojis.blank
+                )
+
+            # Create template
             template = {
-                "title": question.get("title"),
-                "content": question.get("content"),
+                "title": question.get("title", f"## {question_key.replace('_', ' ').title()}"),
+                "content": content,
                 "footer": question.get("footer"),
                 "gif_url": question.get("gif_url")
             }
@@ -129,16 +157,10 @@ class QuestionFlow:
 
             print(f"[QuestionFlow] Sent standard question {question_key}")
 
-            # If this is the final question, wait and then send completion
-            if question.get("is_final"):
-                await asyncio.sleep(10)  # Give user time to read
-                await completion.send_completion_message(channel_id, user_id)
-
         except Exception as e:
             print(f"[QuestionFlow] Error sending standard question: {e}")
             import traceback
             traceback.print_exc()
-
 
     @classmethod
     def get_next_question(cls, current_question: str) -> Optional[str]:
