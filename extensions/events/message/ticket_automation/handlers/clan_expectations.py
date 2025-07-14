@@ -82,9 +82,9 @@ async def send_clan_expectations(channel_id: int, user_id: int) -> None:
             user_mentions=True
         )
 
-        # Store message ID
+        # Store message ID - FIX: Convert channel_id to string
         await StateManager.store_message_id(
-            channel_id,
+            str(channel_id),  # Convert to string for StateManager
             f"questionnaire_{question_key}",
             str(msg.id)
         )
@@ -104,6 +104,8 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
         return
 
     try:
+        print(f"[ClanExpectations] Processing input from user {user_id}: {message_content}")
+
         # Get current state
         ticket_state = await StateManager.get_ticket_state(str(channel_id))
         if not ticket_state:
@@ -111,9 +113,11 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
 
         # Get current summary
         current_summary = ticket_state.get("step_data", {}).get("questionnaire", {}).get("expectations_summary", "")
+        print(f"[ClanExpectations] Current summary length: {len(current_summary)}")
 
         # Process with AI
         new_summary = await process_clan_expectations_with_ai(current_summary, message_content)
+        print(f"[ClanExpectations] New summary length: {len(new_summary)}")
 
         # Update database with new summary
         await mongo_client.ticket_automation_state.update_one(
@@ -126,8 +130,8 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
             }
         )
 
-        # Get message ID and update display
-        msg_id = await StateManager.get_message_id(channel_id, "questionnaire_future_clan_expectations")
+        # Get message ID and update display - FIX: Convert channel_id to string
+        msg_id = await StateManager.get_message_id(str(channel_id), "questionnaire_future_clan_expectations")
         if msg_id:
             try:
                 question_data = QUESTIONNAIRE_QUESTIONS["future_clan_expectations"]
@@ -153,6 +157,10 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
                 print(f"[ClanExpectations] Updated display for channel {channel_id}")
             except Exception as e:
                 print(f"[ClanExpectations] Error updating message: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"[ClanExpectations] No message ID found to update")
 
     except Exception as e:
         print(f"[ClanExpectations] Error processing input: {e}")

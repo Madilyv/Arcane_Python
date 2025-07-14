@@ -208,7 +208,7 @@ async def handle_age_bracket_selection(
     )
 
     # Wait 10 seconds then send timezone question
-    await asyncio.sleep(10)
+    await asyncio.sleep(5)
 
     # Import here to avoid circular import
     from .timezone import send_timezone_question

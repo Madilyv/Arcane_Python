@@ -145,31 +145,47 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
             print(f"[Message Events] User mismatch, skipping")
         return
 
-    # Check if we're awaiting text response for other questions
-    if not await is_awaiting_text_response(event.channel_id):
+    # Check if we're collecting attack strategies or clan expectations
+    collecting_strategies = questionnaire_data.get("collecting_strategies", False)
+    collecting_expectations = questionnaire_data.get("collecting_expectations", False)
+
+    # Check if we're awaiting text response OR collecting AI responses
+    if not (await is_awaiting_text_response(event.channel_id) or collecting_strategies or collecting_expectations):
         return
 
-    # Validate user
-    expected_user = ticket_state.get("discord_id") or ticket_state.get("user_id")
+    # Validate user - check multiple locations
+    expected_user = (
+            ticket_state.get("discord_id") or
+            ticket_state.get("user_id") or
+            ticket_state.get("ticket_info", {}).get("user_id") or
+            ticket_state.get("step_data", {}).get("user_id")
+    )
+
     if expected_user:
         try:
             expected_user = int(expected_user)
             if event.author_id != expected_user:
+                print(f"[Message Events] User mismatch: {event.author_id} != {expected_user}")
                 return
         except (ValueError, TypeError):
+            print(f"[Message Events] Error converting expected_user: {expected_user}")
             pass
 
     print(f"[Message Events] Processing response for question: {current_question}")
+    print(
+        f"[Message Events] Collecting strategies: {collecting_strategies}, Collecting expectations: {collecting_expectations}")
 
-    # Route to appropriate handler
-    if current_question == "attack_strategies":
+    # Route to appropriate handler based on collecting flags OR current question
+    if collecting_strategies or current_question == "attack_strategies":
+        print(f"[Message Events] Routing to attack strategies handler")
         await attack_strategies_handler.process_user_input(event.channel_id, event.author_id, event.content)
         # Delete the user's message after processing
         try:
             await event.message.delete()
         except:
             pass
-    elif current_question == "future_clan_expectations":
+    elif collecting_expectations or current_question == "future_clan_expectations":
+        print(f"[Message Events] Routing to clan expectations handler")
         await clan_expectations_handler.process_user_input(event.channel_id, event.author_id, event.content)
         # Delete the user's message after processing
         try:

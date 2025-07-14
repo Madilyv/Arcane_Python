@@ -118,10 +118,23 @@ async def halt_automation(channel_id: int, reason: str, user_id: Optional[int] =
 
     # Log the halt
     if user_id:
-        log_channel = await bot_instance.rest.fetch_channel(LOG_CHANNEL_ID)
-        await log_channel.send(
-            f"🛑 **Automation Halted**\n"
-            f"Channel: <#{channel_id}>\n"
-            f"User: <@{user_id}>\n"
-            f"Reason: {reason}"
-        )
+        try:
+            log_channel = await bot_instance.rest.fetch_channel(LOG_CHANNEL_ID)
+            await log_channel.send(
+                f"🛑 **Automation Halted**\n"
+                f"Channel: <#{channel_id}>\n"
+                f"User: <@{user_id}>\n"
+                f"Reason: {reason}"
+            )
+        except Exception as e:
+            print(f"[Questionnaire] Error logging halt: {e}")
+
+
+async def resume_automation(channel_id: int) -> None:
+    """
+    Resume automation after it was halted.
+    """
+    if not mongo_client:
+        return
+
+    await StateManager.update_automation_status(str(channel_id), "active")

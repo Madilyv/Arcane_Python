@@ -62,6 +62,12 @@ async def send_attack_strategies(channel_id: int, user_id: int) -> None:
 
         print(f"[AttackStrategies] Set collecting_strategies=True, modified: {update_result.modified_count}")
 
+        # Verify the update
+        updated_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+        collecting_flag = updated_state.get("step_data", {}).get("questionnaire", {}).get("collecting_strategies",
+                                                                                          False)
+        print(f"[AttackStrategies] Verified collecting_strategies={collecting_flag} for channel {channel_id}")
+
         # Create initial components with empty summary and user ping
         components = await create_attack_strategy_components(
             summary="",
@@ -79,7 +85,7 @@ async def send_attack_strategies(channel_id: int, user_id: int) -> None:
 
         # Store message ID
         await StateManager.store_message_id(
-            channel_id,
+            str(channel_id),
             f"questionnaire_{question_key}",
             str(msg.id)
         )
@@ -99,16 +105,21 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
         return
 
     try:
+        print(f"[AttackStrategies] Processing input from user {user_id}: {message_content}")
+
         # Get current state
         ticket_state = await StateManager.get_ticket_state(str(channel_id))
         if not ticket_state:
+            print(f"[AttackStrategies] No ticket state found")
             return
 
         # Get current summary
         current_summary = ticket_state.get("step_data", {}).get("questionnaire", {}).get("attack_summary", "")
+        print(f"[AttackStrategies] Current summary length: {len(current_summary)}")
 
         # Process with AI
         new_summary = await process_attack_strategies_with_ai(current_summary, message_content)
+        print(f"[AttackStrategies] New summary length: {len(new_summary)}")
 
         # Update database with new summary
         await mongo_client.ticket_automation_state.update_one(
@@ -121,8 +132,20 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
             }
         )
 
+        # Debug: Check what message IDs are stored
+        updated_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+        messages = updated_state.get("messages", {})
+        print(f"[AttackStrategies] Stored message IDs: {list(messages.keys())}")
+
         # Get message ID and update display
-        msg_id = await StateManager.get_message_id(channel_id, "questionnaire_attack_strategies")
+        msg_id = await StateManager.get_message_id(str(channel_id), "questionnaire_attack_strategies")
+        print(f"[AttackStrategies] Retrieved message ID: {msg_id}")
+
+        if not msg_id:
+            # Try alternate key format
+            msg_id = messages.get("questionnaire_attack_strategies")
+            print(f"[AttackStrategies] Trying direct access: {msg_id}")
+
         if msg_id:
             try:
                 components = await create_attack_strategy_components(
@@ -142,11 +165,15 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
                 print(f"[AttackStrategies] Error updating message: {e}")
                 import traceback
                 traceback.print_exc()
+        else:
+            print(f"[AttackStrategies] No message ID found to update")
 
     except Exception as e:
         print(f"[AttackStrategies] Error processing input: {e}")
         import traceback
         traceback.print_exc()
+
+
 
 
 @register_action("attack_strategies_done", no_return=True)
