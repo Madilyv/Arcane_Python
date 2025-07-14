@@ -7,6 +7,8 @@ Features:
 - AI-powered attack strategies analysis using Claude
 - AI-powered clan expectations analysis using Claude
 - Discord skills verification (reactions and mentions)
+- Age bracket selection with GIF responses
+- Timezone collection
 - Automation halt functionality for manual takeover
 - Sequential question flow management
 """
@@ -28,6 +30,8 @@ from hikari.impl import (
     SeparatorComponentBuilder as Separator,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
+    SectionComponentBuilder as Section,
+    LinkButtonBuilder as LinkButton,
 )
 
 from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLD_ACCENT
@@ -41,6 +45,7 @@ RECRUITMENT_STAFF_ROLE = 999140213953671188  # Note: Role ID as integer, not str
 LOG_CHANNEL_ID = 1345589195695194113
 REMINDER_DELETE_TIMEOUT = 15  # Seconds before auto-deleting reminder messages
 REMINDER_TIMEOUT = 30  # Seconds before allowing another reminder to be sent
+TIMEZONE_CONFIRMATION_TIMEOUT = 60  # Seconds to wait for Friend Time bot confirmation
 
 # API Configuration
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -106,31 +111,22 @@ QUESTIONNAIRE_QUESTIONS = {
         "requires_mention": True
     },
     "discord_basic_skills_2": {
-        "title": "## 💬 **Discord Roles & Mobile App**",
+        "title": "## 🎯 **Master Discord Communication**",
         "content": (
-            "Great job! Now let's cover a few more Discord essentials:\n\n"
-            "{red_arrow} **Do you understand how Discord roles work?**\n"
-            "{blank}{white_arrow} Roles give you access to different channels and features\n\n"
-            "{red_arrow} **Do you have Discord on your mobile device?**\n"
-            "{blank}{white_arrow} This helps you stay connected with your clan on the go\n\n"
-            "*Just type your responses in chat!*"
+            "In Kings, we rely heavily on two key Discord skills:\n\n"
+            "⚠️ **Mentions** (pings) – call out a member or a role to grab attention.\n"
+            "👍 **Reactions** – respond quickly with an emoji to acknowledge messages.\n\n"
+            "*These are the fastest ways to keep our clan chat flowing!*\n\n"
+            "-# To continue, type **done**"
         ),
-        "next": "age_bracket_timezone"
+        "next": "age_bracket",
+        "requires_done": True
     },
-    "age_bracket_timezone": {
-        "title": "## 🌍 **Age & Timezone**",
-        "content": (
-            "This helps us match you with clans in your region and age group:\n\n"
-            "{red_arrow} **What's your age bracket?**\n"
-            "{blank}{white_arrow} Under 18\n"
-            "{blank}{white_arrow} 18-25\n"
-            "{blank}{white_arrow} 26-35\n"
-            "{blank}{white_arrow} 36+\n\n"
-            "{red_arrow} **What's your timezone?**\n"
-            "{blank}{white_arrow} _e.g. EST, PST, GMT+2, etc._\n\n"
-            "*This ensures you're matched with active players in your time zone!*"
-        ),
-        "next": "leaders_checking_you_out"
+    "age_bracket": {
+        "title": "## ⏳ **What's Your Age Bracket?**",
+        "content": "**What age bracket do you fall into?**\n\n",
+        "next": None,  # This will be handled by button clicks
+        "is_button_question": True
     },
     "leaders_checking_you_out": {
         "title": "## 👑 **Leaders Checking You Out**",
@@ -559,6 +555,8 @@ async def send_clan_expectations(channel_id: int, user_id: int):
 async def send_discord_skills_question(channel_id: int, user_id: int):
     """Send the Discord basic skills question that requires reaction and mention"""
     try:
+        print(f"[Questionnaire] Sending discord skills question to channel {channel_id}")
+
         # Update state to track this specific step
         await mongo_client.ticket_automation_state.update_one(
             {"_id": str(channel_id)},
@@ -569,6 +567,7 @@ async def send_discord_skills_question(channel_id: int, user_id: int):
                     "step_data.questionnaire.discord_skills_reaction": False,
                     "step_data.questionnaire.discord_skills_mention": False,
                     "step_data.questionnaire.discord_skills_message_id": None,
+                    "step_data.questionnaire.discord_skills_completed": False,
                     "step_data.questionnaire.last_reminder_time": None  # Initialize reminder time tracking
                 }
             }
@@ -604,6 +603,8 @@ async def send_discord_skills_question(channel_id: int, user_id: int):
             user_mentions=True
         )
 
+        print(f"[Questionnaire] Sent discord skills message with ID: {msg.id}")
+
         # Store message ID for reaction checking
         await mongo_client.ticket_automation_state.update_one(
             {"_id": str(channel_id)},
@@ -616,10 +617,218 @@ async def send_discord_skills_question(channel_id: int, user_id: int):
         )
 
         # Start monitoring for reaction and mention (pass bot_id)
-        asyncio.create_task(monitor_discord_skills(channel_id, user_id, msg.id, bot_id))
+        monitor_task = asyncio.create_task(monitor_discord_skills(channel_id, user_id, msg.id, bot_id))
+        print(f"[Questionnaire] Started monitor task for discord skills")
 
     except Exception as e:
         print(f"[Questionnaire] Error sending discord skills question: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def send_age_bracket_question(channel_id: int, user_id: int):
+    """Send the age bracket question with buttons"""
+    try:
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {
+                "$set": {
+                    "step_data.questionnaire.current_question": "age_bracket",
+                    "step_data.questionnaire.awaiting_response": False  # No text response needed
+                }
+            }
+        )
+
+        question = QUESTIONNAIRE_QUESTIONS["age_bracket"]
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"<@{user_id}>"),
+                    Separator(divider=True),
+                    Text(content=question["title"]),
+                    Separator(divider=True),
+                    Text(content=question["content"]),
+                    Section(
+                        components=[
+                            Text(
+                                content=(
+                                    f"{emojis.white_arrow_right} "
+                                    "**16 & Under** *(Family-Friendly Clan)*"
+                                )
+                            )
+                        ],
+                        accessory=Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            label="🧒16 & Under",
+                            custom_id=f"age_questionnaire:16_under_{channel_id}_{user_id}",
+                        ),
+                    ),
+                    Section(
+                        components=[
+                            Text(
+                                content=(
+                                    f"{emojis.white_arrow_right} "
+                                    "**17 – 25**"
+                                )
+                            )
+                        ],
+                        accessory=Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            label="🧑17 – 25",
+                            custom_id=f"age_questionnaire:17_25_{channel_id}_{user_id}",
+                        ),
+                    ),
+                    Section(
+                        components=[
+                            Text(
+                                content=(
+                                    f"{emojis.white_arrow_right} "
+                                    "**Over 25**"
+                                )
+                            )
+                        ],
+                        accessory=Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            label="🧓Over 25",
+                            custom_id=f"age_questionnaire:over_25_{channel_id}_{user_id}",
+                        ),
+                    ),
+                    Text(
+                        content="*Don't worry, we're not knocking on your door! Just helps us get to know you better. 😄👍*"),
+                    Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                ]
+            )
+        ]
+
+        channel = await bot_instance.rest.fetch_channel(channel_id)
+        msg = await channel.send(
+            components=components,
+            user_mentions=True
+        )
+
+        # Store message ID
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {"$set": {f"messages.questionnaire_age_bracket": str(msg.id)}}
+        )
+
+        print(f"[Questionnaire] Sent age bracket question to channel {channel_id}")
+
+    except Exception as e:
+        print(f"[Questionnaire] Error sending age bracket question: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def send_timezone_question(channel_id: int, user_id: int):
+    """Send the timezone question after age bracket selection"""
+    try:
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {
+                "$set": {
+                    "step_data.questionnaire.current_question": "timezone",
+                    "step_data.questionnaire.awaiting_response": False,  # Not awaiting text response
+                    "step_data.questionnaire.awaiting_timezone_confirmation": True  # Only waiting for confirmation
+                }
+            }
+        )
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"<@{user_id}>"),
+                    Separator(divider=True),
+                    Text(content="## 🌐 **Set Your Time Zone**"),
+                    Separator(divider=True),
+                    Text(content="To help us match you with the right clan and events, let's set your timezone.\n\n"),
+                    Section(
+                        components=[
+                            Text(
+                                content=(
+                                    f"{emojis.white_arrow_right} "
+                                    "**Step 1: Find Your Time Zone**"
+                                )
+                            )
+                        ],
+                        accessory=LinkButton(
+                            url="https://zones.arilyn.cc/",
+                            label="Get My Time Zone 🌐",
+                        ),
+                    ),
+                    Text(
+                        content=(
+                            "**Example format:** `America/New_York`\n\n"
+                            "**Steps:**\n"
+                            "1. Click the link above to find your timezone\n"
+                            "2. Use the command: </set me:924862149292085268>\n"
+                            "3. Paste your timezone when Friend Time bot asks\n"
+                            "4. Confirm with **yes** when prompted\n\n"
+                            "*I'll wait for Friend Time bot to confirm your timezone is set!*"
+                        )
+                    ),
+                    Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
+                    Text(content="-# Kings Alliance Recruitment – Syncing Schedules, Building Teams!")
+                ]
+            )
+        ]
+
+        channel = await bot_instance.rest.fetch_channel(channel_id)
+        msg = await channel.send(
+            components=components,
+            user_mentions=True
+        )
+
+        # Store message ID
+        await mongo_client.ticket_automation_state.update_one(
+            {"_id": str(channel_id)},
+            {"$set": {f"messages.questionnaire_timezone": str(msg.id)}}
+        )
+
+        print(f"[Questionnaire] Sent timezone question to channel {channel_id}")
+
+        # Start monitoring for Friend Time bot confirmation
+        asyncio.create_task(monitor_timezone_completion(channel_id, user_id))
+
+    except Exception as e:
+        print(f"[Questionnaire] Error sending timezone question: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def monitor_timezone_completion(channel_id: int, user_id: int):
+    """Monitor for Friend Time bot timezone confirmation with timeout"""
+    try:
+        print(f"[Questionnaire] Starting timezone monitor for channel {channel_id}")
+
+        # Wait for the configured timeout
+        await asyncio.sleep(TIMEZONE_CONFIRMATION_TIMEOUT)
+
+        # Check if we're still waiting
+        current_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+        if current_state and current_state.get("step_data", {}).get("questionnaire", {}).get(
+                "awaiting_timezone_confirmation", False):
+            print(
+                f"[Questionnaire] Timezone confirmation timeout after {TIMEZONE_CONFIRMATION_TIMEOUT}s - proceeding anyway")
+
+            # Mark as complete and move on
+            await mongo_client.ticket_automation_state.update_one(
+                {"_id": str(channel_id)},
+                {
+                    "$set": {
+                        "step_data.questionnaire.awaiting_timezone_confirmation": False,
+                        "step_data.questionnaire.timezone": "Not set (timeout)"  # Mark that it timed out
+                    }
+                }
+            )
+
+            await send_questionnaire_question(channel_id, user_id, "leaders_checking_you_out")
+
+    except Exception as e:
+        print(f"[Questionnaire] Error in timezone monitor: {e}")
         import traceback
         traceback.print_exc()
 
@@ -629,67 +838,98 @@ async def monitor_discord_skills(channel_id: int, user_id: int, message_id: int,
 
     print(f"[Questionnaire] Starting discord skills monitor for channel {channel_id}, user {user_id}")
 
-    while True:
-        await asyncio.sleep(5)  # Check every 5 seconds
+    try:
+        while True:
+            await asyncio.sleep(5)  # Check every 5 seconds
 
-        # Get FRESH state from database each time
-        ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
-        if not ticket_state:
-            print(f"[Questionnaire] Monitor: No ticket state found for channel {channel_id}")
-            break
+            # Get FRESH state from database each time
+            ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+            if not ticket_state:
+                print(f"[Questionnaire] Monitor: No ticket state found for channel {channel_id}")
+                break
 
-        skills_data = ticket_state.get("step_data", {}).get("questionnaire", {})
-        reaction_done = skills_data.get("discord_skills_reaction", False)
-        mention_done = skills_data.get("discord_skills_mention", False)
+            skills_data = ticket_state.get("step_data", {}).get("questionnaire", {})
+            reaction_done = skills_data.get("discord_skills_reaction", False)
+            mention_done = skills_data.get("discord_skills_mention", False)
 
-        print(f"[Questionnaire] Monitor check: reaction={reaction_done}, mention={mention_done}")
+            # Check if we've already moved past this question
+            current_question = skills_data.get("current_question", "")
+            if current_question != "discord_basic_skills":
+                print(f"[Questionnaire] Monitor: Question changed to {current_question}, exiting monitor")
+                break
 
-        # If both completed, move to next question
-        if reaction_done and mention_done:
-            print(f"[Questionnaire] Discord skills completed for user {user_id}")
+            print(f"[Questionnaire] Monitor check: reaction={reaction_done}, mention={mention_done}")
 
-            # Update the message to show completion
-            try:
-                completion_components = [
-                    Container(
-                        accent_color=GREEN_ACCENT,
-                        components=[
-                            Text(content=f"<@{user_id}>"),
-                            Separator(divider=True),
-                            Text(content="## ✅ **Discord Skills Verified!**"),
-                            Text(content=(
-                                "Great job! You've successfully:\n"
-                                "• Added a reaction ✓\n"
-                                f"• Mentioned <@{bot_id}> ✓\n\n"
-                                "*Moving to the next question...*"
-                            )),
-                            Media(items=[MediaItem(media="assets/Green_Footer.png")])
-                        ]
+            # If both completed, move to next question
+            if reaction_done and mention_done:
+                print(f"[Questionnaire] Discord skills completed for user {user_id}")
+
+                # Update the message to show completion
+                try:
+                    completion_components = [
+                        Container(
+                            accent_color=GREEN_ACCENT,
+                            components=[
+                                Text(content=f"<@{user_id}>"),
+                                Separator(divider=True),
+                                Text(content="## ✅ **Discord Skills Verified!**"),
+                                Text(content=(
+                                    "Great job! You've successfully:\n"
+                                    "• Added a reaction ✓\n"
+                                    f"• Mentioned <@{bot_id}> ✓\n\n"
+                                    "*Moving to the next question...*"
+                                )),
+                                Media(items=[MediaItem(media="assets/Green_Footer.png")])
+                            ]
+                        )
+                    ]
+
+                    await bot_instance.rest.edit_message(
+                        channel_id,
+                        message_id,
+                        components=completion_components,
+                        user_mentions=True
                     )
-                ]
+                    print(f"[Questionnaire] Updated discord skills completion message")
+                except Exception as e:
+                    print(f"[Questionnaire] Error updating discord skills message: {e}")
+                    import traceback
+                    traceback.print_exc()
 
-                await bot_instance.rest.edit_message(
-                    channel_id,
-                    message_id,
-                    components=completion_components,
-                    user_mentions=True
+                # Update state to mark discord skills as complete before moving on
+                await mongo_client.ticket_automation_state.update_one(
+                    {"_id": str(channel_id)},
+                    {
+                        "$set": {
+                            "step_data.questionnaire.current_question": "transitioning",
+                            "step_data.questionnaire.discord_skills_completed": True,
+                            "step_data.questionnaire.awaiting_response": False
+                        }
+                    }
                 )
-                print(f"[Questionnaire] Updated discord skills completion message")
-            except Exception as e:
-                print(f"[Questionnaire] Error updating discord skills message: {e}")
-                import traceback
-                traceback.print_exc()
 
-            # Wait a moment then move to next question
-            await asyncio.sleep(2)
+                # Wait a moment then move to next question
+                await asyncio.sleep(2)
 
-            print(f"[Questionnaire] Sending next question: discord_basic_skills_2")
-            await send_questionnaire_question(channel_id, user_id, "discord_basic_skills_2")
+                print(f"[Questionnaire] Sending next question: discord_basic_skills_2")
 
-            print(f"[Questionnaire] Breaking out of monitor loop")
-            break  # EXIT THE LOOP
+                try:
+                    await send_questionnaire_question(channel_id, user_id, "discord_basic_skills_2")
+                    print(f"[Questionnaire] Successfully sent discord_basic_skills_2")
+                except Exception as e:
+                    print(f"[Questionnaire] Error sending next question: {e}")
+                    import traceback
+                    traceback.print_exc()
 
-    print(f"[Questionnaire] Monitor task ending for channel {channel_id}")
+                print(f"[Questionnaire] Breaking out of monitor loop")
+                break  # EXIT THE LOOP
+
+    except Exception as e:
+        print(f"[Questionnaire] Monitor error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        print(f"[Questionnaire] Monitor task ending for channel {channel_id}")
 
 
 async def send_interview_selection_prompt(channel_id: int, user_id: int):
@@ -961,9 +1201,108 @@ async def handle_clan_expectations_done(
     print(f"[Questionnaire] User {user_id} completed clan expectations")
 
 
+# Handler for age bracket buttons
+@register_action("age_questionnaire", no_return=True)
+async def handle_age_bracket_selection(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        **kwargs
+):
+    """Handle when user selects an age bracket"""
+
+    parts = action_id.split("_")
+    bracket = f"{parts[0]}_{parts[1]}"  # e.g. "16_under", "17_25", "over_25"
+    channel_id = parts[2]
+    user_id = parts[3]
+
+    # Verify this is the correct user
+    if ctx.user.id != int(user_id):
+        await ctx.respond(
+            "❌ This button is only for the ticket owner to click.",
+            ephemeral=True
+        )
+        return
+
+    # Define responses for each age bracket
+    age_responses = {
+        "16_under": {
+            "title": "🎉 **16 & Under Registered!**",
+            "content": (
+                "Got it! You're bringing that youthful energy!\n\n"
+                "We'll find you a family-friendly clan that's the perfect fit for you.\n\n"
+            ),
+            "gif": "https://c.tenor.com/oxxT2JPSQccAAAAC/tenor.gif"
+        },
+        "17_25": {
+            "title": "🎮 **17–25 Confirmed**",
+            "content": (
+                "Understood! You're in prime gaming years!\n\n"
+                "Time to conquer the Clash world! 🏆\n\n"
+            ),
+            "gif": "https://c.tenor.com/twdtlMLE8UIAAAAC/tenor.gif"
+        },
+        "over_25": {
+            "title": "🏅 **Age Locked In**",
+            "content": (
+                "Awesome! Experience meets strategy!\n\n"
+                "Welcome to the veteran league of Clashers! 💪\n\n"
+            ),
+            "gif": "https://c.tenor.com/m6o-4dKGdVAAAAAC/tenor.gif"
+        }
+    }
+
+    response = age_responses.get(bracket)
+    if not response:
+        await ctx.respond("❌ Invalid age bracket selection.", ephemeral=True)
+        return
+
+    # Store the age bracket in MongoDB
+    await mongo_client.ticket_automation_state.update_one(
+        {"_id": str(channel_id)},
+        {
+            "$set": {
+                "step_data.questionnaire.responses.age_bracket": bracket,
+                "step_data.questionnaire.age_bracket": bracket
+            }
+        }
+    )
+
+    # Create response components
+    response_components = [
+        Container(
+            accent_color=GREEN_ACCENT,
+            components=[
+                Text(content=f"<@{user_id}>"),
+                Separator(divider=True),
+                Text(content=response["title"]),
+                Text(content=response["content"]),
+                Media(items=[MediaItem(media=response["gif"])]),
+                Text(content="-# Age bracket registered successfully!")
+            ]
+        )
+    ]
+
+    # The interaction is already deferred by component_handler, so just delete and send new
+    await ctx.interaction.delete_initial_response()
+
+    channel = await bot_instance.rest.fetch_channel(int(channel_id))
+    await channel.send(
+        components=response_components,
+        user_mentions=True
+    )
+
+    # Wait 10 seconds then send timezone question
+    await asyncio.sleep(10)
+    await send_timezone_question(int(channel_id), int(user_id))
+
+    print(f"[Questionnaire] User {user_id} selected age bracket: {bracket}")
+
+
 async def send_questionnaire_question(channel_id: int, user_id: int, question_key: str):
     """Send a specific questionnaire question"""
     try:
+        print(f"[Questionnaire] send_questionnaire_question called with question_key: {question_key}")
+
         # Special handling for attack strategies with AI
         if question_key == "attack_strategies":
             await send_attack_strategies(channel_id, user_id)
@@ -979,24 +1318,41 @@ async def send_questionnaire_question(channel_id: int, user_id: int, question_ke
             await send_discord_skills_question(channel_id, user_id)
             return
 
+        # Special handling for age_bracket
+        if question_key == "age_bracket":
+            await send_age_bracket_question(channel_id, user_id)
+            return
+
         question = QUESTIONNAIRE_QUESTIONS.get(question_key)
         if not question:
             print(f"[Questionnaire] Unknown question key: {question_key}")
             return
 
-        # Format the content with emoji placeholders
-        content = question["content"].format(
-            red_arrow=str(emojis.red_arrow_right),
-            white_arrow=str(emojis.white_arrow_right),
-            blank=str(emojis.blank)
-        )
+        print(f"[Questionnaire] Preparing to send question: {question_key}")
 
-        # Build components
-        components_list = [
-            Text(content=f"<@{user_id}>"),
-            Separator(divider=True),
-            Text(content=f"{question['title']}\n\n{content}")
-        ]
+        # Special handling for discord_basic_skills_2
+        if question_key == "discord_basic_skills_2":
+            components_list = [
+                Text(content=f"<@{user_id}>"),
+                Separator(divider=True),
+                Text(content=question["title"]),
+                Separator(divider=True),
+                Text(content=question["content"].split("-# To continue")[
+                                 0].strip() + "\n\n📝 **To continue, type `done` below**")
+            ]
+        else:
+            # Normal formatting for other questions
+            content = question["content"].format(
+                red_arrow=str(emojis.red_arrow_right),
+                white_arrow=str(emojis.white_arrow_right),
+                blank=str(emojis.blank)
+            )
+
+            components_list = [
+                Text(content=f"<@{user_id}>"),
+                Separator(divider=True),
+                Text(content=f"{question['title']}\n\n{content}")
+            ]
 
         # Add GIF if specified
         if question.get("has_gif") and question.get("gif_url"):
@@ -1026,6 +1382,8 @@ async def send_questionnaire_question(channel_id: int, user_id: int, question_ke
             }
         )
 
+        print(f"[Questionnaire] Updated state for question: {question_key}")
+
         # Send the message
         channel = await bot_instance.rest.fetch_channel(channel_id)
         msg = await channel.send(
@@ -1039,7 +1397,7 @@ async def send_questionnaire_question(channel_id: int, user_id: int, question_ke
             {"$set": {f"messages.questionnaire_{question_key}": str(msg.id)}}
         )
 
-        print(f"[Questionnaire] Sent question {question_key} to channel {channel_id}")
+        print(f"[Questionnaire] Sent question {question_key} to channel {channel_id}, message ID: {msg.id}")
 
         # If this is the last question, wait and then send completion message
         if question.get("next") is None:
@@ -1121,11 +1479,21 @@ async def on_reaction_add(event: hikari.GuildReactionAddEvent):
                                ticket_state.get("user_id", 0))
 
         if event.user_id == expected_user_id:
+            print(f"[Questionnaire] User {event.user_id} added reaction to discord skills message")
+
             # Update reaction completed
-            await mongo_client.ticket_automation_state.update_one(
+            update_result = await mongo_client.ticket_automation_state.update_one(
                 {"_id": str(event.channel_id)},
                 {"$set": {"step_data.questionnaire.discord_skills_reaction": True}}
             )
+            print(f"[Questionnaire] Updated reaction status, modified: {update_result.modified_count}")
+
+            # Verify the update
+            updated_state = await mongo_client.ticket_automation_state.find_one({"_id": str(event.channel_id)})
+            reaction_status = updated_state.get("step_data", {}).get("questionnaire", {}).get("discord_skills_reaction",
+                                                                                              False)
+            print(f"[Questionnaire] Verified reaction status: {reaction_status}")
+
             print(f"[Questionnaire] User {event.user_id} completed reaction requirement")
 
 
@@ -1133,16 +1501,110 @@ async def on_reaction_add(event: hikari.GuildReactionAddEvent):
 async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
     """Listen for questionnaire responses in ticket channels"""
 
-    # Skip bot messages
-    if event.is_bot:
-        return
-
     if not mongo_client or not bot_instance:
         return
 
     # Get ticket state
     ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(event.channel_id)})
     if not ticket_state:
+        return
+
+    # Check for Friend Time bot timezone confirmation
+    if (event.is_bot and
+            ticket_state.get("step_data", {}).get("questionnaire", {}).get("awaiting_timezone_confirmation", False)):
+
+        # Log bot messages for debugging
+        content_preview = event.content[:100] if event.content else "(no content - possibly embed)"
+        print(
+            f"[Questionnaire] Bot message in channel {event.channel_id} from {event.author.username}: {content_preview}...")
+
+        # Check if this is a Friend Time bot confirmation message
+        is_timezone_confirmation = False
+        timezone_match = None
+
+        # Check for the success pattern in content or embeds
+        if event.content:
+            # Look for success messages from Friend Time bot
+            if ("Successfully set your time zone" in event.content or
+                    "Your time zone has been set" in event.content or
+                    "Time zone updated" in event.content or
+                    ("Congratulations!" in event.content and "You've completed user setup!" in event.content)):
+                is_timezone_confirmation = True
+
+                # Try to extract timezone from the message
+                lines = event.content.split('\n')
+                for line in lines:
+                    if "/" in line and (
+                            "America" in line or "Europe" in line or "Asia" in line or "Africa" in line or "Australia" in line or "Pacific" in line):
+                        # This might be a timezone line
+                        import re
+                        timezone_pattern = r'([A-Za-z_]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?)'
+                        match = re.search(timezone_pattern, line)
+                        if match:
+                            timezone_match = match.group(1)
+                            break
+
+        # Also check embeds
+        if event.message.embeds:
+            for embed in event.message.embeds:
+                if embed.description:
+                    if ("Successfully set your time zone" in embed.description or
+                            "Your time zone has been set" in embed.description or
+                            "Time zone updated" in embed.description or
+                            (
+                                    "Congratulations!" in embed.description and "You've completed user setup!" in embed.description)):
+                        is_timezone_confirmation = True
+
+                        # Look for timezone in embed fields
+                        if embed.fields:
+                            for field in embed.fields:
+                                if "time zone" in field.name.lower() or "timezone" in field.name.lower():
+                                    timezone_match = field.value.strip()
+                                    break
+
+        if is_timezone_confirmation:
+            print(f"[Questionnaire] Detected Friend Time timezone confirmation in channel {event.channel_id}")
+
+            # Store the timezone if found
+            update_data = {
+                "step_data.questionnaire.timezone_confirmed": True,
+                "step_data.questionnaire.awaiting_timezone_confirmation": False
+            }
+
+            if timezone_match:
+                print(f"[Questionnaire] Extracted timezone: {timezone_match}")
+                update_data["step_data.questionnaire.timezone"] = timezone_match
+                update_data["step_data.questionnaire.responses.timezone"] = timezone_match
+            else:
+                print(f"[Questionnaire] Could not extract timezone from confirmation")
+                update_data["step_data.questionnaire.timezone"] = "Set (timezone not extracted)"
+
+            await mongo_client.ticket_automation_state.update_one(
+                {"_id": str(event.channel_id)},
+                {"$set": update_data}
+            )
+
+            # Get user ID from ticket state
+            user_id = (
+                    ticket_state.get("discord_id") or
+                    ticket_state.get("ticket_info", {}).get("user_id") or
+                    ticket_state.get("user_id")
+            )
+
+            if user_id:
+                try:
+                    user_id = int(user_id)
+                except (ValueError, TypeError):
+                    pass
+
+            # Send completion message after a brief delay
+            await asyncio.sleep(2)
+            await send_questionnaire_question(event.channel_id, user_id, "leaders_checking_you_out")
+
+            return
+
+    # Skip other bot messages
+    if event.is_bot:
         return
 
     # Check if we're collecting attack strategies with AI
@@ -1281,6 +1743,76 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
 
         return  # Exit here, don't process as normal response
 
+    # Special handling for discord_basic_skills_2 "done" requirement
+    if (ticket_state.get("step_data", {}).get("questionnaire", {}).get(
+            "current_question") == "discord_basic_skills_2" and
+            ticket_state.get("step_data", {}).get("questionnaire", {}).get("awaiting_response")):
+
+        expected_user_id = (
+                ticket_state.get("discord_id") or
+                ticket_state.get("ticket_info", {}).get("user_id") or
+                ticket_state.get("user_id")
+        )
+
+        if expected_user_id:
+            try:
+                expected_user_id = int(expected_user_id)
+            except (ValueError, TypeError):
+                expected_user_id = None
+
+        if expected_user_id and event.author_id == expected_user_id:
+            # Check if user typed "done"
+            if event.content.lower().strip() == "done":
+                print(f"[Questionnaire] User typed 'done' for discord_basic_skills_2")
+
+                # Update state
+                await mongo_client.ticket_automation_state.update_one(
+                    {"_id": str(event.channel_id)},
+                    {
+                        "$set": {
+                            "step_data.questionnaire.responses.discord_basic_skills_2": "done",
+                            "step_data.questionnaire.awaiting_response": False
+                        }
+                    }
+                )
+
+                # Delete the "done" message
+                try:
+                    await event.message.delete()
+                except:
+                    pass
+
+                # Move to next question
+                next_question = QUESTIONNAIRE_QUESTIONS["discord_basic_skills_2"]["next"]
+                if next_question:
+                    await asyncio.sleep(1)
+                    await send_questionnaire_question(event.channel_id, expected_user_id, next_question)
+
+                return  # Exit early, don't process as normal response
+            else:
+                # User typed something else, remind them
+                reminder = await event.channel.send(
+                    f"<@{event.author_id}> Please type **done** to continue to the next question.",
+                    user_mentions=True
+                )
+
+                # Delete their message
+                try:
+                    await event.message.delete()
+                except:
+                    pass
+
+                # Delete reminder after a few seconds
+                async def delete_reminder():
+                    await asyncio.sleep(5)
+                    try:
+                        await reminder.delete()
+                    except:
+                        pass
+
+                asyncio.create_task(delete_reminder())
+                return  # Exit early
+
     # MOVED UP: Check if this is a discord skills mention BEFORE general handler
     if (ticket_state.get("step_data", {}).get("questionnaire", {}).get("current_question") == "discord_basic_skills" and
             not ticket_state.get("step_data", {}).get("questionnaire", {}).get("discord_skills_mention", False)):
@@ -1311,10 +1843,18 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
                 print(f"[Questionnaire] Found bot mention in message!")
 
                 # Update mention completed
-                await mongo_client.ticket_automation_state.update_one(
+                update_result = await mongo_client.ticket_automation_state.update_one(
                     {"_id": str(event.channel_id)},
                     {"$set": {"step_data.questionnaire.discord_skills_mention": True}}
                 )
+                print(f"[Questionnaire] Updated mention status, modified: {update_result.modified_count}")
+
+                # Verify the update
+                updated_state = await mongo_client.ticket_automation_state.find_one({"_id": str(event.channel_id)})
+                mention_status = updated_state.get("step_data", {}).get("questionnaire", {}).get(
+                    "discord_skills_mention", False)
+                print(f"[Questionnaire] Verified mention status: {mention_status}")
+
                 print(f"[Questionnaire] User {event.author_id} completed mention requirement")
 
                 # Add the eyes emoji reaction to show completion
@@ -1378,6 +1918,11 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
             print(f"[Questionnaire] Skipping general handler for discord_basic_skills")
             return
 
+        # Also skip if we're in transition
+        if current_question == "transitioning":
+            print(f"[Questionnaire] Skipping general handler during transition")
+            return
+
         # Verify message is from ticket creator
         expected_user_id = (
                 ticket_state.get("discord_id") or
@@ -1392,7 +1937,9 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
                 expected_user_id = None
 
         if expected_user_id and event.author_id == expected_user_id:
-            # Store the response
+            # Special handling for timezone question - REMOVED since we're not expecting text input anymore
+
+            # Store the response for other questions
             await mongo_client.ticket_automation_state.update_one(
                 {"_id": str(event.channel_id)},
                 {
@@ -1403,9 +1950,9 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
                 }
             )
 
-            # For discord_basic_skills_2, age_bracket_timezone - keep messages visible
+            # For discord_basic_skills_2, age_bracket, timezone - keep messages visible
             # Only delete for other questions
-            if current_question not in ["discord_basic_skills_2", "age_bracket_timezone"]:
+            if current_question not in ["discord_basic_skills_2", "age_bracket", "timezone"]:
                 try:
                     await event.message.delete()
                 except:
