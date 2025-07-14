@@ -144,7 +144,7 @@ class StateManager:
         try:
             result = await mongo_client.ticket_automation_state.update_one(
                 {"_id": str(channel_id)},
-                {"$set": {f"messages.{message_type}": message_id}}
+                {"$set": {f"step_data.questionnaire.{message_type}": message_id}}
             )
             return result.modified_count > 0
         except Exception as e:

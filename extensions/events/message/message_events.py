@@ -24,14 +24,18 @@ from .ticket_automation.core.state_manager import is_awaiting_text_response
 # Global instances - will be initialized from bot_data
 mongo_client: Optional[MongoClient] = None
 bot_instance: Optional[hikari.GatewayBot] = None
-state_manager: Optional[StateManager] = None
+is_initialized: bool = False  # Track initialization status
 loader = lightbulb.Loader()
 
 
 # Initialize on module load using bot_data
 def _initialize_from_bot_data():
     """Initialize using bot_data if available."""
-    global mongo_client, bot_instance, state_manager
+    global mongo_client, bot_instance, is_initialized
+
+    # Check if already initialized
+    if is_initialized:
+        return
 
     if "mongo" in bot_data.data:
         mongo_client = bot_data.data["mongo"]
@@ -42,6 +46,7 @@ def _initialize_from_bot_data():
         StateManager.initialize(mongo_client, bot_instance)
         # Initialize all handlers
         init_automation(mongo_client, bot_instance)
+        is_initialized = True  # Mark as initialized
 
 
 @loader.listener(hikari.StartingEvent)
@@ -56,22 +61,22 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
     """Listen for questionnaire responses in ticket channels."""
 
     # Initialize if not already done
-    if not state_manager:
+    if not is_initialized:
         _initialize_from_bot_data()
 
-    if not mongo_client or not bot_instance:
+    if not mongo_client or not bot_instance or not is_initialized:
         return
 
     # Skip bot messages unless checking for Friend Time bot
     if event.is_bot:
-        # Check for Friend Time bot confirmation (for timezone question)
+        # Check for Friend Time bot confirmation
         if await timezone_handler.check_friend_time_confirmation(event):
             return
         # Skip other bot messages
         return
 
-    # Get ticket state
-    ticket_state = await StateManager.get_ticket_state(str(event.channel_id))
+    # Get ticket state using StateManager
+    ticket_state = await StateManager.get_ticket_state(event.channel_id)
     if not ticket_state:
         return
 
@@ -91,83 +96,55 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
     if not current_question:
         return
 
-    # Check if we're awaiting text response
-    if not await is_awaiting_text_response(event.channel_id):
-        # Might be waiting for reactions/mentions for discord skills
-        if current_question == "discord_basic_skills":
-            # These are handled by reaction/mention events
-            pass
+    # Special handling for discord skills - check ANY message during this question
+    if current_question == "discord_basic_skills":
+        # Validate user first
+        expected_user = await StateManager.get_user_id(event.channel_id)
+        if expected_user and event.author_id == expected_user:
+            # Check this message for mentions
+            await discord_skills_handler.check_mention_completion(
+                event.channel_id,
+                event.author_id,
+                event.message  # Pass the message object
+            )
         return
 
-    # Validate user - check multiple locations for user ID
+    # Check if we're awaiting text response for other questions
+    if not await is_awaiting_text_response(event.channel_id):
+        return
+
+    # Validate user
     expected_user = await StateManager.get_user_id(event.channel_id)
     if expected_user and event.author_id != expected_user:
-        print(f"[Message Events] Ignoring message from wrong user: {event.author_id} != {expected_user}")
         return
 
     print(f"[Message Events] Processing response for question: {current_question}")
 
-    # Route to appropriate handler based on current question
-    if current_question == "attack_strategies" and questionnaire_data.get("collecting_strategies", False):
-        print(f"[Message Events] Processing attack strategy from user {event.author_id}: {event.content}")
-
-        await attack_strategies_handler.process_user_input(
-            event.channel_id,
-            event.author_id,
-            event.content
-        )
-
-        # Delete the user's message to keep channel clean
-        try:
-            await event.message.delete()
-        except Exception as e:
-            print(f"[Message Events] Could not delete message: {e}")
-
-    elif current_question == "future_clan_expectations" and questionnaire_data.get("collecting_expectations", False):
-        print(f"[Message Events] Processing clan expectation from user {event.author_id}: {event.content}")
-
-        await clan_expectations_handler.process_user_input(
-            event.channel_id,
-            event.author_id,
-            event.content
-        )
-
-        # Delete the user's message to keep channel clean
-        try:
-            await event.message.delete()
-        except Exception as e:
-            print(f"[Message Events] Could not delete message: {e}")
+    # Route to appropriate handler
+    if current_question == "attack_strategies":
+        await attack_strategies_handler.process_user_input(event.channel_id, event.author_id, event.content)
+    elif current_question == "clan_expectations":
+        await clan_expectations_handler.process_user_input(event.channel_id, event.author_id, event.content)
+    # Other text-based questions are handled by their respective handlers
 
 
 @loader.listener(hikari.GuildReactionAddEvent)
 async def on_discord_skills_reaction(event: hikari.GuildReactionAddEvent):
     """Handle reactions for Discord skills verification."""
 
-    if not state_manager:
+    if not is_initialized:
+        _initialize_from_bot_data()
+
+    if not is_initialized:
         return
 
     # Check if this is for a discord skills message
     await discord_skills_handler.check_reaction_completion(
-        event.channel_id,
-        event.message_id,
-        event.user_id,
+        int(event.channel_id),  # Ensure it's an int
+        int(event.message_id),  # Ensure it's an int
+        int(event.user_id),  # Ensure it's an int
         str(event.emoji_name)
     )
-
-
-@loader.listener(hikari.GuildMessageCreateEvent)
-async def on_discord_skills_mention(event: hikari.GuildMessageCreateEvent):
-    """Handle mentions for Discord skills verification."""
-
-    if event.is_bot:
-        return
-
-    if not state_manager or not bot_instance:
-        return
-
-    # Check for bot mention
-    if bot_instance.get_me() and bot_instance.get_me().id in event.message.user_mentions_ids:
-        await discord_skills_handler.check_mention_completion(event.channel_id, event.author_id)
 
 
 # Re-export loader for use in main.py extensions
