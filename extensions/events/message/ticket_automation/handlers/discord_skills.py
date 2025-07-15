@@ -340,10 +340,10 @@ async def check_mention_completion(channel_id: int, user_id: int, message: hikar
             print(f"[DiscordSkills] User {user_id} completed mention requirement")
 
             # Delete the message
-            try:
-                await message.delete()
-            except:
-                pass
+            # try:
+            #     await message.delete()
+            # except:
+            #     pass
         else:
             await message.add_reaction("❓")  # No mention
             print(f"[DiscordSkills] No bot mention found in message")

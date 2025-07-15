@@ -188,18 +188,18 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
         print(f"[Message Events] Routing to attack strategies handler")
         await attack_strategies_handler.process_user_input(event.channel_id, event.author_id, event.content)
         # Delete the user's message after processing
-        try:
-            await event.message.delete()
-        except:
-            pass
+        # try:
+        #     await event.message.delete()
+        # except:
+        #     pass
     elif collecting_expectations or current_question == "future_clan_expectations":
         print(f"[Message Events] Routing to clan expectations handler")
         await clan_expectations_handler.process_user_input(event.channel_id, event.author_id, event.content)
         # Delete the user's message after processing
-        try:
-            await event.message.delete()
-        except:
-            pass
+        # try:
+        #     await event.message.delete()
+        # except:
+        #     pass
     # Other text-based questions are handled by their respective handlers
 
 
