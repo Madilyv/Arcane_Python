@@ -8,10 +8,18 @@ from datetime import datetime, timezone
 from typing import Optional
 import hikari
 
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    TextDisplayComponentBuilder as Text,
+    SeparatorComponentBuilder as Separator,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
+)
+
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, BLUE_ACCENT
 from ..core.state_manager import StateManager
-from ..components.builders import create_container_component
+# REMOVED: from ..components.builders import create_container_component
 from ..utils.constants import QUESTIONNAIRE_QUESTIONS
 
 # Global instances
@@ -71,22 +79,44 @@ async def send_leaders_message(channel_id: int, user_id: int) -> None:
 
         # Format the content with emoji replacements if needed
         content = question_data.get("content", "Your application is being reviewed by our clan leaders.")
-        footer = question_data.get("footer", "You've completed the questionnaire! A recruiter will be with you shortly.")
+        footer = question_data.get("footer",
+                                   "You've completed the questionnaire! A recruiter will be with you shortly.")
 
-        template = {
-            "title": question_data.get("title", "## 👑 **Leaders Checking You Out**"),
-            "content": content,
-            "footer": footer,
-            "gif_url": question_data.get("gif_url")
-        }
+        # Build components inline
+        components_list = []
 
-        # Use appropriate accent color based on context
-        # Since this is the final message, use GREEN_ACCENT to indicate completion
-        components = create_container_component(
-            template,
-            accent_color=GREEN_ACCENT,
-            user_id=user_id
-        )
+        # Add user ping
+        components_list.append(Text(content=f"<@{user_id}>"))
+        components_list.append(Separator(divider=True))
+
+        # Add title
+        title = question_data.get("title", "## 👑 **Leaders Checking You Out**")
+        components_list.append(Text(content=title))
+
+        # Add separator if there's content
+        if content:
+            components_list.append(Separator(divider=True))
+            components_list.append(Text(content=content))
+
+        # Add footer if provided
+        if footer:
+            components_list.append(Text(content=f"-# {footer}"))
+
+        # Add GIF if provided in question data
+        gif_url = question_data.get("gif_url")
+        if gif_url:
+            components_list.append(Media(items=[MediaItem(media=gif_url)]))
+        else:
+            # Default to green footer for completion
+            components_list.append(Media(items=[MediaItem(media="assets/Green_Footer.png")]))
+
+        # Create container with GREEN_ACCENT to indicate completion
+        components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=components_list
+            )
+        ]
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
         await channel.send(
@@ -95,11 +125,11 @@ async def send_leaders_message(channel_id: int, user_id: int) -> None:
         )
 
         # Store this as a response
-        await StateManager.store_response(channel_id, "leaders_checking_you_out", "viewed")
+        await StateManager.store_response(str(channel_id), "leaders_checking_you_out", "viewed")
 
         # Store message ID
         await StateManager.store_message_id(
-            channel_id,
+            str(channel_id),
             "questionnaire_leaders_checking_you_out",
             "completed"
         )

@@ -6,16 +6,24 @@ Requires users to react and reply with a mention to prove basic Discord knowledg
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, List, Any
 import hikari
 import lightbulb
+
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    TextDisplayComponentBuilder as Text,
+    SeparatorComponentBuilder as Separator,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
+)
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.emoji import emojis
 from utils.constants import GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT
 from ..core.state_manager import StateManager
-from ..components.builders import create_container_component
+# REMOVED: from ..components.builders import create_container_component
 from ..utils.constants import (
     QUESTIONNAIRE_QUESTIONS,
     REMINDER_DELETE_TIMEOUT,
@@ -32,6 +40,46 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     global mongo_client, bot_instance
     mongo_client = mongo
     bot_instance = bot
+
+
+def create_discord_skills_components(
+        title: str,
+        content: str,
+        accent_color: int,
+        user_id: int,
+        footer: Optional[str] = None
+) -> List[Container]:
+    """Create container components for Discord skills messages"""
+
+    components_list = []
+
+    # Add user mention
+    components_list.append(Text(content=f"<@{user_id}>"))
+    components_list.append(Separator(divider=True))
+
+    # Add title
+    components_list.append(Text(content=title))
+
+    # Add separator if there's content
+    if content:
+        components_list.append(Separator(divider=True))
+        components_list.append(Text(content=content))
+
+    # Add footer if provided
+    if footer:
+        components_list.append(Text(content=f"-# {footer}"))
+
+    # Add footer image based on accent color
+    footer_image = "assets/Gold_Footer.png" if accent_color == GOLD_ACCENT else "assets/Green_Footer.png"
+    components_list.append(Media(items=[MediaItem(media=footer_image)]))
+
+    # Create and return container
+    return [
+        Container(
+            accent_color=accent_color,
+            components=components_list
+        )
+    ]
 
 
 async def send_discord_skills_question(channel_id: int, user_id: int) -> None:
@@ -53,16 +101,12 @@ async def send_discord_skills_question(channel_id: int, user_id: int) -> None:
         )
 
         # Create components
-        template = {
-            "title": question_data["title"],
-            "content": content,
-            "footer": question_data.get("footer", "React to this message and mention the bot to continue!")
-        }
-
-        components = create_container_component(
-            template,
+        components = create_discord_skills_components(
+            title=question_data["title"],
+            content=content,
             accent_color=GOLD_ACCENT,
-            user_id=user_id
+            user_id=user_id,
+            footer=question_data.get("footer", "React to this message and mention the bot to continue!")
         )
 
         # Update state FIRST before sending message
@@ -308,7 +352,6 @@ async def check_mention_completion(channel_id: int, user_id: int, message: hikar
         print(f"[DiscordSkills] Error: {e}")
 
 
-
 async def send_skills_completion_message(channel_id: int, user_id: int) -> None:
     """Send a message confirming Discord skills completion"""
 
@@ -316,22 +359,19 @@ async def send_skills_completion_message(channel_id: int, user_id: int) -> None:
         return
 
     try:
-        template = {
-            "title": "✅ **Discord Skills Verified!**",
-            "content": (
+        # Create completion components
+        components = create_discord_skills_components(
+            title="✅ **Discord Skills Verified!**",
+            content=(
                 "Great job! You've successfully demonstrated basic Discord skills.\n\n"
                 "You know how to:\n"
                 "• React to messages ✅\n"
                 "• Mention users properly ✅\n\n"
                 "*Let's continue with your application...*"
             ),
-            "footer": None
-        }
-
-        components = create_container_component(
-            template,
             accent_color=GREEN_ACCENT,
-            user_id=user_id
+            user_id=user_id,
+            footer=None
         )
 
         channel = await bot_instance.rest.fetch_channel(channel_id)

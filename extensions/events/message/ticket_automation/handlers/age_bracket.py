@@ -60,7 +60,7 @@ async def send_age_bracket_question(channel_id: int, user_id: int) -> None:
 
         question = QUESTIONNAIRE_QUESTIONS["age_bracket"]
 
-        # Create components matching old structure exactly
+        # Create components inline - already following our pattern!
         components = [
             Container(
                 accent_color=BLUE_ACCENT,
@@ -132,8 +132,8 @@ async def send_age_bracket_question(channel_id: int, user_id: int) -> None:
 
         # Store message ID
         await StateManager.store_message_id(
-            channel_id,
-            f"questionnaire_age_bracket",
+            str(channel_id),
+            "questionnaire_age_bracket",
             str(msg.id)
         )
 
@@ -182,7 +182,7 @@ async def handle_age_bracket_selection(
         }
     )
 
-    # Create response components
+    # Create response components inline - also already following our pattern!
     response_components = [
         Container(
             accent_color=GREEN_ACCENT,
@@ -207,11 +207,11 @@ async def handle_age_bracket_selection(
         user_mentions=True
     )
 
-    # Wait 10 seconds then send timezone question
+    # Wait then send timezone question
     await asyncio.sleep(5)
 
     # Import here to avoid circular import
     from .timezone import send_timezone_question
     await send_timezone_question(int(channel_id), int(user_id))
 
-    print(f"[Questionnaire] User {user_id} selected age bracket: {bracket}")
+    print(f"[AgeBracket] User {user_id} selected age bracket: {bracket}")

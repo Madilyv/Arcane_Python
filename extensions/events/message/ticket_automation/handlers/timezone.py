@@ -49,7 +49,7 @@ async def send_timezone_question(channel_id: int, user_id: int) -> None:
 
     try:
         # Update state using StateManager classmethod
-        await StateManager.set_current_question(channel_id, "timezone")
+        await StateManager.set_current_question(str(channel_id), "timezone")
 
         # Also set timezone-specific flags
         await mongo_client.ticket_automation_state.update_one(
@@ -64,7 +64,7 @@ async def send_timezone_question(channel_id: int, user_id: int) -> None:
 
         question_data = QUESTIONNAIRE_QUESTIONS["timezone"]
 
-        # Build components
+        # Build components inline - already following our pattern!
         components = [
             Container(
                 accent_color=BLUE_ACCENT,
@@ -116,8 +116,8 @@ async def send_timezone_question(channel_id: int, user_id: int) -> None:
 
         # Store message ID
         await StateManager.store_message_id(
-            channel_id,
-            f"questionnaire_timezone",
+            str(channel_id),
+            "questionnaire_timezone",
             str(msg.id)
         )
 
@@ -173,7 +173,7 @@ async def monitor_friend_time_confirmation(channel_id: int, user_id: int):
             from ..core import questionnaire_manager
             next_question = QUESTIONNAIRE_QUESTIONS["timezone"]["next"]
             if next_question:
-                await questionnaire_manager.send_question(channel_id, user_id, next_question)
+                await questionnaire_manager.send_question(int(channel_id), int(user_id), next_question)
 
     except Exception as e:
         print(f"[Timezone] Error in Friend Time monitor: {e}")

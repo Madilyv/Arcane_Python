@@ -5,17 +5,27 @@ Similar to attack strategies but focuses on what users expect from clans.
 """
 
 import asyncio
-from typing import Optional
+from typing import Optional, List, Any
 import hikari
 import lightbulb
+
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    InteractiveButtonBuilder as Button,
+    TextDisplayComponentBuilder as Text,
+    SeparatorComponentBuilder as Separator,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
+    SectionComponentBuilder as Section,
+)
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.emoji import emojis
+from utils.constants import BLUE_ACCENT
 from ..core.state_manager import StateManager
-# REMOVED: from ..core.questionnaire_manager import send_question
 from ..ai.processors import process_clan_expectations_with_ai
-from ..components.builders import create_clan_expectations_components
+# REMOVED: from ..components.builders import create_clan_expectations_components
 from ..utils.constants import QUESTIONNAIRE_QUESTIONS
 
 # Global instances
@@ -28,6 +38,92 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     global mongo_client, bot_instance
     mongo_client = mongo
     bot_instance = bot
+
+
+async def create_clan_expectations_components(
+        summary: str,
+        title: str,
+        content: str,
+        show_done_button: bool = True,
+        include_user_ping: bool = False,
+        user_id: Optional[int] = None,
+        **kwargs
+) -> List[Any]:
+    """Create components for clan expectations display with AI summary"""
+
+    # Extract channel_id from kwargs
+    channel_id = kwargs.get('channel_id')
+
+    # Format summary with emojis
+    formatted_summary = summary.replace("{red_arrow}", str(emojis.red_arrow_right))
+    formatted_summary = formatted_summary.replace("{white_arrow}", str(emojis.white_arrow_right))
+    formatted_summary = formatted_summary.replace("{blank}", str(emojis.blank))
+
+    components_list = []
+
+    # Add user ping if requested
+    if include_user_ping and user_id:
+        components_list.append(Text(content=f"<@{user_id}>"))
+        components_list.append(Separator(divider=True))
+
+    # Add title
+    components_list.append(Text(content=title))
+    components_list.append(Separator(divider=True))
+
+    # If no summary yet, show the full detailed prompt with all questions
+    if not summary or summary.strip() == "":
+        # Use the content parameter which is already formatted with emojis
+        components_list.append(Text(content=content))
+
+        # Add instruction at the bottom
+        components_list.append(Text(
+            content="\n💡 _Type your preferences below and I'll categorize them automatically! Click Done when finished._"))
+    else:
+        # Once user starts typing, show their organized summary
+        components_list.append(
+            Text(
+                content="📝 **Share what you're looking for in a clan!**\n\n*Continue typing or click Done when finished.*")
+        )
+
+        # Add current summary - NO SECTION, just Text components
+        components_list.append(Separator(divider=True))
+        components_list.append(Text(content="**📋 Your Clan Expectations:**"))
+        components_list.append(Text(content=formatted_summary))
+
+    # Add footer image
+    components_list.append(
+        Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+    )
+
+    # Add Done button if requested - Must be in a Section
+    if show_done_button:
+        # Use proper custom_id format with channel_id and user_id
+        custom_id = f"clan_expectations_done:{channel_id}_{user_id}" if channel_id and user_id else "clan_expectations_done:done"
+
+        done_button = Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            label="Done",
+            custom_id=custom_id,
+        )
+        done_button.set_emoji("✅")
+
+        # Add button in a Section
+        components_list.append(
+            Section(
+                components=[
+                    Text(content="Finished sharing your expectations? Click Done to proceed to the next question.")
+                ],
+                accessory=done_button
+            )
+        )
+
+    # Create and return container with all components inside
+    return [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=components_list
+        )
+    ]
 
 
 async def send_clan_expectations(channel_id: int, user_id: int) -> None:
