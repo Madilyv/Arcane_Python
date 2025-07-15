@@ -19,6 +19,7 @@ from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, GOLD_ACCENT
 from utils.emoji import emojis
 from ...core.state_manager import StateManager
+from ..core.fwa_flow import FWAStep
 
 # Global instances
 mongo_client: Optional[MongoClient] = None
@@ -62,9 +63,8 @@ async def send_fwa_completion(channel_id: int, thread_id: int, user_id: int):
                     "Leaders will also need to evaluate roster adjustments to "
                     "accommodate your application.\n\n"
                     "We kindly ask that you **do not ping anyone** during this time. "
-                    "Rest assured, we are aware of your presence and will update you "
-                    "as soon as possible.\n\n"
-                    "_Thank you for your interest in joining our FWA operation!_"
+                    "Our leaders will reach out when they have an update.\n\n"
+                    "Thank you for your interest in joining our FWA operation!"
                 )),
                 Media(items=[MediaItem(media="assets/Gold_Footer.png")])
             ]
@@ -72,71 +72,52 @@ async def send_fwa_completion(channel_id: int, thread_id: int, user_id: int):
     ]
 
     try:
+        # Send to MAIN CHANNEL
         await bot_instance.rest.create_message(
-            channel=thread_id,
-            components=components
+            channel=channel_id,  # Main channel
+            components=components,
+            user_mentions=True
         )
 
-        # Update state to completed
+        # Update final state
         await StateManager.update_ticket_state(
             str(channel_id),
             {
-                "automation_state.current_step": "fwa_review",
-                "automation_state.status": "completed",
                 "step_data.fwa.completed": True,
-                "step_data.fwa.completed_at": datetime.now(timezone.utc)
+                "step_data.fwa.completed_at": datetime.now(timezone.utc),
+                "step_data.fwa.current_fwa_step": FWAStep.COMPLETION.value,
+                "automation_state.completed": True,
+                "automation_state.completed_at": datetime.now(timezone.utc)
             }
         )
 
-        # Log completion
-        await log_fwa_completion(channel_id, thread_id, user_id, ticket_state)
+        # Log to recruitment channel if configured
+        if LOG_CHANNEL_ID:
+            await log_fwa_completion(channel_id, user_id, ticket_state)
 
-        print(f"[FWA Completion] Process completed for channel {channel_id}")
+        print(f"[FWA Completion] Sent completion message to channel {channel_id}")
 
     except Exception as e:
-        print(f"[FWA Completion] Error sending completion: {e}")
+        print(f"[FWA Completion] Error: {e}")
 
 
-async def log_fwa_completion(
-        channel_id: int,
-        thread_id: int,
-        user_id: int,
-        ticket_state: dict
-):
-    """Log FWA completion to the log channel"""
+async def log_fwa_completion(channel_id: int, user_id: int, ticket_state: dict):
+    """Log FWA recruitment completion to the log channel"""
     if not bot_instance:
         return
 
-    ticket_info = ticket_state.get("ticket_info", {})
-    fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
-
-    # Create log message
-    log_components = [
-        Container(
-            accent_color=GREEN_ACCENT,
-            components=[
-                Text(content="## ✅ **FWA Application Completed**"),
-                Separator(divider=True),
-                Text(content=(
-                    f"**User:** <@{user_id}>\n"
-                    f"**Player Tag:** `{ticket_info.get('user_tag', 'Unknown')}`\n"
-                    f"**Channel:** <#{channel_id}>\n"
-                    f"**Thread:** <#{thread_id}>\n\n"
-                    f"**Interview Type:** {ticket_state.get('step_data', {}).get('questionnaire', {}).get('interview_type', 'Unknown')}\n"
-                    f"**Additional Accounts:** {len(ticket_state.get('step_data', {}).get('account_collection', {}).get('additional_accounts', []))}\n\n"
-                    f"_Application ready for FWA leader review_"
-                )),
-                Media(items=[MediaItem(media="assets/Green_Footer.png")])
-            ]
-        )
-    ]
-
     try:
-        log_channel = bot_instance.cache.get_guild_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            await bot_instance.rest.create_message(
-                channel=log_channel.id,
-                components=log_components
-            )
+        # Create log embed or message
+        log_message = (
+            f"## 🏰 FWA Recruitment Completed\n"
+            f"**User:** <@{user_id}>\n"
+            f"**Channel:** <#{channel_id}>\n"
+            f"**Completed:** <t:{int(datetime.now(timezone.utc).timestamp())}:R>"
+        )
+
+        await bot_instance.rest.create_message(
+            channel=LOG_CHANNEL_ID,
+            content=log_message
+        )
     except Exception as e:
         print(f"[FWA Completion] Error logging completion: {e}")

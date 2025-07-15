@@ -142,7 +142,8 @@ async def send_account_collection_prompt(channel_id: int, user_id: int, ticket_i
     try:
         message = await bot_instance.rest.create_message(
             channel=channel_id,
-            components=components
+            components=components,
+            user_mentions=True
         )
 
         # Store the message ID

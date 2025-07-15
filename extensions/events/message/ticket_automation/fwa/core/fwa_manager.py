@@ -49,7 +49,7 @@ def initialize_fwa(mongo: MongoClient, bot: hikari.GatewayBot):
 
 def is_fwa_ticket(channel_name: str) -> bool:
     """Check if a channel is an FWA ticket"""
-    return FWA_TICKET_PATTERN in channel_name
+    return FWA_TICKET_PATTERN in channel_name or "𝕋-𝔽𝕎𝔸" in channel_name  # Include test pattern
 
 
 async def trigger_fwa_automation(
@@ -129,25 +129,35 @@ async def handle_fwa_text_response(
     Returns True if message was handled, False otherwise.
     """
     if not mongo_client or not bot_instance:
+        print("[FWA Manager] Not initialized")
         return False
 
     # Check if we're in FWA flow
-    fwa_data = ticket_state.get("step_data", {}).get("fwa")
+    fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
+    print(f"[FWA Manager] FWA data: {fwa_data}")  # DEBUG
+
     if not fwa_data or not fwa_data.get("started"):
+        print(f"[FWA Manager] FWA not started or no data")  # DEBUG
         return False
 
     current_step = fwa_data.get("current_fwa_step")
+    print(f"[FWA Manager] Current FWA step: {current_step}")  # DEBUG
+
     if not current_step:
+        print("[FWA Manager] No current FWA step")  # DEBUG
         return False
 
     # Route to appropriate handler based on current step
     message_content = event.message.content.strip().lower()
+    print(f"[FWA Manager] Message content: '{message_content}'")  # DEBUG
 
     try:
         step_enum = FWAStep(current_step)
+        print(f"[FWA Manager] Step enum: {step_enum}")  # DEBUG
 
         if step_enum == FWAStep.FWA_EXPLANATION:
             if message_content == "understood":
+                print("[FWA Manager] Processing 'understood' for FWA_EXPLANATION")  # DEBUG
                 await FWAFlow.proceed_to_next_step(
                     int(event.channel_id),
                     int(ticket_state["ticket_info"]["thread_id"]),
@@ -158,6 +168,7 @@ async def handle_fwa_text_response(
 
         elif step_enum == FWAStep.LAZY_CWL:
             if message_content == "understood":
+                print("[FWA Manager] Processing 'understood' for LAZY_CWL")  # DEBUG
                 await FWAFlow.proceed_to_next_step(
                     int(event.channel_id),
                     int(ticket_state["ticket_info"]["thread_id"]),
@@ -168,6 +179,7 @@ async def handle_fwa_text_response(
 
         elif step_enum == FWAStep.AGREEMENT:
             if message_content == "i agree":
+                print("[FWA Manager] Processing 'i agree' for AGREEMENT")  # DEBUG
                 await FWAFlow.proceed_to_next_step(
                     int(event.channel_id),
                     int(ticket_state["ticket_info"]["thread_id"]),
@@ -178,5 +190,7 @@ async def handle_fwa_text_response(
 
     except Exception as e:
         print(f"[FWA Manager] Error handling text response: {e}")
+        import traceback
+        traceback.print_exc()
 
     return False

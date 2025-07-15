@@ -40,6 +40,7 @@ class Emojis:
         self.PurpleGem = EmojiType("<:Purple_Gem:1387846189852135495>")
         self.Alert_Strobing = EmojiType("<a:Alert_Strobing:1393549773218250766>")
         self.Alert = EmojiType("<a:Alert:1393549523774603294>")
+        self.FWA = EmojiType("<a:FWA:1387882523358527608>")
 
         # TH Emojis
         self.TH2 = EmojiType("<:TH_2:1387845120732172329>")

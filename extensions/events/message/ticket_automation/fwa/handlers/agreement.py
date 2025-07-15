@@ -19,6 +19,7 @@ from utils.mongo import MongoClient
 from utils.constants import GOLD_ACCENT
 from utils.emoji import emojis
 from ...core.state_manager import StateManager
+from ..core.fwa_flow import FWAStep
 
 # Global instances
 mongo_client: Optional[MongoClient] = None
@@ -53,7 +54,7 @@ async def send_agreement_message(channel_id: int, thread_id: int, user_id: int):
                     "This means:\n"
                     "• You'll use the FWA base we provide\n"
                     "• You'll follow all FWA rules\n"
-                    "• You'll participate in Lazy CWL\n"
+                    "• You'll participate in Lazy CWL __ONLY__ if you opt into CWL\n"
                     "• You understand the relaxed approach\n\n"
                     "_This is your commitment to the FWA lifestyle!_"
                 )),
@@ -70,22 +71,25 @@ async def send_agreement_message(channel_id: int, thread_id: int, user_id: int):
     ]
 
     try:
+        # Send to MAIN CHANNEL
         await bot_instance.rest.create_message(
-            channel=thread_id,
-            components=components
+            channel=channel_id,  # Main channel
+            components=components,
+            user_mentions=True
         )
 
-        # Update state
+        # Update state with current step
         await StateManager.update_ticket_state(
             str(channel_id),
             {
                 "step_data.fwa.agreement_sent": True,
                 "step_data.fwa.agreement_sent_at": datetime.now(timezone.utc),
-                "step_data.fwa.awaiting_agreement": True
+                "step_data.fwa.awaiting_agreement": True,
+                "step_data.fwa.current_fwa_step": FWAStep.AGREEMENT.value
             }
         )
 
-        print(f"[FWA Agreement] Sent agreement message to thread {thread_id}")
+        print(f"[FWA Agreement] Sent agreement message to channel {channel_id}")
 
     except Exception as e:
         print(f"[FWA Agreement] Error sending agreement: {e}")
