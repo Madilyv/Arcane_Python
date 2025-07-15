@@ -35,6 +35,7 @@ class Clan:
         self.type: str = data.get("type")
         self.points: float = data.get("points")
         self.recruit_count: int = data.get("recruit_count", 0)
+        self.placeholder_points: float = data.get("placeholder_points", 0.0)
 
 class Auction:
     def __init__(self, data: dict):
