@@ -9,7 +9,16 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 import hikari
 
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    TextDisplayComponentBuilder as Text,
+    SeparatorComponentBuilder as Separator,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
+)
+
 from utils.mongo import MongoClient
+from utils.constants import BLUE_ACCENT
 from ..utils.constants import QUESTIONNAIRE_QUESTIONS
 from .state_manager import StateManager
 
@@ -109,9 +118,7 @@ class QuestionFlow:
 
     @classmethod
     async def _send_standard_question(cls, channel_id: int, user_id: int, question_key: str) -> None:
-        """Send a standard question using the template"""
-        from ..components.builders import create_container_component
-
+        """Send a standard question using inline components"""
         try:
             question = QUESTIONNAIRE_QUESTIONS.get(question_key)
             if not question:
@@ -128,23 +135,50 @@ class QuestionFlow:
                     blank=emojis.blank
                 )
 
-            # Create template
-            template = {
-                "title": question.get("title", f"## {question_key.replace('_', ' ').title()}"),
-                "content": content,
-                "footer": question.get("footer"),
-                "gif_url": question.get("gif_url")
-            }
+            # Build components inline
+            components_list = []
 
-            # Create and send the question
-            components = create_container_component(
-                template,
-                user_id=user_id
+            # Add user mention
+            components_list.append(Text(content=f"<@{user_id}>"))
+            components_list.append(Separator(divider=True))
+
+            # Add title if present
+            title = question.get("title", f"## {question_key.replace('_', ' ').title()}")
+            if title:
+                components_list.append(Text(content=title))
+                if content:  # Add separator between title and content
+                    components_list.append(Separator(divider=True))
+
+            # Add content
+            if content:
+                components_list.append(Text(content=content))
+
+            # Add footer if present
+            footer = question.get("footer")
+            if footer:
+                components_list.append(Text(content=f"-# {footer}"))
+
+            # Add media (GIF or default footer image)
+            if question.get("gif_url") and question.get("has_gif"):
+                components_list.append(
+                    Media(items=[MediaItem(media=question["gif_url"])])
+                )
+            else:
+                # Default footer image
+                components_list.append(
+                    Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                )
+
+            # Create container
+            container = Container(
+                accent_color=BLUE_ACCENT,
+                components=components_list
             )
 
+            # Send the message
             channel = await bot_instance.rest.fetch_channel(channel_id)
             msg = await channel.send(
-                components=components,
+                components=[container],
                 user_mentions=True
             )
 

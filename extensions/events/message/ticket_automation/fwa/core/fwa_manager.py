@@ -12,7 +12,6 @@ import hikari
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, GOLD_ACCENT
 from ...core.state_manager import StateManager
-from ...components.builders import create_container_component
 from ..utils.fwa_constants import FWA_TICKET_PATTERN, FWA_STEPS
 from ..utils.chocolate_utils import generate_chocolate_link
 from .fwa_flow import FWAFlow, FWAStep
@@ -128,69 +127,53 @@ async def handle_fwa_text_response(
     Handle text responses for FWA flow (Understood, I agree, etc.)
     Returns True if message was handled, False otherwise.
     """
-    if not mongo_client or not bot_instance:
-        print("[FWA Manager] Not initialized")
+    if not ticket_state:
         return False
 
-    # Check if we're in FWA flow
+    # Get current FWA step
     fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
-    print(f"[FWA Manager] FWA data: {fwa_data}")  # DEBUG
-
-    if not fwa_data or not fwa_data.get("started"):
-        print(f"[FWA Manager] FWA not started or no data")  # DEBUG
-        return False
-
     current_step = fwa_data.get("current_fwa_step")
-    print(f"[FWA Manager] Current FWA step: {current_step}")  # DEBUG
 
     if not current_step:
-        print("[FWA Manager] No current FWA step")  # DEBUG
         return False
 
+    # Get ticket info for thread_id
+    ticket_info = ticket_state.get("ticket_info", {})
+    thread_id = ticket_info.get("thread_id")
+    channel_id = event.channel_id
+    user_id = event.author_id
+
     # Route to appropriate handler based on current step
-    message_content = event.message.content.strip().lower()
-    print(f"[FWA Manager] Message content: '{message_content}'")  # DEBUG
+    content = event.content.strip().lower()
 
-    try:
-        step_enum = FWAStep(current_step)
-        print(f"[FWA Manager] Step enum: {step_enum}")  # DEBUG
+    if current_step == FWAStep.FWA_EXPLANATION.value and content == "understood":
+        # Proceed to Lazy CWL explanation
+        await FWAFlow.proceed_to_next_step(
+            channel_id,
+            thread_id,
+            user_id,
+            FWAStep.LAZY_CWL
+        )
+        return True
 
-        if step_enum == FWAStep.FWA_EXPLANATION:
-            if message_content == "understood":
-                print("[FWA Manager] Processing 'understood' for FWA_EXPLANATION")  # DEBUG
-                await FWAFlow.proceed_to_next_step(
-                    int(event.channel_id),
-                    int(ticket_state["ticket_info"]["thread_id"]),
-                    int(ticket_state["ticket_info"]["user_id"]),
-                    FWAStep.LAZY_CWL
-                )
-                return True
+    elif current_step == FWAStep.LAZY_CWL.value and content == "understood":
+        # Proceed to Agreement
+        await FWAFlow.proceed_to_next_step(
+            channel_id,
+            thread_id,
+            user_id,
+            FWAStep.AGREEMENT
+        )
+        return True
 
-        elif step_enum == FWAStep.LAZY_CWL:
-            if message_content == "understood":
-                print("[FWA Manager] Processing 'understood' for LAZY_CWL")  # DEBUG
-                await FWAFlow.proceed_to_next_step(
-                    int(event.channel_id),
-                    int(ticket_state["ticket_info"]["thread_id"]),
-                    int(ticket_state["ticket_info"]["user_id"]),
-                    FWAStep.AGREEMENT
-                )
-                return True
-
-        elif step_enum == FWAStep.AGREEMENT:
-            if message_content == "i agree":
-                print("[FWA Manager] Processing 'i agree' for AGREEMENT")  # DEBUG
-                await FWAFlow.proceed_to_next_step(
-                    int(event.channel_id),
-                    int(ticket_state["ticket_info"]["thread_id"]),
-                    int(ticket_state["ticket_info"]["user_id"]),
-                    FWAStep.COMPLETION
-                )
-                return True
-
-    except Exception as e:
-        print(f"[FWA Manager] Error handling text response: {e}")
-        import traceback
-        traceback.print_exc()
+    elif current_step == FWAStep.AGREEMENT.value and content == "i agree":
+        # Proceed to Completion
+        await FWAFlow.proceed_to_next_step(
+            channel_id,
+            thread_id,
+            user_id,
+            FWAStep.COMPLETION
+        )
+        return True
 
     return False

@@ -10,10 +10,19 @@ from typing import Optional
 import hikari
 import lightbulb
 
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    InteractiveButtonBuilder as Button,
+    TextDisplayComponentBuilder as Text,
+    SeparatorComponentBuilder as Separator,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
+    SectionComponentBuilder as Section,
+    MessageActionRowBuilder as ActionRow,
+)
+
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, BLUE_ACCENT
-from ..components.builders import create_container_component
-from ..components.templates import INTERVIEW_SELECTION_TEMPLATE
 from ..utils.constants import RECRUITMENT_STAFF_ROLE, LOG_CHANNEL_ID
 from .state_manager import StateManager
 from .question_flow import QuestionFlow
@@ -76,18 +85,71 @@ async def send_interview_selection_prompt(channel_id: int, user_id: int) -> None
         return
 
     try:
-        # Create interview selection components
-        components = create_container_component(
-            INTERVIEW_SELECTION_TEMPLATE,
+        # Build interview selection components inline
+        components_list = []
+
+        # Add user mention
+        components_list.append(Text(content=f"<@{user_id}>"))
+        components_list.append(Separator(divider=True))
+
+        # Add title
+        components_list.append(Text(content="## 🎯 **Choose Your Interview Type**"))
+        components_list.append(Separator(divider=True))
+
+        # Add content
+        content = (
+            "Welcome to the recruitment process! You have two options:\n\n"
+            "**🤖 Bot-Driven Interview**\n"
+            "• Quick automated questions\n"
+            "• Takes about 5-10 minutes\n"
+            "• Get placed faster\n\n"
+            "**💬 Speak with a Recruiter**\n"
+            "• Personal 1-on-1 interview\n"
+            "• More detailed discussion\n"
+            "• Ask questions directly\n\n"
+            "*Choose the option that works best for you!*"
+        )
+        components_list.append(Text(content=content))
+
+        # Add buttons in an ActionRow (side by side)
+        # Bot Interview button
+        bot_button = Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            label="Bot-Driven Interview",
+            custom_id=f"select_bot_interview:{channel_id}_{user_id}",
+        )
+        bot_button.set_emoji("🤖")
+
+        # Recruiter button
+        recruiter_button = Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            label="Speak with Recruiter",
+            custom_id=f"select_recruiter_interview:{channel_id}_{user_id}",
+        )
+        recruiter_button.set_emoji("💬")
+
+        # Add both buttons in a single ActionRow
+        components_list.append(
+            ActionRow(
+                components=[bot_button, recruiter_button]
+            )
+        )
+
+        # Add footer image
+        components_list.append(
+            Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+        )
+
+        # Create container
+        container = Container(
             accent_color=BLUE_ACCENT,
-            user_id=user_id,
-            channel_id=channel_id
+            components=components_list
         )
 
         # Send the message
         channel = await bot_instance.rest.fetch_channel(channel_id)
         msg = await channel.send(
-            components=components,
+            components=[container],
             user_mentions=True
         )
 
