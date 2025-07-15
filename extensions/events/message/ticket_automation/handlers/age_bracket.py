@@ -198,7 +198,7 @@ async def handle_age_bracket_selection(
         )
     ]
 
-    # The interaction is already deferred by component_handler, so just delete and send new
+    # Delete interaction and send new message
     await ctx.interaction.delete_initial_response()
 
     channel = await bot_instance.rest.fetch_channel(int(channel_id))
@@ -207,11 +207,20 @@ async def handle_age_bracket_selection(
         user_mentions=True
     )
 
-    # Wait then send timezone question
-    await asyncio.sleep(5)
+    # Wait before next question
+    await asyncio.sleep(10)
 
-    # Import here to avoid circular import
-    from .timezone import send_timezone_question
-    await send_timezone_question(int(channel_id), int(user_id))
+    # Check if we're in FWA flow
+    ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+    fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
+    if fwa_data.get("current_fwa_step") == "age_bracket":
+        # We're in FWA flow, route to timezone through FWA
+        print(f"[AgeBracket] Routing to FWA timezone")
+        from ..fwa.core.fwa_flow import FWAFlow
+        await FWAFlow.handle_questionnaire_completion(int(channel_id), int(user_id))
+    else:
+        # Normal flow - send timezone question
+        from .timezone import send_timezone_question
+        await send_timezone_question(int(channel_id), int(user_id))
 
     print(f"[AgeBracket] User {user_id} selected age bracket: {bracket}")

@@ -24,6 +24,10 @@ class FWAStep(Enum):
     FWA_EXPLANATION = "fwa_explanation"
     LAZY_CWL = "lazy_cwl"
     AGREEMENT = "agreement"
+    # NEW STEPS - Same as normal questionnaire
+    DISCORD_SKILLS = "discord_skills"
+    AGE_BRACKET = "age_bracket"
+    TIMEZONE = "timezone"
     COMPLETION = "completion"
 
 
@@ -98,6 +102,22 @@ class FWAFlow:
             from ..handlers.agreement import send_agreement_message
             await send_agreement_message(channel_id, thread_id, user_id)
 
+        # NEW: Add discord skills, age bracket, and timezone
+        elif next_step == FWAStep.DISCORD_SKILLS:
+            # Use the existing discord skills handler from normal questionnaire
+            from ...handlers.discord_skills import send_discord_skills_question
+            await send_discord_skills_question(channel_id, user_id)
+
+        elif next_step == FWAStep.AGE_BRACKET:
+            # Use the existing age bracket handler
+            from ...handlers.age_bracket import send_age_bracket_question
+            await send_age_bracket_question(channel_id, user_id)
+
+        elif next_step == FWAStep.TIMEZONE:
+            # Use the existing timezone handler
+            from ...handlers.timezone import send_timezone_question
+            await send_timezone_question(channel_id, user_id)
+
         elif next_step == FWAStep.COMPLETION:
             from ..handlers.completion import send_fwa_completion
             await send_fwa_completion(channel_id, thread_id, user_id)
@@ -122,3 +142,25 @@ class FWAFlow:
                 user_id,
                 FWAStep.FWA_EXPLANATION
             )
+
+    @classmethod
+    async def handle_questionnaire_completion(cls, channel_id: int, user_id: int):
+        """
+        Called when a questionnaire step (discord skills, age bracket, timezone) is completed.
+        Routes to the next appropriate step.
+        """
+        ticket_state = await StateManager.get_ticket_state(str(channel_id))
+        if not ticket_state:
+            return
+
+        fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
+        current_step = fwa_data.get("current_fwa_step")
+        thread_id = ticket_state["ticket_info"]["thread_id"]
+
+        # Determine next step based on current step
+        if current_step == FWAStep.DISCORD_SKILLS.value:
+            await cls.proceed_to_next_step(channel_id, thread_id, user_id, FWAStep.AGE_BRACKET)
+        elif current_step == FWAStep.AGE_BRACKET.value:
+            await cls.proceed_to_next_step(channel_id, thread_id, user_id, FWAStep.TIMEZONE)
+        elif current_step == FWAStep.TIMEZONE.value:
+            await cls.proceed_to_next_step(channel_id, thread_id, user_id, FWAStep.COMPLETION)

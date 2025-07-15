@@ -1,15 +1,17 @@
 # extensions/events/message/ticket_automation/handlers/clan_expectations.py
 """
-Handles clan expectations question with AI-powered processing.
-Similar to attack strategies but focuses on what users expect from clans.
+Handles clan expectations collection with AI-powered summarization.
+Users can type multiple responses which are organized by AI.
 """
 
 import asyncio
-from typing import Optional, List, Any
+from datetime import datetime, timezone
+from typing import Optional, List, Dict, Any
 import hikari
 import lightbulb
 
 from hikari.impl import (
+    MessageActionRowBuilder as ActionRow,
     ContainerComponentBuilder as Container,
     InteractiveButtonBuilder as Button,
     TextDisplayComponentBuilder as Text,
@@ -22,15 +24,32 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.emoji import emojis
-from utils.constants import BLUE_ACCENT
+from utils.constants import BLUE_ACCENT, GREEN_ACCENT
 from ..core.state_manager import StateManager
 from ..ai.processors import process_clan_expectations_with_ai
-# REMOVED: from ..components.builders import create_clan_expectations_components
-from ..utils.constants import QUESTIONNAIRE_QUESTIONS
 
 # Global instances
 mongo_client: Optional[MongoClient] = None
 bot_instance: Optional[hikari.GatewayBot] = None
+
+# Question content - defined once to avoid duplication
+QUESTION_TITLE = "## 🏰 **Future Clan Expectations**"
+QUESTION_CONTENT = lambda: (
+    "Help us tailor your clan experience! Please answer the following:\n\n"
+    f"{emojis.red_arrow_right} **What do you expect from your future clan?**\n"
+    f"{emojis.blank}{emojis.white_arrow_right} *(e.g., Active wars, good communication, strategic support.)*\n\n"
+    f"{emojis.red_arrow_right} **Minimum clan level you're looking for?**\n"
+    f"{emojis.blank}{emojis.white_arrow_right} *e.g. Level 5, Level 10*\n\n"
+    f"{emojis.red_arrow_right} **Minimum Clan Capital Hall level?**\n"
+    f"{emojis.blank}{emojis.white_arrow_right} *e.g. CH 8 or higher*\n\n"
+    f"{emojis.red_arrow_right} **CWL league preference?**\n"
+    f"{emojis.blank}{emojis.white_arrow_right} *e.g. Crystal league or no preference*\n\n"
+    f"{emojis.red_arrow_right} **Preferred playstyle?**\n"
+    f"{emojis.blank}{emojis.white_arrow_right} Competitive\n"
+    f"{emojis.blank}{emojis.white_arrow_right} Casual\n"
+    f"{emojis.blank}{emojis.white_arrow_right} Zen *Type **What is Zen** to learn more.*\n"
+    f"{emojis.blank}{emojis.white_arrow_right} FWA *Type **What is FWA** to learn more.*\n"
+)
 
 
 def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
@@ -40,44 +59,41 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     bot_instance = bot
 
 
-async def create_clan_expectations_components(
-        summary: str,
+def create_clan_expectations_components(
+        current_summary: str,
         title: str,
-        content: str,
+        detailed_content: str,
         show_done_button: bool = True,
-        include_user_ping: bool = False,
-        user_id: Optional[int] = None,
-        **kwargs
-) -> List[Any]:
-    """Create components for clan expectations display with AI summary"""
-
-    # Extract channel_id from kwargs
-    channel_id = kwargs.get('channel_id')
+        include_user_ping: bool = True,
+        channel_id: Optional[int] = None,
+        user_id: Optional[int] = None
+) -> List[Container]:
+    """Create container components for clan expectations messages"""
 
     # Format summary with emojis
-    formatted_summary = summary.replace("{red_arrow}", str(emojis.red_arrow_right))
+    formatted_summary = current_summary.replace("{red_arrow}", str(emojis.red_arrow_right))
     formatted_summary = formatted_summary.replace("{white_arrow}", str(emojis.white_arrow_right))
     formatted_summary = formatted_summary.replace("{blank}", str(emojis.blank))
 
     components_list = []
 
-    # Add user ping if requested
+    # Add user mention if requested
     if include_user_ping and user_id:
         components_list.append(Text(content=f"<@{user_id}>"))
         components_list.append(Separator(divider=True))
 
     # Add title
     components_list.append(Text(content=title))
-    components_list.append(Separator(divider=True))
 
-    # If no summary yet, show the full detailed prompt with all questions
-    if not summary or summary.strip() == "":
-        # Use the content parameter which is already formatted with emojis
-        components_list.append(Text(content=content))
+    if not formatted_summary:
+        # Initial message with detailed instructions
+        components_list.append(Separator(divider=True))
+        components_list.append(Text(content=detailed_content))
 
         # Add instruction at the bottom
         components_list.append(Text(
-            content="\n💡 _Type your preferences below and I'll categorize them automatically! Click Done when finished._"))
+            content="\n💡 _Type your preferences below and I'll categorize them automatically! Click Done when finished._"
+        ))
     else:
         # Once user starts typing, show their organized summary
         components_list.append(
@@ -85,7 +101,7 @@ async def create_clan_expectations_components(
                 content="📝 **Share what you're looking for in a clan!**\n\n*Continue typing or click Done when finished.*")
         )
 
-        # Add current summary - NO SECTION, just Text components
+        # Add current summary
         components_list.append(Separator(divider=True))
         components_list.append(Text(content="**📋 Your Clan Expectations:**"))
         components_list.append(Text(content=formatted_summary))
@@ -95,9 +111,8 @@ async def create_clan_expectations_components(
         Media(items=[MediaItem(media="assets/Blue_Footer.png")])
     )
 
-    # Add Done button if requested - Must be in a Section
+    # Add Done button if requested
     if show_done_button:
-        # Use proper custom_id format with channel_id and user_id
         custom_id = f"clan_expectations_done:{channel_id}_{user_id}" if channel_id and user_id else "clan_expectations_done:done"
 
         done_button = Button(
@@ -117,7 +132,7 @@ async def create_clan_expectations_components(
             )
         )
 
-    # Create and return container with all components inside
+    # Create and return container
     return [
         Container(
             accent_color=BLUE_ACCENT,
@@ -127,65 +142,56 @@ async def create_clan_expectations_components(
 
 
 async def send_clan_expectations(channel_id: int, user_id: int) -> None:
-    """Send the clan expectations question with AI processing"""
+    """Send the clan expectations collection question"""
 
     if not mongo_client or not bot_instance:
         print("[ClanExpectations] Error: Not initialized")
         return
 
     try:
-        ticket_state = await StateManager.get_ticket_state(str(channel_id))
-        if not ticket_state:
-            print(f"[ClanExpectations] No ticket state found for channel {channel_id}")
-            return
-
-        question_key = "future_clan_expectations"
-        question_data = QUESTIONNAIRE_QUESTIONS[question_key]
-
-        # Format the content with emoji placeholders
-        content = question_data["content"].format(
-            red_arrow=str(emojis.red_arrow_right),
-            white_arrow=str(emojis.white_arrow_right),
-            blank=str(emojis.blank)
-        )
-
-        # Set up state for collecting expectations
+        # Update state
         await mongo_client.ticket_automation_state.update_one(
             {"_id": str(channel_id)},
             {
                 "$set": {
-                    "step_data.questionnaire.current_question": question_key,
+                    "step_data.questionnaire.current_question": "future_clan_expectations",
                     "step_data.questionnaire.awaiting_response": True,
-                    "step_data.questionnaire.expectations_summary": "",  # Initialize summary
-                    "step_data.questionnaire.collecting_expectations": True  # Flag for continuous collection
+                    "step_data.questionnaire.collecting_expectations": True,
+                    "step_data.questionnaire.expectations_started_at": datetime.now(timezone.utc)
                 }
             }
         )
 
-        # Create initial components with empty summary
-        components = await create_clan_expectations_components(
-            "",
-            question_data["title"],
-            content,
+        # Build the question content inline
+        title = QUESTION_TITLE
+        detailed_content = QUESTION_CONTENT()
+
+        # Create components
+        components = create_clan_expectations_components(
+            current_summary="",  # Empty initially
+            title=title,
+            detailed_content=detailed_content,
+            show_done_button=True,
             include_user_ping=True,
-            user_id=user_id,
-            channel_id=channel_id
+            channel_id=channel_id,
+            user_id=user_id
         )
 
+        # Send message
         channel = await bot_instance.rest.fetch_channel(channel_id)
         msg = await channel.send(
             components=components,
             user_mentions=True
         )
 
-        # Store message ID - FIX: Convert channel_id to string
+        # Store message ID
         await StateManager.store_message_id(
-            str(channel_id),  # Convert to string for StateManager
-            f"questionnaire_{question_key}",
+            str(channel_id),
+            "questionnaire_future_clan_expectations",
             str(msg.id)
         )
 
-        print(f"[ClanExpectations] Sent question to channel {channel_id}, msg_id: {msg.id}")
+        print(f"[ClanExpectations] Sent question to channel {channel_id}, message ID: {msg.id}")
 
     except Exception as e:
         print(f"[ClanExpectations] Error sending question: {e}")
@@ -193,15 +199,13 @@ async def send_clan_expectations(channel_id: int, user_id: int) -> None:
         traceback.print_exc()
 
 
-async def process_user_input(channel_id: int, user_id: int, message_content: str) -> None:
-    """Process user input for clan expectations"""
+async def process_user_input(channel_id: int, user_id: int, content: str) -> None:
+    """Process user input and update the expectations summary"""
 
-    if not mongo_client or not bot_instance:
+    if not mongo_client:
         return
 
     try:
-        print(f"[ClanExpectations] Processing input from user {user_id}: {message_content}")
-
         # Get current state
         ticket_state = await StateManager.get_ticket_state(str(channel_id))
         if not ticket_state:
@@ -209,54 +213,51 @@ async def process_user_input(channel_id: int, user_id: int, message_content: str
 
         # Get current summary
         current_summary = ticket_state.get("step_data", {}).get("questionnaire", {}).get("expectations_summary", "")
-        print(f"[ClanExpectations] Current summary length: {len(current_summary)}")
 
-        # Process with AI
-        new_summary = await process_clan_expectations_with_ai(current_summary, message_content)
-        print(f"[ClanExpectations] New summary length: {len(new_summary)}")
+        # Process with AI (using the imported processor like attack_strategies does)
+        updated_summary = await process_clan_expectations_with_ai(current_summary, content)
 
-        # Update database with new summary
+        # Update the summary in state
         await mongo_client.ticket_automation_state.update_one(
             {"_id": str(channel_id)},
             {
                 "$set": {
-                    "step_data.questionnaire.expectations_summary": new_summary,
-                    "step_data.questionnaire.responses.future_clan_expectations": new_summary
+                    "step_data.questionnaire.expectations_summary": updated_summary,
+                    "step_data.questionnaire.last_expectations_input": content,
+                    "step_data.questionnaire.last_input_at": datetime.now(timezone.utc)
                 }
             }
         )
 
-        # Get message ID and update display - FIX: Convert channel_id to string
-        msg_id = await StateManager.get_message_id(str(channel_id), "questionnaire_future_clan_expectations")
-        if msg_id:
-            try:
-                question_data = QUESTIONNAIRE_QUESTIONS["future_clan_expectations"]
-                content = question_data["content"].format(
-                    red_arrow=str(emojis.red_arrow_right),
-                    white_arrow=str(emojis.white_arrow_right),
-                    blank=str(emojis.blank)
-                )
+        # Get message ID
+        message_id = ticket_state.get("messages", {}).get("questionnaire_future_clan_expectations")
+        if not message_id:
+            print("[ClanExpectations] No message ID found to update")
+            return
 
-                components = await create_clan_expectations_components(
-                    new_summary,
-                    question_data["title"],
-                    content,
-                    include_user_ping=False,  # No ping on updates
-                    channel_id=channel_id,
-                    user_id=user_id
-                )
-                await bot_instance.rest.edit_message(
-                    channel_id,
-                    int(msg_id),
-                    components=components
-                )
-                print(f"[ClanExpectations] Updated display for channel {channel_id}")
-            except Exception as e:
-                print(f"[ClanExpectations] Error updating message: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print(f"[ClanExpectations] No message ID found to update")
+        # Build title and content again for consistency
+        title = QUESTION_TITLE
+        detailed_content = QUESTION_CONTENT()
+
+        # Update the message with new summary
+        new_components = create_clan_expectations_components(
+            current_summary=updated_summary,
+            title=title,
+            detailed_content=detailed_content,
+            show_done_button=True,
+            include_user_ping=True,
+            channel_id=channel_id,
+            user_id=user_id
+        )
+
+        await bot_instance.rest.edit_message(
+            channel=channel_id,
+            message=int(message_id),
+            components=new_components,
+            user_mentions=True
+        )
+
+        print(f"[ClanExpectations] Updated message with new summary")
 
     except Exception as e:
         print(f"[ClanExpectations] Error processing input: {e}")
@@ -276,12 +277,24 @@ async def handle_clan_expectations_done(
     user_id = ctx.user.id
 
     # Verify this is the correct user
-    ticket_state = await StateManager.get_ticket_state(str(channel_id))
+    ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
     if not ticket_state:
         await ctx.respond("❌ Ticket state not found.", ephemeral=True)
         return
 
-    stored_user_id = await StateManager.get_user_id(channel_id)
+    stored_user_id = (
+            ticket_state.get("discord_id") or
+            ticket_state.get("ticket_info", {}).get("user_id") or
+            ticket_state.get("user_id")
+    )
+
+    if stored_user_id:
+        try:
+            stored_user_id = int(stored_user_id)
+        except (ValueError, TypeError):
+            print(f"[ClanExpectations] Error converting user_id: {stored_user_id}")
+            pass
+
     if not stored_user_id or user_id != stored_user_id:
         await ctx.respond("❌ You cannot interact with this ticket.", ephemeral=True)
         return
@@ -300,35 +313,34 @@ async def handle_clan_expectations_done(
     # Get the current expectations summary
     current_summary = ticket_state.get("step_data", {}).get("questionnaire", {}).get("expectations_summary", "")
 
-    question_data = QUESTIONNAIRE_QUESTIONS["future_clan_expectations"]
-    content = question_data["content"].format(
-        red_arrow=str(emojis.red_arrow_right),
-        white_arrow=str(emojis.white_arrow_right),
-        blank=str(emojis.blank)
-    )
+    # Format summary with emojis for display
+    formatted_summary = current_summary.replace("{red_arrow}", str(emojis.red_arrow_right))
+    formatted_summary = formatted_summary.replace("{white_arrow}", str(emojis.white_arrow_right))
+    formatted_summary = formatted_summary.replace("{blank}", str(emojis.blank))
 
-    # Create final components without Done button
-    final_components = await create_clan_expectations_components(
-        current_summary,
-        question_data["title"],
-        content,
+    # Build content again
+    title = QUESTION_TITLE
+    detailed_content = QUESTION_CONTENT()
+
+    # Create final components without Done button and without ping
+    final_components = create_clan_expectations_components(
+        current_summary=current_summary,  # Pass original summary (formatting happens inside function)
+        title=title,
+        detailed_content=detailed_content,
         show_done_button=False,
-        include_user_ping=False,
-        channel_id=channel_id,
-        user_id=user_id
+        include_user_ping=False  # No ping on final version
     )
 
-    # Update the message
+    # Update the message to remove the Done button
     await ctx.interaction.edit_initial_response(components=final_components)
 
     # Wait and move to next question
     await asyncio.sleep(2)
 
     # Move to next question
-    next_question = QUESTIONNAIRE_QUESTIONS["future_clan_expectations"]["next"]
+    from ..core import questionnaire_manager
+    next_question = "discord_basic_skills"  # Next question after clan expectations
     if next_question:
-        # Lazy import to avoid circular dependency
-        from ..core.questionnaire_manager import send_question
-        await send_question(channel_id, user_id, next_question)
+        await questionnaire_manager.send_question(channel_id, user_id, next_question)
 
     print(f"[ClanExpectations] User {user_id} completed clan expectations")

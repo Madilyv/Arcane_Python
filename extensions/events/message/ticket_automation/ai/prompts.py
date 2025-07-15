@@ -14,7 +14,7 @@ CRITICAL RULES - VIOLATION OF THESE WILL CAUSE SYSTEM FAILURE:
 5. DO NOT explain what you did with the data - just output the updated list
 6. ONLY add Capital Hall numbers that are EXPLICITLY mentioned by the user - NEVER infer or assume levels
 
-If the new input is invalid or provides no new valid strategies, return the original summary unchanged (if it exists). Only display "No input provided." if there was no existing data at all and the user provided nothing valid.
+If the new input is invalid or provides no new valid strategies, return the original summary unchanged (if it exists). Only display "{blank}{white_arrow} No input provided." if there was no existing data at all and the user provided nothing valid.
 
 ### Troop List Categorization:
 - **Main Village Troops:**
@@ -57,23 +57,23 @@ If the new input is invalid or provides no new valid strategies, return the orig
    - Each user input line that results in a valid strategy is one bullet point.
    - No brackets around Capital Hall numbers.
    - NO FEEDBACK OR COMMENTARY TEXT
-   - If no entries for a category, say **No input provided.**
+   - If no entries for a category, say **{blank}{white_arrow} No input provided.**
 
 **Final Output Sections (EXACT FORMAT - NO MODIFICATIONS):**
 
 {red_arrow} **Main Village Strategies:**
 {blank}{white_arrow} Strategy 1
 {blank}{white_arrow} Strategy 2
-(or if none: No input provided.)
+(or if none: {blank}{white_arrow} No input provided.)
 
 {red_arrow} **Clan Capital Strategies:**
 {blank}{white_arrow} Strategy 1 (NO capital hall numbers here)
 {blank}{white_arrow} Strategy 2 (NO capital hall numbers here)
-(or if none: No input provided.)
+(or if none: {blank}{white_arrow} No input provided.)
 
 {red_arrow} **Familiarity with Clan Capital Levels:**
 {blank}{white_arrow} Familiar with Capital Hall X-Y (ONLY if explicitly mentioned)
-(or if none: No input provided.)
+(or if none: {blank}{white_arrow} No input provided.)
 
 REMEMBER:
 - Output ONLY the strategies and ranges
@@ -85,13 +85,13 @@ REMEMBER:
 **Example of CORRECT output when user says "miners with freeze" (no level mentioned):**
 
 {red_arrow} **Main Village Strategies:**
-No input provided.
+{blank}{white_arrow} No input provided.
 
 {red_arrow} **Clan Capital Strategies:**
 {blank}{white_arrow} Miners Freeze
 
 {red_arrow} **Familiarity with Clan Capital Levels:**
-No input provided.
+{blank}{white_arrow} No input provided.
 
 **Common Classifications to Remember:**
 - "Miners with freeze" or "Miners freeze" → ALWAYS Clan Capital: "{blank}{white_arrow} Miners Freeze"
@@ -153,24 +153,24 @@ You MUST categorize all input into these specific sections based on content:
 {red_arrow} **Expectations:**
 {blank}{white_arrow} Expectation 1
 {blank}{white_arrow} Expectation 2
-(or if none: No response provided.)
+(or if none: {blank}{white_arrow} No input provided.)
 
 {red_arrow} **Minimum Clan Level:**
 {blank}{white_arrow} Level X
-(or if none: No response provided.)
+(or if none: {blank}{white_arrow} No input provided.)
 
 {red_arrow} **Minimum Clan Capital Hall Level:**
 {blank}{white_arrow} Capital Hall X or higher
-(or if none: No response provided.)
+(or if none: {blank}{white_arrow} No input provided.)
 
 {red_arrow} **CWL League Preference:**
 {blank}{white_arrow} League Name
-(or if none: No response provided.)
+(or if none: {blank}{white_arrow} No input provided.)
 
 {red_arrow} **Clan Style Preference:**
 {blank}{white_arrow} Style 1
 {blank}{white_arrow} Style 2
-(or if none: No response provided.)
+(or if none: {blank}{white_arrow} No input provided.)
 
 REMEMBER:
 - Output ONLY the categorized preferences

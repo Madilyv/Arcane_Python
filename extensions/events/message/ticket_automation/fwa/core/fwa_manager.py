@@ -119,12 +119,9 @@ async def trigger_fwa_automation(
         return False
 
 
-async def handle_fwa_text_response(
-        event: hikari.GuildMessageCreateEvent,
-        ticket_state: Dict[str, Any]
-) -> bool:
+async def handle_fwa_text_response(event: hikari.GuildMessageCreateEvent, ticket_state: dict) -> bool:
     """
-    Handle text responses for FWA flow (Understood, I agree, etc.)
+    Handle text responses during FWA flow.
     Returns True if message was handled, False otherwise.
     """
     if not ticket_state:
@@ -167,12 +164,12 @@ async def handle_fwa_text_response(
         return True
 
     elif current_step == FWAStep.AGREEMENT.value and content == "i agree":
-        # Proceed to Completion
+        # NEW: Proceed to Discord Skills instead of Completion
         await FWAFlow.proceed_to_next_step(
             channel_id,
             thread_id,
             user_id,
-            FWAStep.COMPLETION
+            FWAStep.DISCORD_SKILLS  # Changed from COMPLETION
         )
         return True
 

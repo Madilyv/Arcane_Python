@@ -1,12 +1,14 @@
 # extensions/events/message/ticket_automation/handlers/timezone.py
 """
-Timezone handler using Friend Time bot integration.
+Handles timezone setup using Friend Time bot.
+Waits for Friend Time confirmation before proceeding.
 """
 
 import asyncio
+from datetime import datetime, timezone
 from typing import Optional
-from datetime import datetime, timezone as tz
 import hikari
+import lightbulb
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -20,7 +22,7 @@ from hikari.impl import (
 
 from utils.mongo import MongoClient
 from utils.emoji import emojis
-from utils.constants import BLUE_ACCENT
+from utils.constants import BLUE_ACCENT, GREEN_ACCENT
 from ..core.state_manager import StateManager
 from ..utils.constants import TIMEZONE_CONFIRMATION_TIMEOUT, QUESTIONNAIRE_QUESTIONS
 
@@ -34,37 +36,35 @@ FRIEND_TIME_SET_COMMAND_ID = 924862149292085268
 
 
 def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
-    """Initialize handler with required instances."""
+    """Initialize the handler"""
     global mongo_client, bot_instance
     mongo_client = mongo
     bot_instance = bot
 
 
 async def send_timezone_question(channel_id: int, user_id: int) -> None:
-    """Send the timezone question with Friend Time bot instructions."""
+    """Send the timezone setup question"""
 
-    if not mongo_client or not bot_instance:
-        print("[Timezone] Error: Not initialized")
+    if not bot_instance or not mongo_client:
+        print("[Timezone] Error: Bot not initialized")
         return
 
     try:
-        # Update state using StateManager classmethod
-        await StateManager.set_current_question(str(channel_id), "timezone")
-
-        # Also set timezone-specific flags
+        # Update state
         await mongo_client.ticket_automation_state.update_one(
             {"_id": str(channel_id)},
             {
                 "$set": {
-                    "step_data.questionnaire.awaiting_response": False,
-                    "step_data.questionnaire.awaiting_timezone_confirmation": True
+                    "step_data.questionnaire.current_question": "timezone",
+                    "step_data.questionnaire.awaiting_timezone_confirmation": True,
+                    "step_data.questionnaire.awaiting_response": False
                 }
             }
         )
 
         question_data = QUESTIONNAIRE_QUESTIONS["timezone"]
 
-        # Build components inline - already following our pattern!
+        # Create components
         components = [
             Container(
                 accent_color=BLUE_ACCENT,
@@ -169,11 +169,26 @@ async def monitor_friend_time_confirmation(channel_id: int, user_id: int):
                 }
             )
 
-            # Move to next question
-            from ..core import questionnaire_manager
-            next_question = QUESTIONNAIRE_QUESTIONS["timezone"]["next"]
-            if next_question:
-                await questionnaire_manager.send_question(int(channel_id), int(user_id), next_question)
+            # Send completion message even for timeout
+            await send_timezone_completion_message(int(channel_id), int(user_id), None)
+
+            # Wait a bit before proceeding
+            await asyncio.sleep(2)
+
+            # Check if we're in FWA flow
+            ticket_state = await StateManager.get_ticket_state(str(channel_id))
+            fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
+            if fwa_data.get("current_fwa_step") == "timezone":
+                # We're in FWA flow, route to FWA completion
+                print(f"[Timezone] Routing to FWA completion")
+                from ..fwa.core.fwa_flow import FWAFlow
+                await FWAFlow.handle_questionnaire_completion(int(channel_id), int(user_id))
+            else:
+                # Normal flow - move to next question
+                from ..core import questionnaire_manager
+                next_question = QUESTIONNAIRE_QUESTIONS["timezone"]["next"]
+                if next_question:
+                    await questionnaire_manager.send_question(int(channel_id), int(user_id), next_question)
 
     except Exception as e:
         print(f"[Timezone] Error in Friend Time monitor: {e}")
@@ -181,13 +196,49 @@ async def monitor_friend_time_confirmation(channel_id: int, user_id: int):
         traceback.print_exc()
 
 
+async def send_timezone_completion_message(channel_id: int, user_id: int, timezone_str: Optional[str] = None):
+    """Send a completion message after timezone is set"""
+    if not bot_instance:
+        return
+
+    try:
+        # Create completion message
+        components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content=f"<@{user_id}>"),
+                    Separator(divider=True),
+                    Text(content="## ✅ **Timezone Set Successfully!**"),
+                    Text(content=(
+                        f"Great! Your timezone has been set{f' to **{timezone_str}**' if timezone_str else ''}.\n\n"
+                        "This helps clan leaders know when you're most active and coordinate war attacks.\n\n"
+                        "*Moving to the final step...*"
+                    )),
+                    Media(items=[MediaItem(media="assets/Green_Footer.png")])
+                ]
+            )
+        ]
+
+        # Send to channel
+        channel = await bot_instance.rest.fetch_channel(channel_id)
+        await channel.send(
+            components=components,
+            user_mentions=True
+        )
+
+        print(f"[Timezone] Sent completion message to channel {channel_id}")
+
+    except Exception as e:
+        print(f"[Timezone] Error sending completion message: {e}")
+
+
 async def check_friend_time_confirmation(event: hikari.GuildMessageCreateEvent) -> bool:
     """
     Check if a message is a Friend Time bot timezone confirmation.
     This function should be called from message event listeners.
     """
-    # Only check bot messages
-    if not event.is_bot:
+    if not mongo_client:
         return False
 
     # Check if it's from Friend Time bot
@@ -205,146 +256,68 @@ async def check_friend_time_confirmation(event: hikari.GuildMessageCreateEvent) 
 
     print(f"[Timezone] Checking Friend Time message in channel {event.channel_id}")
 
-    # Look for confirmation patterns
-    is_confirmed = False
-    timezone_value = None
-
-    # Check message content
-    if event.content:
-        confirmation_phrases = [
-            "Successfully set your time zone",
-            "Your time zone has been set",
-            "Time zone updated",
-            "Congratulations!",
-            "You've completed user setup!"
-        ]
-
-        for phrase in confirmation_phrases:
-            if phrase in event.content:
-                is_confirmed = True
-                print(f"[Timezone] Found '{phrase}' in message content")
-                break
-
-        # Try to extract timezone
-        if is_confirmed:
-            import re
-            timezone_pattern = r'([A-Za-z_]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?)'
-            match = re.search(timezone_pattern, event.content)
-            if match:
-                timezone_value = match.group(1)
-
-    # Check embeds - Friend Time sends the confirmation in embeds
-    if event.message.embeds and not is_confirmed:
-        for i, embed in enumerate(event.message.embeds):
-            print(f"[Timezone] Checking embed {i}: title='{embed.title}', has_desc={embed.description is not None}")
-
-            # Check embed description for confirmation phrases
-            if embed.description:
-                # Friend Time sends "Congratulations!" in the embed
-                if "Congratulations!" in embed.description:
-                    is_confirmed = True
-                    print(f"[Timezone] Found 'Congratulations!' in embed description")
-
-                    # The full message is usually "Congratulations! You've completed user setup!"
-                    if "You've completed user setup!" in embed.description:
-                        print(f"[Timezone] Found full Friend Time confirmation message")
-
-                # Also check for other confirmation phrases
-                for phrase in ["Successfully set", "time zone has been set", "Time zone updated"]:
-                    if phrase in embed.description:
-                        is_confirmed = True
-                        print(f"[Timezone] Found '{phrase}' in embed description")
-                        break
-
-            # Check embed title too
-            if embed.title and not is_confirmed:
-                if any(phrase in embed.title for phrase in ["Congratulations", "Success", "Complete", "Time Zone Set"]):
-                    is_confirmed = True
-                    print(f"[Timezone] Found confirmation in embed title: {embed.title}")
-
-    # Look for timezone in embed fields - Friend Time specific format
-    if event.message.embeds and is_confirmed and not timezone_value:
+    # Look for confirmation in embeds (Friend Time sends embeds)
+    if event.message.embeds:
         for embed in event.message.embeds:
-            if embed.fields:
-                for field in embed.fields:
-                    print(f"[Timezone] Checking field: name='{field.name}', value='{field.value}'")
+            if embed.description and (
+                    "Congratulations!" in embed.description and "You've completed user setup!" in embed.description):
+                print(f"[Timezone] Friend Time confirmation detected!")
 
-                    # Friend Time uses "**Time Zone** (`timeZone`): America/New_York" format
-                    if "time zone" in field.name.lower() or "timezone" in field.name.lower():
-                        # Extract timezone from value which might be "America/New_York"
-                        field_value = field.value.strip()
+                # Extract timezone if possible
+                timezone_str = None
+                if embed.fields:
+                    for field in embed.fields:
+                        if "time zone" in field.name.lower() or "timezone" in field.name.lower():
+                            timezone_str = field.value.strip()
+                            break
 
-                        # Try to extract timezone pattern from the field value
-                        import re
-                        timezone_pattern = r'([A-Za-z_]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?)'
-                        match = re.search(timezone_pattern, field_value)
-                        if match:
-                            timezone_value = match.group(1)
-                            print(f"[Timezone] Extracted timezone from field: {timezone_value}")
-                        else:
-                            # If no pattern match, use the whole value if it looks like a timezone
-                            if "/" in field_value:
-                                timezone_value = field_value
-                                print(f"[Timezone] Using full field value as timezone: {timezone_value}")
-                        break
+                # Update state
+                await mongo_client.ticket_automation_state.update_one(
+                    {"_id": str(event.channel_id)},
+                    {
+                        "$set": {
+                            "step_data.questionnaire.timezone_confirmed": True,
+                            "step_data.questionnaire.awaiting_timezone_confirmation": False,
+                            "step_data.questionnaire.timezone": timezone_str or "Set (not extracted)",
+                            "step_data.questionnaire.responses.timezone": timezone_str or "Set (not extracted)"
+                        }
+                    }
+                )
 
-    if is_confirmed:
-        print(f"[Timezone] Friend Time confirmation detected! Timezone: {timezone_value or 'not extracted'}")
+                # Get user ID
+                user_id = (
+                        ticket_state.get("discord_id") or
+                        ticket_state.get("user_id") or
+                        ticket_state.get("ticket_info", {}).get("user_id")
+                )
 
-        # Update state
-        await mongo_client.ticket_automation_state.update_one(
-            {"_id": str(event.channel_id)},
-            {
-                "$set": {
-                    "step_data.questionnaire.timezone_confirmed": True,
-                    "step_data.questionnaire.awaiting_timezone_confirmation": False,
-                    "step_data.questionnaire.timezone": timezone_value or "Set (not extracted)",
-                    "step_data.questionnaire.responses.timezone": timezone_value or "Set (not extracted)"
-                }
-            }
-        )
+                if user_id:
+                    try:
+                        user_id = int(user_id)
+                    except (ValueError, TypeError):
+                        pass
 
-        # Get user ID from state - check multiple locations
-        user_id = (
-                ticket_state.get("discord_id") or
-                ticket_state.get("user_id") or
-                ticket_state.get("ticket_info", {}).get("user_id") or
-                ticket_state.get("step_data", {}).get("user_id")
-        )
+                    # Send completion message
+                    await send_timezone_completion_message(event.channel_id, user_id, timezone_str)
 
-        print(f"[Timezone] Found user_id: {user_id} (type: {type(user_id)})")
+                    # Wait before proceeding
+                    await asyncio.sleep(2)
 
-        if isinstance(user_id, str):
-            try:
-                user_id = int(user_id)
-                print(f"[Timezone] Converted user_id to int: {user_id}")
-            except (ValueError, TypeError) as e:
-                print(f"[Timezone] Failed to convert user_id: {e}")
-                user_id = None
+                    # Check if we're in FWA flow
+                    ticket_state = await StateManager.get_ticket_state(str(event.channel_id))
+                    fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
+                    if fwa_data.get("current_fwa_step") == "timezone":
+                        # We're in FWA flow, route to FWA completion
+                        print(f"[Timezone] Routing to FWA completion after Friend Time confirmation")
+                        from ..fwa.core.fwa_flow import FWAFlow
+                        await FWAFlow.handle_questionnaire_completion(event.channel_id, user_id)
+                    else:
+                        # Normal flow - send next question
+                        from ..core import questionnaire_manager
+                        next_question = QUESTIONNAIRE_QUESTIONS["timezone"]["next"]
+                        if next_question:
+                            await questionnaire_manager.send_question(event.channel_id, user_id, next_question)
 
-        if user_id:
-            # Send completion message after brief delay
-            await asyncio.sleep(2)
-
-            try:
-                # Move to next question
-                from ..core import questionnaire_manager
-                next_question = QUESTIONNAIRE_QUESTIONS["timezone"]["next"]  # This will be "leaders_checking_you_out"
-                print(f"[Timezone] Moving to next question: {next_question}")
-
-                if next_question:
-                    await questionnaire_manager.send_question(int(event.channel_id), user_id, next_question)
-                    print(f"[Timezone] Successfully triggered next question")
-                else:
-                    print(f"[Timezone] No next question defined")
-
-            except Exception as e:
-                print(f"[Timezone] Error sending next question: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print(f"[Timezone] Could not find valid user_id in ticket state")
-
-        return True
+                return True
 
     return False

@@ -7,7 +7,7 @@ Constants specific to FWA ticket automation.
 FWA_TICKET_PATTERN = "𝔽𝕎𝔸"  # Production FWA pattern (disabled initially)
 FWA_TEST_PATTERN = "𝕋-𝔽𝕎𝔸"  # Test pattern for development
 
-# FWA flow steps
+# FWA flow steps - Updated to include questionnaire steps
 FWA_STEPS = [
     "war_weight",
     "account_collection",
@@ -15,6 +15,9 @@ FWA_STEPS = [
     "fwa_explanation",
     "lazy_cwl",
     "agreement",
+    "discord_skills",
+    "age_bracket",
+    "timezone",
     "completion"
 ]
 

@@ -205,11 +205,20 @@ async def monitor_discord_skills_completion(channel_id: int, user_id: int, messa
                 # Wait a bit then move to next question
                 await asyncio.sleep(3)
 
-                # Move to next question
-                from ..core import questionnaire_manager
-                next_question = QUESTIONNAIRE_QUESTIONS.get("discord_basic_skills", {}).get("next")
-                if next_question:
-                    await questionnaire_manager.send_question(channel_id, user_id, next_question)
+                # Check if we're in FWA flow
+                ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+                fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
+                if fwa_data.get("current_fwa_step") == "discord_skills":
+                    # We're in FWA flow, use FWA routing
+                    print(f"[DiscordSkills] Routing to FWA age bracket")
+                    from ..fwa.core.fwa_flow import FWAFlow
+                    await FWAFlow.handle_questionnaire_completion(channel_id, user_id)
+                else:
+                    # Normal questionnaire flow
+                    from ..core import questionnaire_manager
+                    next_question = QUESTIONNAIRE_QUESTIONS.get("discord_basic_skills", {}).get("next")
+                    if next_question:
+                        await questionnaire_manager.send_question(channel_id, user_id, next_question)
 
                 break
 
