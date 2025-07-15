@@ -106,15 +106,16 @@ async def send_fwa_explanation(channel_id: int, thread_id: int, user_id: int):
             user_mentions=True
         )
 
-        # Update state - CRITICAL: Set started: True and current_fwa_step!
+        # Update the state section to include the questionnaire current_question:
         await StateManager.update_ticket_state(
             str(channel_id),
             {
-                "step_data.fwa.started": True,  # ADD THIS!
+                "step_data.fwa.started": True,
                 "step_data.fwa.fwa_explanation_sent": True,
                 "step_data.fwa.fwa_explanation_sent_at": datetime.now(timezone.utc),
                 "step_data.fwa.awaiting_understood": True,
-                "step_data.fwa.current_fwa_step": FWAStep.FWA_EXPLANATION.value
+                "step_data.fwa.current_fwa_step": FWAStep.FWA_EXPLANATION.value,
+                "step_data.questionnaire.current_question": "fwa_explanation"
             }
         )
 

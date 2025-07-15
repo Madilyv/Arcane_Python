@@ -85,7 +85,8 @@ async def send_agreement_message(channel_id: int, thread_id: int, user_id: int):
                 "step_data.fwa.agreement_sent": True,
                 "step_data.fwa.agreement_sent_at": datetime.now(timezone.utc),
                 "step_data.fwa.awaiting_agreement": True,
-                "step_data.fwa.current_fwa_step": FWAStep.AGREEMENT.value
+                "step_data.fwa.current_fwa_step": FWAStep.AGREEMENT.value,
+                "step_data.questionnaire.current_question": "agreement"
             }
         )
 

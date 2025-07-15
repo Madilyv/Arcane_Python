@@ -19,12 +19,23 @@ from hikari.impl import (
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, BLUE_ACCENT
 from ..core.state_manager import StateManager
-# REMOVED: from ..components.builders import create_container_component
-from ..utils.constants import QUESTIONNAIRE_QUESTIONS
 
 # Global instances
 mongo_client: Optional[MongoClient] = None
 bot_instance: Optional[hikari.GatewayBot] = None
+
+# Self-contained completion message data
+LEADERS_MESSAGE = {
+    "title": "## 👑 **Leaders Checking You Out**",
+    "content": (
+        "Heads up! Our clan leaders will be reviewing your profile:\n\n"
+        "• **In-game profile** – Town Hall, hero levels, war stars\n"
+        "• **Discord activity** – How you communicate and engage\n"
+        "• **Application responses** – The info you've shared with us\n\n"
+        "*Make sure your profile reflects your best! Leaders appreciate active, engaged members.*"
+    ),
+    "footer": "You've completed the questionnaire! A recruiter will be with you shortly."
+}
 
 
 def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
@@ -75,14 +86,7 @@ async def send_leaders_message(channel_id: int, user_id: int) -> None:
         return
 
     try:
-        question_data = QUESTIONNAIRE_QUESTIONS.get("leaders_checking_you_out", {})
-
-        # Format the content with emoji replacements if needed
-        content = question_data.get("content", "Your application is being reviewed by our clan leaders.")
-        footer = question_data.get("footer",
-                                   "You've completed the questionnaire! A recruiter will be with you shortly.")
-
-        # Build components inline
+        # Build components using self-contained data
         components_list = []
 
         # Add user ping
@@ -90,25 +94,17 @@ async def send_leaders_message(channel_id: int, user_id: int) -> None:
         components_list.append(Separator(divider=True))
 
         # Add title
-        title = question_data.get("title", "## 👑 **Leaders Checking You Out**")
-        components_list.append(Text(content=title))
+        components_list.append(Text(content=LEADERS_MESSAGE["title"]))
 
-        # Add separator if there's content
-        if content:
-            components_list.append(Separator(divider=True))
-            components_list.append(Text(content=content))
+        # Add content
+        components_list.append(Separator(divider=True))
+        components_list.append(Text(content=LEADERS_MESSAGE["content"]))
 
-        # Add footer if provided
-        if footer:
-            components_list.append(Text(content=f"-# {footer}"))
+        # Add footer
+        components_list.append(Text(content=f"-# {LEADERS_MESSAGE['footer']}"))
 
-        # Add GIF if provided in question data
-        gif_url = question_data.get("gif_url")
-        if gif_url:
-            components_list.append(Media(items=[MediaItem(media=gif_url)]))
-        else:
-            # Default to green footer for completion
-            components_list.append(Media(items=[MediaItem(media="assets/Green_Footer.png")]))
+        # Add completion footer image (green to indicate success)
+        components_list.append(Media(items=[MediaItem(media="assets/Green_Footer.png")]))
 
         # Create container with GREEN_ACCENT to indicate completion
         components = [
@@ -140,3 +136,23 @@ async def send_leaders_message(channel_id: int, user_id: int) -> None:
         print(f"[Completion] Error sending leaders message: {e}")
         import traceback
         traceback.print_exc()
+
+
+async def is_final_step(channel_id: int) -> bool:
+    """Check if this is the final step in the current flow"""
+
+    if not mongo_client:
+        return True
+
+    ticket_state = await StateManager.get_ticket_state(str(channel_id))
+    if not ticket_state:
+        return True
+
+    # Check if we're in FWA flow
+    fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
+    if fwa_data.get("current_fwa_step"):
+        # In FWA flow, completion handler might not be the final step
+        return False
+
+    # In normal questionnaire flow, this is the final step
+    return True

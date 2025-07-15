@@ -24,7 +24,6 @@ from utils.mongo import MongoClient
 from utils.emoji import emojis
 from utils.constants import BLUE_ACCENT, GREEN_ACCENT
 from ..core.state_manager import StateManager
-from ..utils.constants import TIMEZONE_CONFIRMATION_TIMEOUT, QUESTIONNAIRE_QUESTIONS
 
 # Global instances
 mongo_client: Optional[MongoClient] = None
@@ -33,6 +32,21 @@ bot_instance: Optional[hikari.GatewayBot] = None
 # Friend Time bot configuration
 FRIEND_TIME_BOT_ID = 471091072546766849
 FRIEND_TIME_SET_COMMAND_ID = 924862149292085268
+
+# Self-contained constants
+TIMEZONE_CONFIRMATION_TIMEOUT = 60  # Seconds to wait for Friend Time bot confirmation
+
+# Self-contained question data
+TIMEZONE_QUESTION = {
+    "title": "## 🌍 **Set Your Timezone**",
+    "content": (
+        "Let's set your timezone so clan leaders know when you're active!\n\n"
+        "{red_arrow} **Click the button below** to open Friend Time\n"
+        "{red_arrow} **Select your timezone** from the dropdown\n"
+        "{red_arrow} **Wait for confirmation** from Friend Time bot\n\n"
+        "*This helps with war timing and coordinating attacks!*"
+    )
+}
 
 
 def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
@@ -62,16 +76,14 @@ async def send_timezone_question(channel_id: int, user_id: int) -> None:
             }
         )
 
-        question_data = QUESTIONNAIRE_QUESTIONS["timezone"]
-
-        # Create components
+        # Create components using self-contained data
         components = [
             Container(
                 accent_color=BLUE_ACCENT,
                 components=[
                     Text(content=f"<@{user_id}>"),
                     Separator(divider=True),
-                    Text(content=question_data["title"]),
+                    Text(content=TIMEZONE_QUESTION["title"]),
                     Separator(divider=True),
                     Text(content=(
                         "To help us match you with the right clan and events, let's set your timezone.\n\n"
@@ -175,20 +187,8 @@ async def monitor_friend_time_confirmation(channel_id: int, user_id: int):
             # Wait a bit before proceeding
             await asyncio.sleep(2)
 
-            # Check if we're in FWA flow
-            ticket_state = await StateManager.get_ticket_state(str(channel_id))
-            fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
-            if fwa_data.get("current_fwa_step") == "timezone":
-                # We're in FWA flow, route to FWA completion
-                print(f"[Timezone] Routing to FWA completion")
-                from ..fwa.core.fwa_flow import FWAFlow
-                await FWAFlow.handle_questionnaire_completion(int(channel_id), int(user_id))
-            else:
-                # Normal flow - move to next question
-                from ..core import questionnaire_manager
-                next_question = QUESTIONNAIRE_QUESTIONS["timezone"]["next"]
-                if next_question:
-                    await questionnaire_manager.send_question(int(channel_id), int(user_id), next_question)
+            # Proceed to next question
+            await proceed_to_next_question(channel_id, user_id)
 
     except Exception as e:
         print(f"[Timezone] Error in Friend Time monitor: {e}")
@@ -303,21 +303,29 @@ async def check_friend_time_confirmation(event: hikari.GuildMessageCreateEvent) 
                     # Wait before proceeding
                     await asyncio.sleep(2)
 
-                    # Check if we're in FWA flow
-                    ticket_state = await StateManager.get_ticket_state(str(event.channel_id))
-                    fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
-                    if fwa_data.get("current_fwa_step") == "timezone":
-                        # We're in FWA flow, route to FWA completion
-                        print(f"[Timezone] Routing to FWA completion after Friend Time confirmation")
-                        from ..fwa.core.fwa_flow import FWAFlow
-                        await FWAFlow.handle_questionnaire_completion(event.channel_id, user_id)
-                    else:
-                        # Normal flow - send next question
-                        from ..core import questionnaire_manager
-                        next_question = QUESTIONNAIRE_QUESTIONS["timezone"]["next"]
-                        if next_question:
-                            await questionnaire_manager.send_question(event.channel_id, user_id, next_question)
+                    # Proceed to next question
+                    await proceed_to_next_question(str(event.channel_id), str(user_id))
 
                 return True
 
     return False
+
+
+async def proceed_to_next_question(channel_id: str, user_id: str) -> None:
+    """Determine and proceed to the next question in the flow"""
+
+    # Check if we're in FWA flow
+    ticket_state = await StateManager.get_ticket_state(str(channel_id))
+    if not ticket_state:
+        return
+
+    fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
+    if fwa_data.get("current_fwa_step") == "timezone":
+        # We're in FWA flow, route to FWA completion
+        print(f"[Timezone] Routing to FWA completion")
+        from ..fwa.core.fwa_flow import FWAFlow
+        await FWAFlow.handle_questionnaire_completion(int(channel_id), int(user_id))
+    else:
+        # Normal flow - send completion message (final step)
+        from .completion import send_completion_message
+        await send_completion_message(int(channel_id), int(user_id))

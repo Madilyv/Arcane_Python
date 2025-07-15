@@ -132,7 +132,8 @@ async def send_lazy_cwl_explanation(channel_id: int, thread_id: int, user_id: in
                 "step_data.fwa.lazy_cwl_sent": True,
                 "step_data.fwa.lazy_cwl_sent_at": datetime.now(timezone.utc),
                 "step_data.fwa.awaiting_understood_cwl": True,
-                "step_data.fwa.current_fwa_step": FWAStep.LAZY_CWL.value
+                "step_data.fwa.current_fwa_step": FWAStep.LAZY_CWL.value,
+                "step_data.questionnaire.current_question": "lazy_cwl"
             }
         )
 

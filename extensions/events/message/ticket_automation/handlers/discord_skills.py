@@ -23,9 +23,7 @@ from utils.mongo import MongoClient
 from utils.emoji import emojis
 from utils.constants import GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT
 from ..core.state_manager import StateManager
-# REMOVED: from ..components.builders import create_container_component
 from ..utils.constants import (
-    QUESTIONNAIRE_QUESTIONS,
     REMINDER_DELETE_TIMEOUT,
     REMINDER_TIMEOUT
 )
@@ -33,6 +31,21 @@ from ..utils.constants import (
 # Global instances
 mongo_client: Optional[MongoClient] = None
 bot_instance: Optional[hikari.GatewayBot] = None
+
+# Self-contained question data
+DISCORD_SKILLS_QUESTION = {
+    "title": "## 🎮 **Discord Basic Skills Check**",
+    "content": (
+        "Let's make sure you know the Discord basics!\n\n"
+        "{red_arrow} **Step 1:** React to this message with any emoji\n"
+        "{white_arrow} _Click the smiley face below to add a reaction_\n\n"
+        "{red_arrow} **Step 2:** Reply and mention the bot\n"
+        "{white_arrow} _Type a message with @Arcane Bot (that's me!)_\n\n"
+        "*This ensures you can interact properly in your new clan!*"
+    ),
+    "footer": "React to this message and mention the bot to continue!",
+    "next": "age_bracket"
+}
 
 
 def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
@@ -91,7 +104,7 @@ async def send_discord_skills_question(channel_id: int, user_id: int) -> None:
 
     try:
         question_key = "discord_basic_skills"
-        question_data = QUESTIONNAIRE_QUESTIONS[question_key]
+        question_data = DISCORD_SKILLS_QUESTION
 
         # Format content
         content = question_data["content"].format(
@@ -136,6 +149,7 @@ async def send_discord_skills_question(channel_id: int, user_id: int) -> None:
             {"_id": str(channel_id)},
             {
                 "$set": {
+                    f"messages.questionnaire_{question_key}": str(msg.id),
                     "step_data.questionnaire.discord_skills_message_id": str(msg.id),
                     f"messages.questionnaire_discord_basic_skills": str(msg.id)
                 }
@@ -216,7 +230,8 @@ async def monitor_discord_skills_completion(channel_id: int, user_id: int, messa
                 else:
                     # Normal questionnaire flow
                     from ..core import questionnaire_manager
-                    next_question = QUESTIONNAIRE_QUESTIONS.get("discord_basic_skills", {}).get("next")
+                    from ..utils.flow_map import get_next_question
+                    next_question = get_next_question("discord_basic_skills")
                     if next_question:
                         await questionnaire_manager.send_question(channel_id, user_id, next_question)
 
@@ -273,10 +288,6 @@ async def check_reaction_completion(channel_id: int, user_id: int, message_id: i
 
     if not expected_user:
         print(f"[DiscordSkills] No expected user found in ticket state, skipping validation")
-        # If we can't find the expected user, we could either:
-        # Option 1: Skip validation (less secure)
-        # Option 2: Try to infer from the ticket
-        # For now, let's just continue since the message ID matched
     elif user_id != expected_user:
         print(f"[DiscordSkills] User ID mismatch")
         return
@@ -372,19 +383,23 @@ async def send_skills_completion_message(channel_id: int, user_id: int) -> None:
         components = create_discord_skills_components(
             title="✅ **Discord Skills Verified!**",
             content=(
-                "Great job! You've successfully demonstrated basic Discord skills.\n\n"
-                "You know how to:\n"
-                "• React to messages ✅\n"
-                "• Mention users properly ✅\n\n"
-                "*Let's continue with your application...*"
+                "Great job! You've shown you can:\n"
+                "• React to messages 👍\n"
+                "• Mention users properly 💬\n\n"
+                "These skills will help you communicate effectively in your new clan!\n\n"
+                "*Moving to the next question...*"
             ),
             accent_color=GREEN_ACCENT,
-            user_id=user_id,
-            footer=None
+            user_id=user_id
         )
 
         channel = await bot_instance.rest.fetch_channel(channel_id)
-        await channel.send(components=components, user_mentions=True)
+        await channel.send(
+            components=components,
+            user_mentions=True
+        )
+
+        print(f"[DiscordSkills] Sent completion message")
 
     except Exception as e:
         print(f"[DiscordSkills] Error sending completion message: {e}")

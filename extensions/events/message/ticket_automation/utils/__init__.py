@@ -9,8 +9,6 @@ from .constants import (
     REMINDER_DELETE_TIMEOUT,
     REMINDER_TIMEOUT,
     TIMEZONE_CONFIRMATION_TIMEOUT,
-    QUESTIONNAIRE_QUESTIONS,
-    AGE_RESPONSES
 )
 
 from .helpers import (

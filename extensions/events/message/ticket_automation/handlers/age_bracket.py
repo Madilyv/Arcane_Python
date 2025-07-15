@@ -25,11 +25,44 @@ from utils.mongo import MongoClient
 from utils.emoji import emojis
 from utils.constants import BLUE_ACCENT, GREEN_ACCENT
 from ..core.state_manager import StateManager
-from ..utils.constants import QUESTIONNAIRE_QUESTIONS, AGE_RESPONSES
 
 # Global instances
 mongo_client: Optional[MongoClient] = None
 bot_instance: Optional[hikari.GatewayBot] = None
+
+# Self-contained age bracket responses
+AGE_BRACKET_RESPONSES = {
+    "16_under": {
+        "title": "🎉 **16 & Under Registered!**",
+        "content": (
+            "Got it! You're bringing that youthful energy!\n\n"
+            "We'll find you a family-friendly clan that's the perfect fit for you.\n\n"
+        ),
+        "gif": "https://c.tenor.com/oxxT2JPSQccAAAAC/tenor.gif"
+    },
+    "17_25": {
+        "title": "🎮 **17–25 Confirmed**",
+        "content": (
+            "Understood! You're in prime gaming years!\n\n"
+            "Time to conquer the Clash world! 🏆\n\n"
+        ),
+        "gif": "https://c.tenor.com/twdtlMLE8UIAAAAC/tenor.gif"
+    },
+    "over_25": {
+        "title": "🏅 **Age Locked In**",
+        "content": (
+            "Awesome! Experience meets strategy!\n\n"
+            "Welcome to the veteran league of Clashers! 💪\n\n"
+        ),
+        "gif": "https://c.tenor.com/m6o-4dKGdVAAAAAC/tenor.gif"
+    }
+}
+
+# Self-contained question data
+AGE_BRACKET_QUESTION = {
+    "title": "## ⏳ **What's Your Age Bracket?**",
+    "content": "**What age bracket do you fall into?**\n\n",
+}
 
 
 def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
@@ -58,18 +91,16 @@ async def send_age_bracket_question(channel_id: int, user_id: int) -> None:
             }
         )
 
-        question = QUESTIONNAIRE_QUESTIONS["age_bracket"]
-
-        # Create components inline - already following our pattern!
+        # Build components using self-contained data
         components = [
             Container(
                 accent_color=BLUE_ACCENT,
                 components=[
                     Text(content=f"<@{user_id}>"),
                     Separator(divider=True),
-                    Text(content=question["title"]),
+                    Text(content=AGE_BRACKET_QUESTION["title"]),
                     Separator(divider=True),
-                    Text(content=question["content"]),
+                    Text(content=AGE_BRACKET_QUESTION["content"]),
                     Section(
                         components=[
                             Text(
@@ -166,7 +197,8 @@ async def handle_age_bracket_selection(
         )
         return
 
-    response = AGE_RESPONSES.get(bracket)
+    # Use self-contained responses
+    response = AGE_BRACKET_RESPONSES.get(bracket)
     if not response:
         await ctx.respond("❌ Invalid age bracket selection.", ephemeral=True)
         return
@@ -182,7 +214,7 @@ async def handle_age_bracket_selection(
         }
     )
 
-    # Create response components inline - also already following our pattern!
+    # Create response components
     response_components = [
         Container(
             accent_color=GREEN_ACCENT,
@@ -208,19 +240,27 @@ async def handle_age_bracket_selection(
     )
 
     # Wait before next question
-    await asyncio.sleep(10)
+    await asyncio.sleep(5)
+
+    # Determine next step based on flow
+    await proceed_to_next_question(channel_id, user_id)
+
+    print(f"[AgeBracket] User {user_id} selected age bracket: {bracket}")
+
+
+async def proceed_to_next_question(channel_id: str, user_id: str) -> None:
+    """Determine and proceed to the next question in the flow"""
 
     # Check if we're in FWA flow
     ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
     fwa_data = ticket_state.get("step_data", {}).get("fwa", {})
+
     if fwa_data.get("current_fwa_step") == "age_bracket":
         # We're in FWA flow, route to timezone through FWA
         print(f"[AgeBracket] Routing to FWA timezone")
         from ..fwa.core.fwa_flow import FWAFlow
         await FWAFlow.handle_questionnaire_completion(int(channel_id), int(user_id))
     else:
-        # Normal flow - send timezone question
+        # Normal flow - send timezone question directly
         from .timezone import send_timezone_question
         await send_timezone_question(int(channel_id), int(user_id))
-
-    print(f"[AgeBracket] User {user_id} selected age bracket: {bracket}")
