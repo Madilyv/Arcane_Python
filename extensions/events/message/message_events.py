@@ -12,6 +12,7 @@ from utils import bot_data
 
 # Import from refactored structure
 from .ticket_automation import trigger_questionnaire, initialize as init_automation
+from .ticket_automation.fwa import initialize_fwa, handle_fwa_text_response
 from .ticket_automation.core import StateManager
 from .ticket_automation.handlers import (
     timezone as timezone_handler,
@@ -46,6 +47,7 @@ def _initialize_from_bot_data():
         StateManager.initialize(mongo_client, bot_instance)
         # Initialize all handlers
         init_automation(mongo_client, bot_instance)
+        initialize_fwa(mongo_client, bot_instance)  # ADD THIS LINE!
         is_initialized = True  # Mark as initialized
 
 
@@ -54,6 +56,7 @@ async def on_starting(event: hikari.StartingEvent):
     """Initialize on bot startup."""
     _initialize_from_bot_data()
     print("[Message Events] Ticket automation initialized")
+    print("[Message Events] FWA automation initialized")  # Add this for confirmation
 
 
 @loader.listener(hikari.GuildMessageCreateEvent)
@@ -90,6 +93,11 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
 
     # From here on, we're only dealing with user messages
     print(f"[Message Events] User message in channel {event.channel_id} from {event.author.username}")
+
+    # Check for FWA text responses FIRST (before questionnaire check)
+    if await handle_fwa_text_response(event, ticket_state):
+        print("[Message Events] Message handled by FWA system")
+        return
 
     # Check if automation is active
     automation_state = ticket_state.get("automation_state", {})

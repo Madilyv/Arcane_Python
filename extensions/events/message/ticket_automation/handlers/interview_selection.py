@@ -49,7 +49,43 @@ async def handle_bot_interview_selection(ctx: lightbulb.components.MenuContext, 
     # Record interaction
     await StateManager.add_interaction(int(channel_id), "selected_bot_interview", {"user_id": user_id})
 
-    # Send first question using questionnaire manager
+    # Check if this is an FWA ticket
+    if bot_instance:
+        channel = bot_instance.cache.get_guild_channel(int(channel_id))
+        if channel:
+            channel_name = channel.name if channel else ""
+            print(f"[Interview Selection] Channel name: {channel_name}")
+
+            is_fwa = any(pattern in channel_name for pattern in ["𝔽𝕎𝔸", "𝕋-𝔽𝕎𝔸"])
+            print(f"[Interview Selection] Is FWA ticket: {is_fwa}")
+
+            if is_fwa:
+                # For FWA tickets, dynamically import and use FWA modules
+                try:
+                    from ..fwa.core import FWAFlow, FWAStep
+                    print(f"[Interview Selection] FWA modules imported successfully")
+
+                    # Get ticket state and continue to FWA education
+                    print(f"[Interview Selection] This is an FWA ticket, proceeding to FWA flow...")
+                    ticket_state = await StateManager.get_ticket_state(str(channel_id))
+                    if ticket_state:
+                        thread_id = ticket_state["ticket_info"]["thread_id"]
+                        print(f"[Interview Selection] Thread ID: {thread_id}")
+                        print(f"[Interview Selection] Continuing to FWA education flow")
+                        await FWAFlow.proceed_to_next_step(
+                            int(channel_id),
+                            int(thread_id),
+                            int(user_id),
+                            FWAStep.FWA_EXPLANATION
+                        )
+                        return
+                    else:
+                        print(f"[Interview Selection] ERROR: No ticket state found!")
+                except ImportError as e:
+                    print(f"[Interview Selection] ERROR: Failed to import FWA modules: {e}")
+                    print(f"[Interview Selection] Falling back to regular flow")
+
+    # Regular flow - Send first question using questionnaire manager
     await questionnaire_manager.send_question(int(channel_id), int(user_id), "attack_strategies")
 
 
@@ -75,6 +111,20 @@ async def handle_recruiter_interview_selection(ctx: lightbulb.components.MenuCon
         "interview_type": "recruiter",
         "started": True
     })
+
+    # Check if this is an FWA ticket
+    if bot_instance:
+        channel = bot_instance.cache.get_guild_channel(int(channel_id))
+        if channel:
+            channel_name = channel.name if channel else ""
+            is_fwa = any(pattern in channel_name for pattern in ["𝔽𝕎𝔸", "𝕋-𝔽𝕎𝔸"])
+
+            if is_fwa:
+                # For FWA tickets, mark that we need to continue to FWA education after recruiter interview
+                await StateManager.update_ticket_state(
+                    str(channel_id),
+                    {"step_data.fwa.pending_fwa_education": True}
+                )
 
     # Halt automation for manual handling
     await StateManager.halt_automation(int(channel_id), "User selected recruiter interview")

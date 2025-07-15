@@ -8,7 +8,7 @@ import lightbulb
 import coc
 from datetime import datetime, timedelta, timezone
 from utils.mongo import MongoClient
-from utils.constants import RED_ACCENT
+from utils.constants import RED_ACCENT, GOLD_ACCENT
 from utils.emoji import emojis
 
 # Import Components V2
@@ -19,6 +19,17 @@ from hikari.impl import (
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
 )
+
+# Import FWA chocolate components
+try:
+    from extensions.events.message.ticket_automation.fwa.utils.chocolate_components import (
+        send_chocolate_link
+    )
+
+    HAS_FWA_CHOCOLATE = True
+except ImportError:
+    HAS_FWA_CHOCOLATE = False
+    print("[WARNING] FWA chocolate components not found, chocolate links will be disabled")
 
 loader = lightbulb.Loader()
 
@@ -34,11 +45,12 @@ coc_client = None
 PATTERNS = {
     "TEST": "𝕋𝔼𝕊𝕋",  # Active
     "CLAN": "ℂ𝕃𝔸ℕ",  # Disabled for now
-    "FWA": "𝔽𝕎𝔸"  # Disabled for now
+    "FWA": "𝔽𝕎𝔸",  # Disabled for now
+    "FWA_TEST": "𝕋-𝔽𝕎𝔸"  # Add this!
 }
 
 # Define which patterns are currently active
-ACTIVE_PATTERNS = ["TEST"]  # Only TEST is active for now
+ACTIVE_PATTERNS = ["TEST", "FWA_TEST"]
 
 
 @loader.listener(hikari.StartedEvent)
@@ -157,16 +169,29 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                     print(f"[DEBUG] API response: {api_data}")
 
                     # Fetch player data using coc.py if apply_account exists
+                    # Add retry logic here (3 attempts)
                     if api_data.get('apply_account') and coc_client:
                         player_tag = api_data.get('apply_account')
                         print(f"[DEBUG] Fetching player data for tag: {player_tag}")
-                        try:
-                            player_data = await coc_client.get_player(player_tag)
-                            print(f"[DEBUG] Player found: {player_data.name} (TH{player_data.town_hall})")
-                        except coc.NotFound:
-                            print(f"[ERROR] Player not found: {player_tag}")
-                        except Exception as e:
-                            print(f"[ERROR] Failed to fetch player: {e}")
+
+                        max_retries = 3
+                        retry_count = 0
+
+                        while retry_count < max_retries:
+                            try:
+                                player_data = await coc_client.get_player(player_tag)
+                                print(f"[DEBUG] Player found: {player_data.name} (TH{player_data.town_hall})")
+                                break  # Success, exit retry loop
+                            except coc.NotFound:
+                                print(f"[ERROR] Player not found: {player_tag}")
+                                break  # Don't retry for not found
+                            except Exception as e:
+                                retry_count += 1
+                                print(f"[ERROR] Failed to fetch player (attempt {retry_count}/{max_retries}): {e}")
+                                if retry_count < max_retries:
+                                    await asyncio.sleep(1)  # Wait 1 second before retry
+                                else:
+                                    print(f"[ERROR] Max retries reached for player fetch")
                 else:
                     print(f"[ERROR] API returned status {response.status}")
     except Exception as e:
@@ -214,6 +239,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                         "channel_id": str(channel_id),
                         "thread_id": str(api_data.get('thread', '')),
                         "user_id": str(api_data.get('user')),
+                        "user_tag": api_data.get('apply_account'),  # Add this for FWA
                         "ticket_type": matched_pattern,  # TEST, CLAN, or FWA
                         "ticket_number": api_data.get('number'),
                         "created_at": now,
@@ -289,24 +315,64 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
 
     # Prepare the message components
     if api_data and stored_in_db:
-        # Create Components V2 embed - focused on screenshot requirement with user ping
-        components = [
-            Container(
-                accent_color=RED_ACCENT,
-                components=[
-                    Text(content=f"<@{api_data.get('user', '')}>\n\n"),
-                    Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                    Text(content=(
-                        f"{emojis.Alert_Strobing} **SCREENSHOT REQUIRED** {emojis.Alert_Strobing}\n"
-                        "-# Provide a screenshot of your base."
-                    )),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                    Text(content=(
-                        f"-# **Kings Alliance Recruitment** - Your base layout says a lot about you—make it a good one!"
-                    ))
-                ]
-            )
-        ]
+        # Check if this is an FWA ticket
+        is_fwa = matched_pattern in ["FWA", "FWA_TEST"]
+
+        if is_fwa:
+            # For FWA tickets, send war weight request using exact recruit questions format
+            components = [
+                Container(
+                    accent_color=GOLD_ACCENT,
+                    components=[
+                        Text(content=f"## ⚖️ **War Weight Check** · <@{api_data.get('user', '')}>"),
+                        Separator(divider=True),
+                        Text(content=(
+                            "We need your **current war weight** to ensure fair matchups. Please:\n\n"
+                            f"{emojis.red_arrow_right} **Post** a Friendly Challenge in-game.\n"
+                            f"{emojis.red_arrow_right} **Scout** that challenge you posted\n"
+                            f"{emojis.red_arrow_right} **Tap** on your Town Hall, then hit **Info**.\n"
+                            f"{emojis.red_arrow_right} **Upload** a screenshot of the Town Hall info popup here.\n\n"
+                            "*See the example below for reference.*"
+                        )),
+                        Media(
+                            items=[
+                                MediaItem(
+                                    media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1751550804/TH_Weight.png"),
+                            ]
+                        ),
+                        Text(content=f"-# Requested by Kings Alliance FWA Recruitment"),
+                    ]
+                )
+            ]
+
+            # Send chocolate link to thread using centralized function
+            if player_data and thread_id and HAS_FWA_CHOCOLATE:
+                await send_chocolate_link(
+                    bot=event.app,
+                    channel_id=thread_id,
+                    player_tag=player_data.tag,
+                    player_name=player_data.name
+                )
+                print(f"[DEBUG] Sent chocolate link to thread {thread_id}")
+        else:
+            # Regular ticket - existing screenshot request
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content=f"<@{api_data.get('user', '')}>\n\n"),
+                        Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+                        Text(content=(
+                            f"{emojis.Alert_Strobing} **SCREENSHOT REQUIRED** {emojis.Alert_Strobing}\n"
+                            "-# Provide a screenshot of your base."
+                        )),
+                        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                        Text(content=(
+                            f"-# **Kings Alliance Recruitment** - Your base layout says a lot about you—make it a good one!"
+                        ))
+                    ]
+                )
+            ]
     else:
         # Fallback error message if something went wrong
         # Try to get user ID from the channel name pattern

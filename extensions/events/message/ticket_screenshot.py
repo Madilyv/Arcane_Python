@@ -36,9 +36,10 @@ from extensions.events.message.ticket_account_collection import trigger_account_
 PATTERNS = {
     "TEST": "𝕋𝔼𝕊𝕋",
     "CLAN": "ℂ𝕃𝔸ℕ",
-    "FWA": "𝔽𝕎𝔸"
+    "FWA": "𝔽𝕎𝔸",
+    "FWA_TEST": "𝕋-𝔽𝕎𝔸"
 }
-ACTIVE_PATTERNS = ["TEST"]  # Only TEST is active by default
+ACTIVE_PATTERNS = ["TEST", "FWA_TEST"]
 REMINDER_COOLDOWN_SECONDS = 10
 SCREENSHOT_PROCESSING_DELAY = 1
 REMINDER_DELETE_TIMEOUT = 15  # Seconds before reminder messages auto-delete
