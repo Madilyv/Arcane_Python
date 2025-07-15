@@ -68,22 +68,30 @@ class Bidding(
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(
-        self,
-        ctx: lightbulb.Context,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+            self,
+            ctx: lightbulb.Context,
+            mongo: MongoClient = lightbulb.di.INJECTED,
+            bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
 
-        # Get available recruits for the selected user
-        # Query for documents where activeBid is not true (includes false, null, or missing)
-        # Note: Discord IDs are stored as strings in MongoDB
-        recruits = await mongo.new_recruits.find({
+        # Get recruits where activeBid is not true
+        recruits_cursor = mongo.new_recruits.find({
             "discord_user_id": str(self.discord_user.id),
             "activeBid": {"$ne": True}
-        }).to_list(length=None)
+        })
 
-        if not recruits:
+        # Filter out already recruited players (have finalized bids)
+        available_recruits = []
+        for recruit in await recruits_cursor.to_list(length=None):
+            finalized_bid = await mongo.clan_bidding.find_one({
+                "player_tag": recruit["player_tag"],
+                "is_finalized": True
+            })
+            if not finalized_bid:
+                available_recruits.append(recruit)
+
+        if not available_recruits:
             await ctx.respond(
                 "No available accounts found for this Discord user. "
                 "Accounts may already have active bidding or have been recruited.",
@@ -93,7 +101,7 @@ class Bidding(
 
         # Create dropdown options
         options = []
-        for recruit in recruits[:25]:  # Discord limit is 25 options
+        for recruit in available_recruits[:25]:  # Discord limit is 25 options
             th_emoji = get_th_emoji(recruit.get("player_th_level", 0))
 
             option_kwargs = {
@@ -143,7 +151,6 @@ class Bidding(
         ]
 
         await ctx.respond(components=components, ephemeral=True)
-
 
 @register_action("select_recruit_bidding", no_return=True)
 @lightbulb.di.with_di
@@ -512,9 +519,7 @@ async def handle_clan_selection(
         **kwargs
 ):
     """Handle clan selection and show amount modal"""
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
+    # Remove the manual deferral - opens_modal=True handles this
 
     session_id = action_id
     selected_clan = ctx.interaction.values[0]
@@ -522,13 +527,15 @@ async def handle_clan_selection(
     # Get session data
     session = await mongo.button_store.find_one({"_id": session_id})
     if not session:
-        await ctx.interaction.edit_initial_response(
-            components=[Container(
-                accent_color=RED_ACCENT,
-                components=[
-                    Text(content="❌ Session expired. Please try again."),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
-                ]
+        # Can't edit when opening modal, so just show modal with error
+        await ctx.respond_with_modal(
+            title="Session Expired",
+            custom_id=f"error_modal:{session_id}",
+            components=[ModalActionRow().add_text_input(
+                "error",
+                "Error",
+                value="Session expired. Please try again.",
+                required=False
             )]
         )
         return
@@ -556,7 +563,7 @@ async def handle_clan_selection(
     )
 
 
-@register_action("place_bid_modal", is_modal=True, no_return=True, ephemeral=True)
+@register_action("place_bid_modal", is_modal=True, no_return=True)
 @lightbulb.di.with_di
 async def handle_bid_amount_modal(
     ctx: lightbulb.components.ModalContext,
@@ -568,10 +575,23 @@ async def handle_bid_amount_modal(
     """Handle the bid amount submission"""
     session_id = action_id
 
+    # Defer the modal response to edit the select menu
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+
     # Get session data
     session = await mongo.button_store.find_one({"_id": session_id})
     if not session:
-        await ctx.respond("Session expired.", ephemeral=True)
+        await ctx.interaction.edit_initial_response(
+            components=[Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="❌ Session expired."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )]
+        )
         return
 
     # Get bidding session
@@ -580,28 +600,48 @@ async def handle_bid_amount_modal(
         "type": "bidding_session"
     })
     if not bidding_session:
-        await ctx.respond("Bidding session not found.", ephemeral=True)
+        await ctx.interaction.edit_initial_response(
+            components=[Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="❌ Bidding session not found."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )]
+        )
         return
+
+    # Helper function to show error
+    async def show_error(error_message: str):
+        await ctx.interaction.edit_initial_response(
+            components=[Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content=f"❌ {error_message}"),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )]
+        )
 
     # Parse bid amount
     try:
         bid_amount = float(ctx.interaction.components[0][0].value)
         if bid_amount % 0.5 != 0 or bid_amount < 0:
-            await ctx.respond("❌ Bid must be in 0.5 increments and positive.", ephemeral=True)
+            await show_error("Bid must be in 0.5 increments and positive.")
             return
     except ValueError:
-        await ctx.respond("❌ Invalid bid amount.", ephemeral=True)
+        await show_error("Invalid bid amount. Please enter a number.")
         return
 
     # Verify clan and available points
     clan = await mongo.clans.find_one({"tag": session["selected_clan"]})
     if not clan:
-        await ctx.respond("❌ Clan not found.", ephemeral=True)
+        await show_error("Clan not found.")
         return
 
     available_points = clan["points"] - clan.get("placeholder_points", 0)
     if bid_amount > available_points:
-        await ctx.respond(f"❌ Insufficient points! Available: {available_points} points", ephemeral=True)
+        await show_error(f"Insufficient points! Available: {available_points} points")
         return
 
     # Check for existing bid
@@ -611,22 +651,27 @@ async def handle_bid_amount_modal(
     })
 
     if existing_bid:
-        await ctx.respond("❌ Your clan already has a bid on this recruit. Use 'Remove Bid' first.", ephemeral=True)
+        await show_error("Your clan already has a bid on this recruit. Use 'Remove Bid' first.")
         return
 
     # Place the bid
+    bid_data = {
+        "clan_tag": session["selected_clan"],
+        "amount": bid_amount,
+        "placed_by": ctx.user.id,
+        "placed_at": datetime.now(timezone.utc)
+    }
+
     await mongo.clan_bidding.update_one(
         {"player_tag": bidding_session["playerTag"]},
         {
-            "$push": {
-                "bids": {
-                    "clan_tag": session["selected_clan"],
-                    "placed_by": session["user_id"],
-                    "amount": bid_amount,
-                    "timestamp": datetime.now(timezone.utc)
-                }
+            "$push": {"bids": bid_data},
+            "$setOnInsert": {
+                "player_tag": bidding_session["playerTag"],
+                "created_at": datetime.now(timezone.utc)
             }
-        }
+        },
+        upsert=True
     )
 
     # Update placeholder points
@@ -635,49 +680,43 @@ async def handle_bid_amount_modal(
         {"$inc": {"placeholder_points": bid_amount}}
     )
 
+    # Edit the select menu to show success
+    await ctx.interaction.edit_initial_response(
+        components=[Container(
+            accent_color=GREEN_ACCENT,
+            components=[
+                Text(content="## ✅ Bid Placed Successfully!"),
+                Text(content=f"**Clan:** {clan['name']}"),
+                Text(content=f"**Amount:** {bid_amount} points"),
+                Separator(divider=True),
+                Text(content="Your bid has been registered. Good luck!"),
+                Media(items=[MediaItem(media="assets/Green_Footer.png")])
+            ]
+        )]
+    )
+
     # Log the bid
-    clan_obj = Clan(data=clan)
     log_components = [
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content="**New Bid Placed**"),
+                Text(content="New Bid Placed"),
                 Separator(divider=True),
                 Text(content=(
-                    f"Player: `{bidding_session['playerTag']}`\n"
-                    f"Clan: {clan_obj.name}\n"
-                    f"Amount: {bid_amount} points\n"
-                    f"Placed by: <@{session['user_id']}>"
+                    f"**Player:** {bidding_session['playerTag']}\n"
+                    f"**Clan:** {clan['name']}\n"
+                    f"**Amount:** {bid_amount} points\n"
+                    f"**Placed by:** <@{ctx.user.id}>"
                 )),
                 Media(items=[MediaItem(media="assets/Blue_Footer.png")])
             ]
         )
     ]
-
-    await bot.rest.create_message(channel=LOG_CHANNEL_ID, components=log_components)
-
-    # Send success message to user
-    success_components = [
-        Container(
-            accent_color=GREEN_ACCENT,
-            components=[
-                Text(content="## ✅ Bid Placed Successfully!"),
-                Separator(divider=True),
-                Text(content=(
-                    f"**Player:** {bidding_session['playerName']}\n"
-                    f"**Clan:** {clan_obj.name}\n"
-                    f"**Amount:** {bid_amount} points\n\n"
-                    f"You'll be notified when the bidding ends."
-                )),
-                Media(items=[MediaItem(media="assets/Green_Footer.png")])
-            ]
-        )
-    ]
+    log_channel = await bot.rest.fetch_channel(LOG_CHANNEL_ID)
+    await log_channel.send(components=log_components)
 
     # Clean up session
     await mongo.button_store.delete_one({"_id": session_id})
-
-    await ctx.respond(components=success_components, ephemeral=True)
 
 @register_action("remove_bid", no_return=True)
 @lightbulb.di.with_di
@@ -781,9 +820,7 @@ async def handle_remove_clan_selection(
         **kwargs
 ):
     """Handle clan selection for bid removal"""
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
+    # Remove manual deferral - opens_modal=True handles this
 
     session_id = action_id
     selected_clan = ctx.interaction.values[0]
@@ -791,24 +828,26 @@ async def handle_remove_clan_selection(
     # Get session data
     session = await mongo.button_store.find_one({"_id": session_id})
     if not session:
-        await ctx.interaction.edit_initial_response(
-            components=[Container(
-                accent_color=RED_ACCENT,
-                components=[
-                    Text(content="❌ Session expired."),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
-                ]
+        # Show error modal
+        await ctx.respond_with_modal(
+            title="Session Expired",
+            custom_id=f"error_modal:{session_id}",
+            components=[ModalActionRow().add_text_input(
+                "error",
+                "Error",
+                value="Session expired. Please try again.",
+                required=False
             )]
         )
         return
 
-    # Update session
+    # Update session with selected clan
     await mongo.button_store.update_one(
         {"_id": session_id},
         {"$set": {"clan_to_remove": selected_clan}}
     )
 
-    # Show confirmation modal
+    # Show confirmation modal - use the correct handler name
     confirm_modal = ModalActionRow().add_text_input(
         "confirm",
         "Type REMOVE to confirm",
@@ -819,9 +858,10 @@ async def handle_remove_clan_selection(
 
     await ctx.respond_with_modal(
         title="Confirm Bid Removal",
-        custom_id=f"confirm_remove_bid:{session_id}",
+        custom_id=f"confirm_remove_bid:{session_id}",  # Changed to match the handler
         components=[confirm_modal]
     )
+
 
 @register_action("confirm_remove_bid", is_modal=True, no_return=True)
 @lightbulb.di.with_di
@@ -835,91 +875,175 @@ async def confirm_bid_removal(
     """Confirm and process bid removal"""
     session_id = action_id
 
-    if ctx.interaction.components[0][0].value != "REMOVE":
-        await ctx.respond("❌ You must type 'REMOVE' exactly.", ephemeral=True)
-        return
+    # Defer the modal response
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
 
     # Get session
     session = await mongo.button_store.find_one({"_id": session_id})
     if not session:
-        await ctx.respond("❌ Session expired.", ephemeral=True)
+        await ctx.interaction.edit_initial_response(
+            components=[Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="❌ Session expired."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )]
+        )
         return
 
-    # Get the parent bidding session for player tag
-    bidding_session = await mongo.button_store.find_one({
+    # Check confirmation text
+    if ctx.interaction.components[0][0].value != "REMOVE":
+        # Get user's clans for recreating the select menu
+        user_roles = ctx.interaction.member.role_ids
+        clans = await mongo.clans.find({
+            "leader_role_id": {"$in": user_roles}
+        }).to_list(length=None)
+
+        # Get current bids to filter which clans have bids
+        bid_doc = await mongo.clan_bidding.find_one({"player_tag": session["player_tag"]})
+        if bid_doc and bid_doc.get("bids"):
+            clan_tags = [c["tag"] for c in clans]
+            user_bids = [b for b in bid_doc["bids"] if b["clan_tag"] in clan_tags]
+
+            # Recreate options
+            options = []
+            for bid in user_bids:
+                clan_data = next((c for c in clans if c["tag"] == bid["clan_tag"]), None)
+                if clan_data:
+                    clan = Clan(data=clan_data)
+                    option_kwargs = {
+                        "label": clan.name,
+                        "value": clan.tag,
+                        "description": "Has active bid"
+                    }
+                    if clan.partial_emoji:
+                        option_kwargs["emoji"] = clan.partial_emoji
+                    options.append(SelectOption(**option_kwargs))
+
+            if options:
+                # Recreate the select menu with error message
+                await ctx.interaction.edit_initial_response(
+                    components=[Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ Remove Bid"),
+                            Text(content="⚠️ You must type 'REMOVE' exactly. Please try again:"),
+                            ActionRow(
+                                components=[
+                                    TextSelectMenu(
+                                        custom_id=f"select_remove_clan:{session['_id']}",
+                                        placeholder="Select a clan...",
+                                        options=options
+                                    )
+                                ]
+                            ),
+                            Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                        ]
+                    )]
+                )
+                return
+
+        # If no options, show error
+        await ctx.interaction.edit_initial_response(
+            components=[Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="❌ No bids found to remove."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )]
+        )
+        return
+
+    # Get bidding session and bid data
+    main_session = await mongo.button_store.find_one({
         "_id": session["bidding_session_id"],
         "type": "bidding_session"
     })
 
-    # Get bid details for logging
-    bid_doc = await mongo.clan_bidding.find_one(
-        {"player_tag": bidding_session["playerTag"] if bidding_session else session["player_tag"]})
-    bid = next((b for b in bid_doc["bids"] if b["clan_tag"] == session["clan_to_remove"]), None)
-
-    if bid:
-        # Remove the bid
-        player_tag = bidding_session["playerTag"] if bidding_session else session["player_tag"]
-        await mongo.clan_bidding.update_one(
-            {"player_tag": player_tag},
-            {"$pull": {"bids": {"clan_tag": session["clan_to_remove"]}}}
-        )
-
-        # Restore placeholder points
-        await mongo.clans.update_one(
-            {"tag": session["clan_to_remove"]},
-            {"$inc": {"placeholder_points": -bid["amount"]}}
-        )
-
-        # Get clan name for logging
-        clan_data = await mongo.clans.find_one({"tag": session["clan_to_remove"]})
-        clan_name = clan_data["name"] if clan_data else "Unknown Clan"
-
-        # Log the removal
-        log_components = [
-            Container(
+    if not main_session:
+        await ctx.interaction.edit_initial_response(
+            components=[Container(
                 accent_color=RED_ACCENT,
                 components=[
-                    Text(content="**Bid Removed**"),
-                    Separator(divider=True),
-                    Text(content=(
-                        f"Player: `{player_tag}`\n"
-                        f"Clan: {clan_name}\n"
-                        f"Amount: {bid['amount']} points\n"
-                        f"Removed by: <@{session['user_id']}>"
-                    )),
+                    Text(content="❌ Bidding session not found."),
                     Media(items=[MediaItem(media="assets/Red_Footer.png")])
                 ]
-            )
-        ]
+            )]
+        )
+        return
 
-        await bot.rest.create_message(
-            channel=LOG_CHANNEL_ID,
-            components=log_components
+    clan_tag = session.get("clan_to_remove")
+    player_tag = main_session["playerTag"]
+
+    # Remove the bid
+    result = await mongo.clan_bidding.update_one(
+        {"player_tag": player_tag},
+        {"$pull": {"bids": {"clan_tag": clan_tag}}}
+    )
+
+    if result.modified_count == 0:
+        await ctx.interaction.edit_initial_response(
+            components=[Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="❌ No bid found to remove."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )]
+        )
+        return
+
+    # Restore placeholder points
+    clan = await mongo.clans.find_one({"tag": clan_tag})
+    if clan:
+        await mongo.clans.update_one(
+            {"tag": clan_tag},
+            {"$inc": {"placeholder_points": -10.0}}  # Restore 10 points
         )
 
-        # Success message
-        success_components = [
-            Container(
-                accent_color=GREEN_ACCENT,
-                components=[
-                    Text(content="## ✅ Bid Removed Successfully!"),
-                    Separator(divider=True),
-                    Text(content=(
-                        f"**Clan:** {clan_name}\n"
-                        f"**Amount:** {bid['amount']} points\n\n"
-                        "Points have been restored to your clan."
-                    )),
-                    Media(items=[MediaItem(media="assets/Green_Footer.png")])
-                ]
-            )
-        ]
+    # Edit the message to show success
+    await ctx.interaction.edit_initial_response(
+        components=[Container(
+            accent_color=GREEN_ACCENT,
+            components=[
+                Text(content="## ✅ Bid Removed Successfully!"),
+                Text(content=f"**Clan:** {clan['name'] if clan else 'Unknown'}"),
+                Text(content="**Amount:** 10.0 points"),
+                Separator(divider=True),
+                Text(content="Points have been restored to your clan."),
+                Media(items=[MediaItem(media="assets/Green_Footer.png")])
+            ]
+        )]
+    )
 
-        await ctx.respond(components=success_components, ephemeral=True)
-    else:
-        await ctx.respond("❌ Bid not found. It may have already been removed.", ephemeral=True)
+    # Log the removal
+    log_components = [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content="Bid Removed"),
+                Separator(divider=True),
+                Text(content=(
+                    f"**Player:** {player_tag}\n"
+                    f"**Clan:** {clan['name'] if clan else clan_tag}\n"
+                    f"**Amount:** 10.0 points\n"
+                    f"**Removed by:** <@{ctx.user.id}>"
+                )),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")])
+            ]
+        )
+    ]
+    log_channel = await bot.rest.fetch_channel(LOG_CHANNEL_ID)
+    await log_channel.send(components=log_components)
 
-    # Clean up session
-    await mongo.button_store.delete_one({"_id": session_id})
+    # Clean up session data
+    await mongo.button_store.delete_many({
+        "_id": {"$in": [session_id, session.get("_id")]}
+    })
 
 async def end_bidding_timer(
     bot: hikari.GatewayBot,
@@ -950,12 +1074,12 @@ async def end_bidding_timer(
 
 
 async def process_bidding_end(
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    recruit_id: str,
-    session_id: str,
-    thread_id: int,
-    message_id: int
+        bot: hikari.GatewayBot,
+        mongo: MongoClient,
+        recruit_id: str,
+        session_id: str,
+        thread_id: int,
+        message_id: int
 ):
     """Process the end of bidding"""
 
@@ -989,7 +1113,7 @@ async def process_bidding_end(
         # Multiple bids scenario
         await handle_multiple_bids(bot, mongo, recruit, session, auction, thread_id)
 
-    # Mark recruit as no longer in active bidding
+    # ALWAYS set activeBid to false - bidding is no longer active
     await mongo.new_recruits.update_one(
         {"_id": ObjectId(recruit_id)},
         {"$set": {"activeBid": False}}
@@ -1038,49 +1162,65 @@ async def handle_no_bids(
 
 
 async def handle_single_bid(
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    recruit: Dict,
-    session: Dict,
-    auction: Dict,
-    thread_id: int
+        bot: hikari.GatewayBot,
+        mongo: MongoClient,
+        recruit: Dict,
+        session: Dict,
+        auction: Dict,
+        thread_id: int
 ):
-    """Handle scenario where only one bid was placed"""
+    """Handle scenario where single bid wins"""
 
-    bid = auction["bids"][0]
-    clan = await mongo.clans.find_one({"tag": bid["clan_tag"]})
-    clan_obj = Clan(data=clan) if clan else None
+    winner = auction["bids"][0]
+    winning_clan = await mongo.clans.find_one({"tag": winner["clan_tag"]})
 
-    # Refund placeholder points since no competition
+    if not winning_clan:
+        print(f"[Bidding] Warning: Winning clan {winner['clan_tag']} not found")
+        return
+
+    # Reduce placeholder points only (no actual deduction)
     await mongo.clans.update_one(
-        {"tag": bid["clan_tag"]},
-        {"$inc": {"placeholder_points": -bid["amount"]}}
+        {"tag": winner["clan_tag"]},
+        {"$inc": {"placeholder_points": -winner["amount"]}}
     )
+
+    # Mark as finalized
+    await mongo.clan_bidding.update_one(
+        {"player_tag": auction["player_tag"]},
+        {
+            "$set": {
+                "is_finalized": True,
+                "winner": winner["clan_tag"],
+                "amount": winner["amount"],
+                "finalized_at": datetime.now(timezone.utc)
+            }
+        }
+    )
+
+    winning_clan_obj = Clan(data=winning_clan)
 
     components = [
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content=f"## Single Bid for {recruit['player_name']}"),
-
+                Text(content=f"# Single Bid for {recruit['player_name']}"),
+                Text(content=f"<@&{winning_clan['leader_role_id']}>"),
+                Separator(divider=True),
                 Text(content=(
-                    f"<@&{clan['leader_role_id'] if clan else 0}>\n\n"  # Role ping inside
-                    f"Only one bid was submitted by **{clan_obj.name if clan_obj else 'Unknown'}**.\n"
+                    f"Only one bid was submitted by **{winning_clan_obj.name}**.\n"
                     f"Since there was no competition, no points will be deducted."
                 )),
-
                 Separator(divider=True),
-
                 Text(content="## Candidate Information"),
                 Text(content=(
                     f"• **Discord ID:** <@{recruit['discord_user_id']}>\n"
                     f"• **Player Name:** {recruit['player_name']}\n"
                     f"• **Player Tag:** {recruit['player_tag']}\n"
-                    f"• **Town Hall Level:** {recruit.get('player_th_level', 'Unknown')}"
+                    f"• **Town Hall Level:** {recruit.get('player_th_level', '??')}"
                 )),
-
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
-                Text(content=f"-# Bidding ended at {datetime.now(timezone.utc).strftime('%I:%M %p UTC')}")
+                Separator(divider=True),
+                Text(content=f"Bidding ended <t:{int(datetime.now(timezone.utc).timestamp())}:R>"),
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
             ]
         )
     ]
@@ -1088,19 +1228,13 @@ async def handle_single_bid(
     await bot.rest.create_message(
         channel=thread_id,
         components=components,
-        role_mentions=[clan['leader_role_id']] if clan else []
+        role_mentions=[winning_clan['leader_role_id']]
     )
 
-    # Finalize the auction
-    await mongo.clan_bidding.update_one(
-        {"player_tag": session["playerTag"]},
-        {
-            "$set": {
-                "is_finalized": True,
-                "winner": bid["clan_tag"],
-                "amount": 0  # No points deducted
-            }
-        }
+    # Log the single bid win
+    log_channel = await bot.rest.fetch_channel(LOG_CHANNEL_ID)
+    await log_channel.send(
+        f"🎯 **Single Bid Win**: {winning_clan_obj.name} won {recruit['player_name']} (no competition, no points deducted)"
     )
 
 
