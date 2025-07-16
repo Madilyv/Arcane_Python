@@ -167,7 +167,6 @@ async def handle_recruit_selection(
     # Get button store data
     store_data = await mongo.button_store.find_one({"_id": action_id})
     if not store_data:
-        # For ephemeral error messages with no_return=True, use ctx.respond
         await ctx.respond("Session expired. Please try again.", ephemeral=True)
         return
 
@@ -185,6 +184,23 @@ async def handle_recruit_selection(
         ]
         await ctx.interaction.edit_initial_response(components=error_components)
         return
+
+    # Check for ticket_thread_id
+    if not recruit.get("ticket_thread_id"):
+        error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="❌ No thread found for this recruit."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=error_components)
+        return
+
+    # Use the recruit's clan thread ID
+    ticket_thread_id = recruit["ticket_thread_id"]
 
     if recruit.get("activeBid", False):
         error_components = [
@@ -255,8 +271,8 @@ async def handle_recruit_selection(
     bidding_session_data = {
         "_id": bidding_session_id,
         "type": "bidding_session",
-        "channelId": store_data["channel_id"],
-        "threadId": store_data["thread_id"],
+        "channelId": recruit["ticket_channel_id"],
+        "threadId": recruit["ticket_thread_id"],
         "discordUserId": recruit["discord_user_id"],
         "playerName": recruit["player_name"],
         "playerTag": recruit["player_tag"],
@@ -265,7 +281,7 @@ async def handle_recruit_selection(
         "bidEndTime": bid_end_time,
         "recruitId": recruit_id,
         "startedBy": store_data["invoker_id"],
-        "messageId": None  # Will be updated after message is sent
+        "messageId": None
     }
 
     await mongo.button_store.insert_one(bidding_session_data)
@@ -281,10 +297,10 @@ async def handle_recruit_selection(
         bidding_session_id
     )
 
-    # Send the bidding message in the thread
+    # Send the bidding message in the recruit's clan thread
     try:
         message = await bot.rest.create_message(
-            channel=store_data["thread_id"],
+            channel=ticket_thread_id,  # Use clan thread ID
             components=components
         )
 
@@ -303,7 +319,7 @@ async def handle_recruit_selection(
                 accent_color=GREEN_ACCENT,
                 components=[
                     Text(content="✅ Bidding started successfully!"),
-                    Text(content=f"Check <#{store_data['thread_id']}> for the active bidding."),
+                    Text(content=f"Check <#{ticket_thread_id}> for the active bidding."),
                     Media(items=[MediaItem(media="assets/Green_Footer.png")])
                 ]
             )
@@ -331,7 +347,7 @@ async def handle_recruit_selection(
         task = asyncio.create_task(
             end_bidding_timer(
                 bot, mongo, recruit_id, bidding_session_id,
-                store_data["thread_id"], message.id
+                ticket_thread_id, message.id
             )
         )
         bidding_tasks[recruit_id] = task
@@ -464,7 +480,7 @@ async def handle_place_bid(
     options = []
     for clan_data in clans[:25]:
         clan = Clan(data=clan_data)
-        available_points = clan.points - clan.placeholder_points
+        available_points = clan.points #- clan.placeholder_points
 
         option_kwargs = {
             "label": clan.name,
@@ -706,7 +722,8 @@ async def handle_bid_amount_modal(
                     f"**Player:** {bidding_session['playerTag']}\n"
                     f"**Clan:** {clan['name']}\n"
                     f"**Amount:** {bid_amount} points\n"
-                    f"**Placed by:** <@{ctx.user.id}>"
+                    f"**Placed by:** <@{ctx.user.id}>\n"
+                    f"**Thread:** <#{bidding_session['threadId']}>"
                 )),
                 Media(items=[MediaItem(media="assets/Blue_Footer.png")])
             ]
@@ -1031,7 +1048,8 @@ async def confirm_bid_removal(
                     f"**Player:** {player_tag}\n"
                     f"**Clan:** {clan['name'] if clan else clan_tag}\n"
                     f"**Amount:** 10.0 points\n"
-                    f"**Removed by:** <@{ctx.user.id}>"
+                    f"**Removed by:** <@{ctx.user.id}>\n"
+                    f"**Thread:** <#{main_session['threadId']}>"
                 )),
                 Media(items=[MediaItem(media="assets/Red_Footer.png")])
             ]
@@ -1143,13 +1161,19 @@ async def handle_no_bids(
                 Text(content="## No bids were submitted."),
 
                 Text(content=(
-                    f"<@&1038876780561158225>\n\n"  # Role ping inside the text
-                    f"Please mention <@&1038876780561158225> to have them assign "
-                    f"<@{recruit['discord_user_id']}> to a clan."
+                    f"<@&1039311270614142977>\n\n" 
+                    f"Please check interest in this account and assign it to a clan\n"
                 )),
-
+                Separator(divider=True),
+                Text(content="## Candidate Information"),
+                Text(content=(
+                    f"• **Discord ID:** <@{recruit['discord_user_id']}>\n"
+                    f"• **Player Name:** {recruit['player_name']}\n"
+                    f"• **Player Tag:** {recruit['player_tag']}\n"
+                    f"• **Town Hall Level:** {recruit.get('player_th_level', '??')}"
+                )),
                 Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                Text(content=f"-# Bidding ended at {datetime.now(timezone.utc).strftime('%I:%M %p UTC')}")
+                Text(content=f"Bidding ended <t:{int(datetime.now(timezone.utc).timestamp())}:R>")
             ]
         )
     ]
@@ -1157,7 +1181,7 @@ async def handle_no_bids(
     await bot.rest.create_message(
         channel=thread_id,
         components=components,
-        role_mentions=[1038876780561158225]  # Keep this for proper notification
+        role_mentions=True
     )
 
 
@@ -1284,7 +1308,7 @@ async def handle_multiple_bids(
 
     # Build all bids display
     all_bids_text = []
-    for bid in bids:
+    for i, bid in enumerate(bids, 1):
         clan_data = await mongo.clans.find_one({"tag": bid["clan_tag"]})
         if clan_data:
             clan_name = Clan(data=clan_data).name
@@ -1295,9 +1319,9 @@ async def handle_multiple_bids(
             bidder_name = "Unknown"
 
         if bid["clan_tag"] == winning_bid["clan_tag"]:
-            bid_text = f"🏆 **{clan_name}** • _Bid by {bidder_name}_ • **{bid['amount']}**"
+            bid_text = f"{emojis.blank}**{i}** {emojis.BulletPoint} 🏆 **{clan_name}** {emojis.BulletPoint} _Bid by {bidder_name}_ {emojis.BulletPoint} `{bid['amount']}`"
         else:
-            bid_text = f"⚡ **{clan_name}** • _Bid by {bidder_name}_ ⚡ • **{bid['amount']}**"
+            bid_text = f"{emojis.blank}**{i}** {emojis.BulletPoint} **{clan_name}** {emojis.BulletPoint} _Bid by {bidder_name}_ {emojis.BulletPoint} `{bid['amount']}`"
         all_bids_text.append(bid_text)
 
     # Build the message
@@ -1334,7 +1358,7 @@ async def handle_multiple_bids(
                 Text(content="\n".join(all_bids_text)),
 
                 Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                Text(content=f"-# Bidding ended at {datetime.now(timezone.utc).strftime('%I:%M %p UTC')}")
+                Text(content=f"Bidding ended <t:{int(datetime.now(timezone.utc).timestamp())}:R>"),
             ]
         )
     ]
