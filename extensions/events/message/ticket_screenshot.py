@@ -39,7 +39,7 @@ PATTERNS = {
     "FWA": "𝔽𝕎𝔸",
     "FWA_TEST": "𝕋-𝔽𝕎𝔸"
 }
-ACTIVE_PATTERNS = ["TEST", "FWA_TEST"]
+ACTIVE_PATTERNS = ["TEST", "FWA_TEST", "CLAN", "FWA"]
 REMINDER_COOLDOWN_SECONDS = 10
 SCREENSHOT_PROCESSING_DELAY = 1
 REMINDER_DELETE_TIMEOUT = 15  # Seconds before reminder messages auto-delete

@@ -50,7 +50,7 @@ PATTERNS = {
 }
 
 # Define which patterns are currently active
-ACTIVE_PATTERNS = ["TEST", "FWA_TEST"]
+ACTIVE_PATTERNS = ["TEST", "FWA_TEST", "CLAN", "FWA"]
 
 
 @loader.listener(hikari.StartedEvent)
