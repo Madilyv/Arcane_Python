@@ -34,7 +34,7 @@ from utils.classes import Clan
 loader = lightbulb.Loader()
 
 # Configuration
-UPDATE_INTERVAL_MINUTES = 5  # Change this to adjust update frequency
+UPDATE_INTERVAL_MINUTES = 60  # Change this to adjust update frequency
 CLAN_INFO_PARENT_CHANNEL = 1133096989748363294  # Clan threads parent channel
 
 # Global instances

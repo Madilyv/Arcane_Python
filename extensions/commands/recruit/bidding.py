@@ -36,7 +36,7 @@ from utils.emoji import emojis
 from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLD_ACCENT
 
 # Constants
-BIDDING_DURATION = 1  # minutes
+BIDDING_DURATION = 25  # minutes
 LOG_CHANNEL_ID = 1381395856317747302  # Channel for bid logs
 
 # Store active bidding sessions with their end times
