@@ -35,6 +35,8 @@ from utils.mongo import MongoClient
 from extensions.commands.clan.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
 
+CLAN_MANAGEMENT_ROLE_ID = 1060318031575793694
+
 IMG_RE = re.compile(r"^https?://\S+\.(?:png|jpe?g|gif|webp)$", re.IGNORECASE)
 
 
@@ -44,6 +46,42 @@ async def update_clan_information(
         ctx: lightbulb.components.MenuContext,
         **kwargs
 ):
+    # Check if user has the required role
+    member = ctx.member
+    if not member:
+        await ctx.respond(
+            "❌ Unable to verify permissions. Please try again.",
+            ephemeral=True
+        )
+        return
+
+    # Check if the user has the required role
+    user_role_ids = [role.id for role in member.get_roles()]
+    if CLAN_MANAGEMENT_ROLE_ID not in user_role_ids:
+        # User doesn't have permission - show access denied message
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Access Denied"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "You do not have permission to access Clan Management.\n\n"
+                        "This feature is restricted to users with the Clan Management role.\n"
+                        "If you believe you should have access, please contact an administrator."
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Red_Footer.png")
+                        ]
+                    ),
+                ]
+            )
+        ]
+        await ctx.respond(components=components, ephemeral=True)
+        return await dashboard_page(ctx=ctx)
+
+    # If we get here, user has permission - show your normal menu
     components = [
         Container(
             accent_color=RED_ACCENT,

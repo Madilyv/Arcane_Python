@@ -32,6 +32,8 @@ from hikari.impl import (
     SectionComponentBuilder as Section,
 )
 
+FWA_REP_ROLE_ID = 1088914884999249940
+
 # TH levels we support for FWA
 FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th17"]
 
@@ -107,6 +109,42 @@ async def manage_fwa_data(
 ):
     """Main FWA data management dashboard"""
 
+    # Check if user has the required role
+    member = ctx.member
+    if not member:
+        await ctx.respond(
+            "❌ Unable to verify permissions. Please try again.",
+            ephemeral=True
+        )
+        return await dashboard_page(ctx=ctx, mongo=mongo)
+
+    # Check if the user has the FWA Rep role
+    user_role_ids = [role.id for role in member.get_roles()]
+    if FWA_REP_ROLE_ID not in user_role_ids:
+        # User doesn't have permission - show access denied message
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Access Denied"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "You do not have permission to access FWA Data Management.\n\n"
+                        "This feature is restricted to users with the FWA Rep role.\n"
+                        "If you believe you should have access, please contact an administrator."
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Red_Footer.png")
+                        ]
+                    ),
+                ]
+            )
+        ]
+        await ctx.respond(components=components, ephemeral=True)
+        return await dashboard_page(ctx=ctx, mongo=mongo)
+
+    # If we get here, user has permission - show the normal FWA management menu
     # Get current FWA data
     fwa_data = await get_fwa_data(mongo)
     base_links = fwa_data.get("fwa_base_links", {})
