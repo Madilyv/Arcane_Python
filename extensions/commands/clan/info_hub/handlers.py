@@ -126,8 +126,8 @@ async def build_clan_list_components(
 
         clan_components.append(Text(content=clan_text))
 
-        if clan != clans[-1]:
-            clan_components.append(Separator(divider=False, spacing=hikari.SpacingType.LARGE))
+        if clan != sorted_clans[-1]:
+            clan_components.append(Separator(divider=False, spacing=hikari.SpacingType.SMALL))
 
     # Add all clan entries to a container
     final_components = clan_components.copy()
