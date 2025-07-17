@@ -5,6 +5,7 @@ import hikari
 import coc
 import requests
 import re
+import asyncio
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -580,6 +581,7 @@ async def on_edit_clan_field(
         )
 
 
+
 @register_action("edit_thread", ephemeral=True)
 @lightbulb.di.with_di
 async def on_edit_thread_field(
@@ -604,12 +606,46 @@ async def on_edit_thread_field(
     if threads:
         thread = threads[0]
     else:
+        # Create public thread
         thread = await bot.rest.create_thread(
             PARENT_CH,
-            hikari.ChannelType.GUILD_PRIVATE_THREAD,
+            hikari.ChannelType.GUILD_PUBLIC_THREAD,
             raw["name"],
             auto_archive_duration=1440,
         )
+
+        # Delete the "started a thread" message
+        try:
+            # Small delay to ensure the message is created
+            await asyncio.sleep(0.5)
+
+            # Fetch recent messages from parent channel
+            messages = await bot.rest.fetch_messages(PARENT_CH).limit(5)
+
+            # Find and delete the thread creation message
+            for message in messages:
+                # Thread creation messages have type 18
+                if message.type == 18:  # THREAD_CREATED type
+                    # Additional checks to ensure it's for our thread
+                    # Thread creation messages typically mention the thread name
+                    if raw["name"] in (message.content or ""):
+                        await bot.rest.delete_message(PARENT_CH, message.id)
+                        print(f"Deleted thread creation message for {raw['name']}")
+                        break
+
+                    # Alternative: Check if created around the same time
+                    # (thread.created_at might not be available immediately, so use current time)
+                    if hasattr(thread, 'created_at') and thread.created_at:
+                        time_diff = abs((message.created_at - thread.created_at).total_seconds())
+                        if time_diff < 2:  # Within 2 seconds
+                            await bot.rest.delete_message(PARENT_CH, message.id)
+                            print(f"Deleted thread creation message for {raw['name']}")
+                            break
+
+        except Exception as e:
+            print(f"Error deleting thread creation message: {e}")
+            # Continue even if deletion fails
+            # Continue even if deletion fails
 
     await mongo.clans.update_one({"tag": tag}, {"$set": {"thread_id": thread.id}})
 
@@ -619,7 +655,6 @@ async def on_edit_thread_field(
         mongo=mongo,
         tag=tag
     )
-
 
 @register_action("update_logo", ephemeral=True)
 @lightbulb.di.with_di
