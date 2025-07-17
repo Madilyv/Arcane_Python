@@ -73,7 +73,7 @@ async def log_points_change(
             ],
             accessory=Thumbnail(
                 media=clan.logo if clan.logo else "https://cdn-icons-png.flaticon.com/512/845/845665.png"
-            ) if clan.logo else None
+            )
         )
     ]
 
@@ -492,7 +492,7 @@ async def quick_add_submit(
                         ],
                         accessory=Thumbnail(
                             media=clan.logo if clan.logo else "https://cdn-icons-png.flaticon.com/512/845/845665.png"
-                        ) if clan.logo else None
+                        )
                     ),
 
                     Separator(divider=True),
@@ -682,7 +682,7 @@ async def quick_sub_submit(
                         ],
                         accessory=Thumbnail(
                             media=clan.logo if clan.logo else "https://cdn-icons-png.flaticon.com/512/845/845665.png"
-                        ) if clan.logo else None
+                        )
                     ),
 
                     Separator(divider=True),
@@ -955,7 +955,7 @@ async def custom_points_submit(
                             ],
                             accessory=Thumbnail(
                                 media=clan.logo if clan.logo else "https://cdn-icons-png.flaticon.com/512/845/845665.png"
-                            ) if clan.logo else None
+                            )
                         ),
 
                         Separator(divider=True),
@@ -1123,7 +1123,7 @@ async def add_recruit_submit(
                     ],
                     accessory=Thumbnail(
                         media=clan.logo if clan.logo else "https://cdn-icons-png.flaticon.com/512/845/845665.png"
-                    ) if clan.logo else None
+                    )
                 ),
 
                 Separator(divider=True),
