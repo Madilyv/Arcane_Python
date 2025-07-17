@@ -312,7 +312,7 @@ async def quick_clan_select(
                     ],
                     accessory=Thumbnail(
                         media=clan.logo if clan.logo else "https://cdn-icons-png.flaticon.com/512/845/845665.png"
-                    ) if clan.logo else None
+                    )
                 ),
 
                 Separator(divider=True),
