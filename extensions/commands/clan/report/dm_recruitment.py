@@ -36,7 +36,8 @@ from .helpers import (
     validate_discord_id,
     create_submission_data,
     get_clan_by_tag,
-    APPROVAL_CHANNEL
+    APPROVAL_CHANNEL,
+    RECRUITMENT_PING
 )
 
 # Temporary storage for DM recruitment data
@@ -95,11 +96,26 @@ async def show_dm_recruitment_flow(
 
     await ctx.respond(components=components, edit=True)
 
+
+# Handler to restart DM recruitment flow
+@register_action("show_dm_recruitment")
+@lightbulb.di.with_di
+async def restart_dm_recruitment(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Restart the DM recruitment flow"""
+    user_id = action_id
+    return await show_dm_recruitment_flow(ctx, user_id, mongo)
+
+
 # ╔══════════════════════════════════════════════════════════╗
 # ║           DM Recruitment Clan Selection (Step 2)          ║
 # ╚══════════════════════════════════════════════════════════╝
 
-@register_action("dm_select_clan", opens_modal=True)  # Add opens_modal=True for modal responses
+@register_action("dm_select_clan", no_return=True, opens_modal=True)
 @lightbulb.di.with_di
 async def dm_select_clan(
         ctx: lightbulb.components.MenuContext,
@@ -167,40 +183,77 @@ async def dm_submit_details(
             elif comp.custom_id == "context":
                 context = comp.value.strip()
 
+    # Always use DEFERRED_MESSAGE_UPDATE for consistent response handling
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+
+    # Handle validation errors by updating the message with error info
     if not validate_discord_id(discord_id):
-        await ctx.respond(
-            "❌ Invalid Discord ID! Please enter a valid 17-19 digit Discord user ID.",
-            ephemeral=True
-        )
+        error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Invalid Discord ID"),
+                    Text(content="Please enter a valid 17-19 digit Discord user ID."),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.PRIMARY,
+                                label="Try Again",
+                                emoji="🔄",
+                                custom_id=f"show_dm_recruitment:{user_id}"
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                label="Cancel",
+                                emoji="❌",
+                                custom_id=f"cancel_report:{user_id}"
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=error_components)
         return
 
     clan = await get_clan_by_tag(mongo, clan_tag)
     if not clan:
-        await ctx.respond("❌ Clan not found!", ephemeral=True)
+        error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Clan Not Found"),
+                    Text(content="The selected clan could not be found. Please try again."),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.PRIMARY,
+                                label="Start Over",
+                                emoji="🔄",
+                                custom_id=f"show_dm_recruitment:{user_id}"
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                label="Cancel",
+                                emoji="❌",
+                                custom_id=f"cancel_report:{user_id}"
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=error_components)
         return
 
     # Create session for image collection
     session_key = f"{clan_tag}_{user_id}_{int(datetime.now().timestamp())}"
-
-    # First update the ephemeral message to show instructions
-    ephemeral_components = [
-        Container(
-            accent_color=BLUE_ACCENT,
-            components=[
-                Text(content="## ✅ Details Submitted"),
-                Text(content=(
-                    "Please follow the instructions in the message below to upload your screenshot.\n\n"
-                    "You can dismiss this message."
-                )),
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
-            ]
-        )
-    ]
-
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
-    await ctx.interaction.edit_initial_response(components=ephemeral_components)
 
     # Show image upload prompt components
     components = [
@@ -210,25 +263,21 @@ async def dm_submit_details(
                 Text(content=create_progress_header(2.5, 3, ["Select Clan", "Enter Details", "Review"])),
                 Separator(),
 
-                Text(content="## 📸 Screenshot Required"),
+                Text(content="## 📸 **Show Your Proof of Recruitment!**"),
                 Text(content=(
-                    "Please upload a screenshot of the DM conversation showing the recruitment.\n\n"
-                    "**Instructions:**\n"
-                    "• Take a screenshot of your DM conversation\n"
-                    "• **Upload it as your next message in this channel**\n"
-                    "• The bot will automatically capture and process it\n"
-                    "• Your image message will be deleted to keep the channel clean\n\n"
-                    "-# ⏰ You have 2 minutes to upload the screenshot"
+                    "**What to do:**\n"
+                    "1. Take a screenshot of your DM where you talked to the recruit.\n"
+                    "2. Send the screenshot in this chat as your **next message**.\n"
+                    "3. That's it! The bot will see it and handle the rest."
                 )),
-
+                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+                Text(content=(
+                    "⏳ **You have 2 minutes!**\n"
+                    "🧼 Don't worry, the bot will clean up your message after."
+                )),
+                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
                 ActionRow(
                     components=[
-                        Button(
-                            style=hikari.ButtonStyle.PRIMARY,
-                            label="Skip Screenshot",
-                            emoji="⏭️",
-                            custom_id=f"dm_skip_screenshot:{session_key}"
-                        ),
                         Button(
                             style=hikari.ButtonStyle.SECONDARY,
                             label="Cancel",
@@ -244,13 +293,10 @@ async def dm_submit_details(
         )
     ]
 
-    # Create new non-ephemeral message
-    upload_prompt_msg = await bot.rest.create_message(
-        channel=ctx.channel_id,
-        components=components
-    )
+    # Update the original message with upload instructions
+    await ctx.interaction.edit_initial_response(components=components)
 
-    # Store session data with the message ID
+    # Store session data with the message ID of the UPDATED message
     image_collection_sessions[session_key] = {
         "discord_id": discord_id,
         "context": context,
@@ -258,64 +304,18 @@ async def dm_submit_details(
         "user_id": int(user_id),
         "clan": clan,
         "timestamp": datetime.now(),
-        "upload_prompt_message_id": upload_prompt_msg.id
+        "upload_prompt_message_id": ctx.interaction.message.id  # This is the same message we just updated
     }
 
-    print(f"[DEBUG] Created upload prompt message ID: {upload_prompt_msg.id}")
+    print(f"[DEBUG] Stored message ID: {ctx.interaction.message.id}")
 
     # Also store in MongoDB for persistence
     await mongo.button_store.insert_one({
         "_id": f"dm_upload_{session_key}",
-        "message_id": upload_prompt_msg.id,
+        "message_id": ctx.interaction.message.id,
         "channel_id": ctx.channel_id,
         "session_key": session_key
     })
-
-
-# ╔══════════════════════════════════════════════════════════╗
-# ║                 Skip Screenshot Handler                  ║
-# ╚══════════════════════════════════════════════════════════╝
-
-@register_action("dm_skip_screenshot", no_return=True)
-@lightbulb.di.with_di
-async def dm_skip_screenshot(
-        ctx: lightbulb.components.MenuContext,
-        action_id: str,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-        **kwargs
-):
-    """Skip screenshot and proceed to review"""
-    session_key = action_id
-
-    if session_key not in image_collection_sessions:
-        await ctx.respond("❌ Session expired. Please start over.", ephemeral=True)
-        return
-
-    session = image_collection_sessions[session_key]
-
-    # Store data without screenshot
-    dm_recruitment_data[session_key] = {
-        "discord_id": session["discord_id"],
-        "context": session["context"],
-        "screenshot_url": None
-    }
-
-    # Get components for review
-    parts = session_key.split("_")
-    clan_tag = parts[0]
-    clan = await get_clan_by_tag(mongo, clan_tag)
-    data = dm_recruitment_data[session_key]
-    review_components = create_review_components(clan, data, session_key, str(session["user_id"]))
-
-    # Update the current message (the upload prompt) using DEFERRED_MESSAGE_UPDATE
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
-    await ctx.interaction.edit_initial_response(components=review_components)
-
-    # Clean up
-    del image_collection_sessions[session_key]
-    await mongo.button_store.delete_one({"_id": f"dm_upload_{session_key}"})
 
 
 # ╔══════════════════════════════════════════════════════════╗
@@ -374,19 +374,117 @@ async def show_dm_review_in_channel(bot: hikari.GatewayBot, session_key: str, us
             # Clean up MongoDB storage
             await mongo.button_store.delete_one({"_id": f"dm_upload_{session_key}"})
 
+            # Start auto-cleanup timer (5 minutes)
+            async def auto_cleanup():
+                await asyncio.sleep(300)  # 5 minutes
+                # Check if the session still exists (hasn't been submitted)
+                if session_key in dm_recruitment_data:
+                    try:
+                        await bot.rest.delete_message(
+                            channel=channel_id,
+                            message=upload_message_id
+                        )
+                        # Clean up data
+                        del dm_recruitment_data[session_key]
+                        print(f"[AUTO-CLEANUP] Deleted review message after 5 minutes: {upload_message_id}")
+                    except:
+                        pass  # Message already deleted or other error
+
+            # Start the cleanup task
+            asyncio.create_task(auto_cleanup())
+
         except Exception as e:
             print(f"[ERROR] Failed to edit message {upload_message_id}: {e}")
             # Fallback: create new message
-            await bot.rest.create_message(
+            new_msg = await bot.rest.create_message(
                 channel=channel_id,
                 components=review_components
             )
+
+            # Start auto-cleanup timer for the new message
+            async def auto_cleanup_new():
+                await asyncio.sleep(300)  # 5 minutes
+                if session_key in dm_recruitment_data:
+                    try:
+                        await bot.rest.delete_message(
+                            channel=channel_id,
+                            message=new_msg.id
+                        )
+                        del dm_recruitment_data[session_key]
+                        print(f"[AUTO-CLEANUP] Deleted review message after 5 minutes: {new_msg.id}")
+                    except:
+                        pass
+
+            asyncio.create_task(auto_cleanup_new())
     else:
         print(f"[WARNING] No upload message ID found, creating new message")
-        await bot.rest.create_message(
+        new_msg = await bot.rest.create_message(
             channel=channel_id,
             components=review_components
         )
+
+        # Start auto-cleanup timer
+        async def auto_cleanup_fallback():
+            await asyncio.sleep(300)  # 5 minutes
+            if session_key in dm_recruitment_data:
+                try:
+                    await bot.rest.delete_message(
+                        channel=channel_id,
+                        message=new_msg.id
+                    )
+                    del dm_recruitment_data[session_key]
+                    print(f"[AUTO-CLEANUP] Deleted review message after 5 minutes: {new_msg.id}")
+                except:
+                    pass
+
+        asyncio.create_task(auto_cleanup_fallback())
+
+
+# ╔══════════════════════════════════════════════════════════╗
+# ║            Cancel Review Handler                         ║
+# ╚══════════════════════════════════════════════════════════╝
+
+@register_action("dm_cancel_review", no_return=True)
+@lightbulb.di.with_di
+async def dm_cancel_review(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Cancel the review and delete the message"""
+    parts = action_id.split("_")
+    session_key = "_".join(parts[:-1])  # Reconstruct session key
+    user_id = parts[-1]
+
+    # Clean up data
+    if session_key in dm_recruitment_data:
+        del dm_recruitment_data[session_key]
+
+    try:
+        # Delete the message
+        await bot.rest.delete_message(
+            channel=ctx.channel_id,
+            message=ctx.interaction.message.id
+        )
+        print(f"[CANCEL] User {user_id} cancelled DM recruitment review")
+    except Exception as e:
+        print(f"[ERROR] Failed to delete message on cancel: {e}")
+        # If deletion fails, at least update it to show cancelled
+        await ctx.interaction.create_initial_response(
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+        )
+        cancelled_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Submission Cancelled"),
+                    Text(content="This DM recruitment submission has been cancelled."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=cancelled_components)
 
 
 def create_review_components(clan: Clan, data: dict, session_key: str, user_id: str) -> list:
@@ -431,7 +529,7 @@ def create_review_components(clan: Clan, data: dict, session_key: str, user_id: 
             Text(content="-# No screenshot provided")
         )
 
-    # Add action buttons
+    # Add action buttons - only Submit and Cancel
     review_components.extend([
         ActionRow(
             components=[
@@ -443,14 +541,15 @@ def create_review_components(clan: Clan, data: dict, session_key: str, user_id: 
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    label="Start Over",
-                    emoji="🔄",
-                    custom_id=f"cancel_report:{user_id}"
+                    label="Cancel",
+                    emoji="❌",
+                    custom_id=f"dm_cancel_review:{session_key}_{user_id}"
                 )
             ]
         ),
 
         Text(content="-# Your submission will be reviewed by leadership"),
+        Text(content="-# This message will auto-delete in 5 minutes if not submitted"),
         Media(items=[MediaItem(media="assets/Green_Footer.png")])
     ])
 
@@ -504,6 +603,8 @@ async def dm_confirm_submission(
         )
 
         approval_components_list = [
+            Text(content=f"<@&{RECRUITMENT_PING}>"),
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL),
             Text(content="## 🔔 Clan Points Submission"),
 
             Section(
@@ -564,7 +665,8 @@ async def dm_confirm_submission(
         # Send to approval channel
         await bot.rest.create_message(
             channel=APPROVAL_CHANNEL,
-            components=approval_components
+            components=approval_components,
+            role_mentions=True
         )
 
         # Clean up data
@@ -603,3 +705,50 @@ async def dm_confirm_submission(
             f"❌ Error submitting for approval: {str(e)[:200]}\n\nPlease try again or contact an administrator.",
             ephemeral=True
         )
+
+
+# ╔══════════════════════════════════════════════════════════╗
+# ║            Cancel Review Handler                         ║
+# ╚══════════════════════════════════════════════════════════╝
+
+@register_action("dm_cancel_review", no_return=True)
+@lightbulb.di.with_di
+async def dm_cancel_review(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Cancel the review and delete the message"""
+    parts = action_id.split("_")
+    session_key = "_".join(parts[:-1])  # Reconstruct session key
+    user_id = parts[-1]
+
+    # Clean up data
+    if session_key in dm_recruitment_data:
+        del dm_recruitment_data[session_key]
+
+    try:
+        # Delete the message
+        await bot.rest.delete_message(
+            channel=ctx.channel_id,
+            message=ctx.interaction.message.id
+        )
+        print(f"[CANCEL] User {user_id} cancelled DM recruitment review")
+    except Exception as e:
+        print(f"[ERROR] Failed to delete message on cancel: {e}")
+        # If deletion fails, at least update it to show cancelled
+        await ctx.interaction.create_initial_response(
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+        )
+        cancelled_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Submission Cancelled"),
+                    Text(content="This DM recruitment submission has been cancelled."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=cancelled_components)

@@ -14,7 +14,7 @@ from utils.classes import Clan
 # Channel IDs
 APPROVAL_CHANNEL = 1348691451197784074
 LOG_CHANNEL = 1345589195695194113
-
+RECRUITMENT_PING = 1039311270614142977
 # Regex for Discord message links
 DISCORD_LINK_REGEX = re.compile(r"https://discord\.com/channels/(\d+)/(\d+)/(\d+)")
 
@@ -83,11 +83,9 @@ async def get_clan_options(mongo: MongoClient) -> List[SelectOption]:
     clan_data = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=data) for data in clan_data]
 
-    # Sort alphabetically
-    sorted_clans = sorted(clans, key=lambda c: c.name)
-
+    # Use clans directly without sorting
     options = []
-    for clan in sorted_clans[:25]:  # Discord limit
+    for clan in clans[:25]:  # Discord limit
         kwargs = {
             "label": clan.name,
             "value": clan.tag,

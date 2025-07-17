@@ -34,7 +34,8 @@ from .helpers import (
     parse_discord_link,
     create_submission_data,
     get_clan_by_tag,
-    APPROVAL_CHANNEL
+    APPROVAL_CHANNEL,
+    RECRUITMENT_PING
 )
 
 # ╔══════════════════════════════════════════════════════════╗
@@ -289,6 +290,8 @@ async def dp_confirm_submission(
     )
 
     approval_components_list = [
+        Text(content=f"<@&{RECRUITMENT_PING}>"),
+        Separator(divider=True, spacing=hikari.SpacingType.SMALL),
         Text(content="## 🔔 Clan Points Submission"),
 
         Section(
@@ -352,7 +355,8 @@ async def dp_confirm_submission(
     try:
         await bot.rest.create_message(
             channel=APPROVAL_CHANNEL,
-            components=approval_components
+            components=approval_components,
+            role_mentions=True
         )
 
         success_components = [
