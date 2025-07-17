@@ -79,48 +79,69 @@ def contains_th17(text: str) -> bool:
 
 
 async def create_th17_search_notification(post) -> List[Container]:
-    """Create the Discord notification for a TH17 searching post"""
+    """Alternative with body in separate section"""
     # Format the post time
     post_timestamp = int(post.created_utc)
 
-    # Extract any player tags mentioned in the post (player tags are typically 8-9 chars)
+    # Extract any player tags mentioned in the post
     player_tags = re.findall(r'#[A-Z0-9]{8,9}', post.title.upper())
     player_tag_text = f"**Player Tag:** {', '.join(player_tags)}\n" if player_tags else ""
 
+    # Process the post body
+    post_body = post.selftext.strip() if post.selftext else ""
+
     # Build components
+    components_list = [
+        Text(content=f"<@&{PING_ROLE_ID}>"),
+        Section(
+            components=[
+                Text(content="## 🔍 TH17 Player Looking for Clan"),
+                Text(content=(
+                    f"A TH17 player is searching for a clan to join!\n\n"
+                    f"**Title:** {post.title}\n"
+                    f"**Author:** u/{post.author.name if post.author else '[deleted]'}\n"
+                    f"{player_tag_text}"
+                    f"**Posted:** <t:{post_timestamp}:f>"
+                )),
+            ],
+            accessory=Thumbnail(
+                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1752266736/misc_images/Reddit.png"
+            )
+        ),
+    ]
+
+    # Add body as separate section if it exists
+    if post_body:
+        # Truncate to 300 characters for this style
+        if len(post_body) > 300:
+            body_display = post_body[:297] + "..."
+        else:
+            body_display = post_body
+
+        components_list.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
+        components_list.append(
+            Text(content=f"**Post Details:**\n```\n{body_display}\n```")
+        )
+
+    components_list.extend([
+        ActionRow(
+            components=[
+                LinkButton(
+                    url=f"https://reddit.com{post.permalink}",
+                    label="View Post",
+                    emoji="🔗"
+                )
+            ]
+        ),
+        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+        Text(
+            content=f"-# Posted by u/{post.author.name if post.author else '[deleted]'} on r/{post.subreddit.display_name}")
+    ])
+
     components = [
         Container(
             accent_color=RED_ACCENT,
-            components=[
-                Text(content=f"<@&{PING_ROLE_ID}>"),  # Ping goes INSIDE components
-                Section(
-                    components=[
-                        Text(content="## 🔍 TH17 Player Looking for Clan"),
-                        Text(content=(
-                            f"A TH17 player is searching for a clan to join!\n\n"
-                            f"**Title:** {post.title}\n"
-                            f"**Author:** u/{post.author.name if post.author else '[deleted]'}\n"
-                            f"{player_tag_text}"
-                            f"**Posted:** <t:{post_timestamp}:f>\n\n"
-                            "Consider reaching out to this player if your clan needs a TH17!"
-                        )),
-                    ],
-                    accessory=Thumbnail(
-                        media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1752266736/misc_images/Reddit.png"
-                    )
-                ),
-                ActionRow(
-                    components=[
-                        LinkButton(
-                            url=f"https://reddit.com{post.permalink}",
-                            label="View Post",
-                            emoji="🔗"
-                        )
-                    ]
-                ),
-                Text(
-                    content=f"-# Posted by u/{post.author.name if post.author else '[deleted]'} on r/{post.subreddit.display_name}")
-            ]
+            components=components_list
         )
     ]
 
