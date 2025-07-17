@@ -38,9 +38,9 @@ DISCORD_SKILLS_QUESTION = {
     "content": (
         "Let's make sure you know the Discord basics!\n\n"
         "{red_arrow} **Step 1:** React to this message with any emoji\n"
-        "{white_arrow} _Click the smiley face below to add a reaction_\n\n"
+        "{blank}{white_arrow} _Click the smiley face below to add a reaction_\n\n"
         "{red_arrow} **Step 2:** Reply and mention the bot\n"
-        "{white_arrow} _Type a message with @Arcane Bot (that's me!)_\n\n"
+        "{blank}{white_arrow} _Type a message with {bot_mention}_\n\n"
         "*This ensures you can interact properly in your new clan!*"
     ),
     "footer": "React to this message and mention the bot to continue!",
@@ -106,11 +106,15 @@ async def send_discord_skills_question(channel_id: int, user_id: int) -> None:
         question_key = "discord_basic_skills"
         question_data = DISCORD_SKILLS_QUESTION
 
+        # Get Bot ID
+        bot_id = bot_instance.get_me().id
+
         # Format content
         content = question_data["content"].format(
             red_arrow=str(emojis.red_arrow_right),
             white_arrow=str(emojis.white_arrow_right),
-            blank=str(emojis.blank)
+            blank=str(emojis.blank),
+            bot_mention=f"<@{bot_id}>"
         )
 
         # Create components

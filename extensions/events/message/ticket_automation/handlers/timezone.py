@@ -34,7 +34,7 @@ FRIEND_TIME_BOT_ID = 471091072546766849
 FRIEND_TIME_SET_COMMAND_ID = 924862149292085268
 
 # Self-contained constants
-TIMEZONE_CONFIRMATION_TIMEOUT = 60  # Seconds to wait for Friend Time bot confirmation
+TIMEZONE_CONFIRMATION_TIMEOUT = 600  # Seconds to wait for Friend Time bot confirmation
 
 # Self-contained question data
 TIMEZONE_QUESTION = {
