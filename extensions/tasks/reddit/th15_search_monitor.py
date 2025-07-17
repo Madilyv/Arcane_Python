@@ -64,11 +64,15 @@ def contains_th15(text: str) -> bool:
     text_lower = text.lower()
 
     # Check for TH15 (with or without spaces)
-    if re.search(r'th\s*15', text_lower):
+    th15_match = re.search(r'th\s*15', text_lower)
+    if th15_match:
+        debug_print(f"    Found TH15 match: '{th15_match.group()}'")
         return True
 
     # Check for Town Hall 15 (with flexible spacing)
-    if re.search(r'town\s*hall\s*15', text_lower):
+    townhall_match = re.search(r'town\s*hall\s*15', text_lower)
+    if townhall_match:
+        debug_print(f"    Found Town Hall 15 match: '{townhall_match.group()}'")
         return True
 
     return False
@@ -79,23 +83,24 @@ async def create_th15_search_notification(post) -> List[Container]:
     # Format the post time
     post_timestamp = int(post.created_utc)
 
-    # Extract any clan tags mentioned in the post
-    clan_tags = re.findall(r'#[A-Z0-9]{8,9}', post.title.upper())
-    clan_tag_text = f"**Mentioned Tags:** {', '.join(clan_tags)}\n" if clan_tags else ""
+    # Extract any player tags mentioned in the post (player tags are typically 8-9 chars)
+    player_tags = re.findall(r'#[A-Z0-9]{8,9}', post.title.upper())
+    player_tag_text = f"**Player Tag:** {', '.join(player_tags)}\n" if player_tags else ""
 
     # Build components
     components = [
         Container(
             accent_color=RED_ACCENT,
             components=[
+                Text(content=f"<@&{PING_ROLE_ID}>"),  # Ping goes INSIDE components
                 Section(
                     components=[
                         Text(content="## 🔍 TH15 Player Looking for Clan"),
                         Text(content=(
                             f"A TH15 player is searching for a clan to join!\n\n"
                             f"**Title:** {post.title}\n"
-                            f"**Author:** u/{post.author.name}\n"
-                            f"{clan_tag_text}"
+                            f"**Author:** u/{post.author.name if post.author else '[deleted]'}\n"
+                            f"{player_tag_text}"
                             f"**Posted:** <t:{post_timestamp}:f>\n\n"
                             "Consider reaching out to this player if your clan needs a TH15!"
                         )),
@@ -110,15 +115,11 @@ async def create_th15_search_notification(post) -> List[Container]:
                             url=f"https://reddit.com{post.permalink}",
                             label="View Post",
                             emoji="🔗"
-                        ),
-                        LinkButton(
-                            url=f"https://reddit.com/message/compose/?to={post.author.name}",
-                            label="Message Player",
-                            emoji="✉️"
                         )
                     ]
                 ),
-                Text(content=f"-# Posted by u/{post.author.name} on r/{post.subreddit.display_name}")
+                Text(
+                    content=f"-# Posted by u/{post.author.name if post.author else '[deleted]'} on r/{post.subreddit.display_name}")
             ]
         )
     ]
@@ -130,9 +131,19 @@ async def check_th15_posts():
     """Check Reddit for new TH15 searching posts"""
     global reddit_instance, mongo_client, bot_instance
 
-    if not reddit_instance or not mongo_client or not bot_instance:
-        debug_print("Missing required instances")
+    debug_print("Starting check_th15_posts()...")
+
+    if not reddit_instance:
+        debug_print("ERROR: reddit_instance is None!")
         return
+    if not mongo_client:
+        debug_print("ERROR: mongo_client is None!")
+        return
+    if not bot_instance:
+        debug_print("ERROR: bot_instance is None!")
+        return
+
+    debug_print("All instances are available, proceeding...")
 
     try:
         # Get subreddit
@@ -149,15 +160,35 @@ async def check_th15_posts():
             f"Checking {len(new_posts)} posts. Last check: {datetime.fromtimestamp(last_check_time) if last_check_time else 'Never'}"
         )
 
+        # ENHANCED DEBUG: Show all posts
+        debug_print("=== ALL POSTS IN SUBREDDIT ===")
+        for i, post in enumerate(new_posts):
+            debug_print(f"Post #{i + 1}: {post.title[:80]}... (created: {datetime.fromtimestamp(post.created_utc)})")
+
         # Process posts from oldest to newest
+        matched_count = 0
         for post in reversed(new_posts):
             # Skip if we've already processed this post
             if post.created_utc <= last_check_time:
+                debug_print(f"Skipping old post: {post.title[:50]}...")
                 continue
 
+            # ENHANCED DEBUG: Check each condition separately
+            title_lower = post.title.lower().strip()
+            is_searching = is_searching_post(post.title)
+            has_th15 = contains_th15(post.title)
+
+            # Always show what we're checking in debug mode
+            if is_searching or has_th15:
+                debug_print(f"\nChecking: {post.title}")
+                debug_print(f"  - Lower title: '{title_lower}'")
+                debug_print(f"  - Starts with [searching]: {is_searching}")
+                debug_print(f"  - Contains TH15: {has_th15}")
+
             # Check if it's a searching post and contains TH15
-            if is_searching_post(post.title) and contains_th15(post.title):
-                debug_print(f"Found TH15 searching post: {post.title}")
+            if is_searching and has_th15:
+                matched_count += 1
+                debug_print(f"✅ MATCH #{matched_count}! Found TH15 searching post: {post.title}")
 
                 # Check if we've already notified about this post
                 notification_id = f"th15_{post.id}"
@@ -165,15 +196,18 @@ async def check_th15_posts():
                     "_id": notification_id
                 })
 
-                if not existing_notification:
+                if existing_notification:
+                    debug_print(f"  → Already notified about this post")
+                else:
                     # Create and send notification
                     components = await create_th15_search_notification(post)
 
                     try:
+                        debug_print(f"  → Sending notification to channel {DISCORD_CHANNEL_ID}...")
                         await bot_instance.rest.create_message(
                             channel=DISCORD_CHANNEL_ID,
-                            content=f"<@&{PING_ROLE_ID}>",  # Ping the role
-                            components=components
+                            components=components,
+                            role_mentions=True
                         )
 
                         # Mark as notified
@@ -181,13 +215,16 @@ async def check_th15_posts():
                             "_id": notification_id,
                             "post_id": post.id,
                             "post_title": post.title,
-                            "author": post.author.name,
+                            "author": post.author.name if post.author else "deleted",
                             "notified_at": datetime.now(timezone.utc).isoformat()
                         })
 
-                        debug_print(f"Sent notification for TH15 searching post by u/{post.author.name}")
+                        debug_print(
+                            f"  → ✅ Sent notification for TH15 searching post by u/{post.author.name if post.author else '[deleted]'}")
                     except Exception as e:
-                        debug_print(f"Error sending notification: {e}")
+                        debug_print(f"  → ❌ Error sending notification: {type(e).__name__}: {e}")
+
+        debug_print(f"\n=== SUMMARY: Found {matched_count} matching posts ===")
 
         # Update last check timestamp
         await mongo_client.reddit_monitor.update_one(
@@ -317,6 +354,8 @@ class TH15SearchDebug(
         global DEBUG_MODE
         DEBUG_MODE = not DEBUG_MODE
         status = "ON" if DEBUG_MODE else "OFF"
+        # Also update the environment variable
+        os.environ["TH15_SEARCH_DEBUG"] = "true" if DEBUG_MODE else "false"
         await ctx.respond(f"🔧 TH15 Search Monitor debug mode: **{status}**", ephemeral=True)
 
 
@@ -379,3 +418,130 @@ class TH15SearchStatus(
         status_lines.append(f"📊 Total notifications sent: {recent_notifications}")
 
         await ctx.respond("\n".join(status_lines), ephemeral=True)
+
+
+@loader.command
+class TH15SearchTestTitle(
+    lightbulb.SlashCommand,
+    name="th15-search-test-title",
+    description="Test if a title would match TH15 search criteria",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    title = lightbulb.string(
+        "title",
+        "The post title to test"
+    )
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        test_title = self.title
+
+        # Test the conditions
+        is_searching = is_searching_post(test_title)
+        has_th15 = contains_th15(test_title)
+        would_match = is_searching and has_th15
+
+        response = f"**Testing:** `{test_title}`\n\n"
+        response += f"Starts with [Searching]: {'✅ Yes' if is_searching else '❌ No'}\n"
+        response += f"Contains TH15: {'✅ Yes' if has_th15 else '❌ No'}\n"
+        response += f"**Would be detected:** {'✅ YES' if would_match else '❌ NO'}"
+
+        await ctx.respond(response, ephemeral=True)
+
+
+@loader.command
+class TH15SearchReset(
+    lightbulb.SlashCommand,
+    name="th15-search-reset",
+    description="Reset TH15 search timestamp to check all posts",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        await ctx.defer(ephemeral=True)
+
+        # Delete the timestamp record
+        result = await mongo.reddit_monitor.delete_one({"_id": "th15_last_check"})
+
+        if result.deleted_count > 0:
+            await ctx.respond(
+                "✅ TH15 search timestamp reset!\n"
+                "The next check will process ALL posts in the subreddit.\n"
+                "Use `/th15-search-test` to trigger an immediate check."
+            )
+        else:
+            await ctx.respond(
+                "ℹ️ No timestamp to reset. The monitor will check all posts on next run."
+            )
+
+
+@loader.command
+class TH15SearchForceCheck(
+    lightbulb.SlashCommand,
+    name="th15-search-force-check",
+    description="Force check ALL posts regardless of timestamp (one-time bypass)",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        await ctx.defer(ephemeral=True)
+
+        global reddit_instance, mongo_client, bot_instance
+
+        if not reddit_instance or not mongo_client or not bot_instance:
+            await ctx.respond("❌ Missing required instances!")
+            return
+
+        try:
+            # Get subreddit
+            subreddit = await reddit_instance.subreddit(MONITORED_SUBREDDIT)
+            new_posts = [post async for post in subreddit.new(limit=25)]
+
+            found_count = 0
+            notified_count = 0
+
+            # Process ALL posts without timestamp check
+            for post in new_posts:
+                # Check if it's a searching post and contains TH15
+                if is_searching_post(post.title) and contains_th15(post.title):
+                    found_count += 1
+
+                    # Check if we've already notified about this post
+                    notification_id = f"th15_{post.id}"
+                    existing_notification = await mongo_client.reddit_notifications.find_one({
+                        "_id": notification_id
+                    })
+
+                    if not existing_notification:
+                        # Create and send notification
+                        components = await create_th15_search_notification(post)
+
+                        try:
+                            await bot_instance.rest.create_message(
+                                channel=DISCORD_CHANNEL_ID,
+                                components=components,
+                                role_mentions=True
+                            )
+
+                            # Mark as notified
+                            await mongo_client.reddit_notifications.insert_one({
+                                "_id": notification_id,
+                                "post_id": post.id,
+                                "post_title": post.title,
+                                "author": post.author.name if post.author else "deleted",
+                                "notified_at": datetime.now(timezone.utc).isoformat()
+                            })
+
+                            notified_count += 1
+                        except Exception as e:
+                            debug_print(f"Error sending notification: {e}")
+
+            await ctx.respond(
+                f"✅ Force check completed!\n"
+                f"Found {found_count} TH15 searching posts\n"
+                f"Sent {notified_count} new notifications"
+            )
+
+        except Exception as e:
+            await ctx.respond(f"❌ Error: {str(e)}")
