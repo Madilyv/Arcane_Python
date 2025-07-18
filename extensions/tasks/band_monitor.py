@@ -362,7 +362,7 @@ async def band_checker_loop(mongo: MongoClient):
 
         # Wait 30 seconds before next check
         debug_print("\n[BAND Monitor] Waiting 30 seconds until next check...")
-        await asyncio.sleep(30)
+        await asyncio.sleep(300)
 
 
 @loader.listener(hikari.StartedEvent)
