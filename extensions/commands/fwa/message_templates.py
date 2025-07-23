@@ -246,7 +246,6 @@ class WarCopyTexts:
             "🔹Second Attack:\n"
             "•Option 1: Hit Base #1 or any higher base for loot.\n"
             "•Option 2: Wait until 8h left, then clean up with a strong 3⭐️.\n"
-            "Let’s max out our stars and secure the win! 💪"
         )
 
     @staticmethod
@@ -257,7 +256,6 @@ class WarCopyTexts:
             "🔹Second Attack:\n"
             "•Option 1: Hit Base #1 or any top base for loot.\n"
             "•Option 2: Wait until 8h left, then go for a safe 2⭐️ cleanup.\n\n"
-            "Finish strong and help hit our star goal! 🌟"
         )
 
     @staticmethod
