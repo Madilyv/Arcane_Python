@@ -8,7 +8,7 @@ import asyncio
 import hikari
 import lightbulb
 import coc
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -358,10 +358,17 @@ async def on_started(event: hikari.StartedEvent):
     scheduler.start()
 
     print(f"[Clan Info Updater] Started - updating every {UPDATE_INTERVAL_MINUTES} minutes")
-
-    # Run initial update after 5 seconds
-    await asyncio.sleep(5)
-    await update_clan_threads()
+    print(f"[Clan Info Updater] First update will run in {UPDATE_INTERVAL_MINUTES} minutes to avoid startup delays")
+    
+    # Schedule first run after UPDATE_INTERVAL_MINUTES instead of immediately
+    # This prevents the 2-minute startup delay from updating all clans
+    scheduler.add_job(
+        update_clan_threads,
+        trigger="date",  # One-time trigger
+        run_date=datetime.now(timezone.utc).replace(microsecond=0) + timedelta(minutes=UPDATE_INTERVAL_MINUTES),
+        id="clan_info_initial_update",
+        replace_existing=True
+    )
 
 
 @loader.listener(hikari.StoppingEvent)

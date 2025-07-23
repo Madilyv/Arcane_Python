@@ -10,9 +10,13 @@ from typing import Dict
 
 loader = lightbulb.Loader()
 
+# Session storage for multi-step DM recruitment flow
+dm_recruitment_sessions = {}
+
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
     TextSelectMenuBuilder as TextSelectMenu,
+    SelectMenuBuilder as SelectMenu,
     ContainerComponentBuilder as Container,
     InteractiveButtonBuilder as Button,
     TextDisplayComponentBuilder as Text,
@@ -62,7 +66,7 @@ async def show_dm_recruitment_flow(
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content=create_progress_header(1, 3, ["Select Clan", "Enter Details", "Review"])),
+                Text(content=create_progress_header(1, 4, ["Select Clan", "Select User", "Enter Details", "Review"])),
                 Separator(),
 
                 Text(content="## 🏰 Select Your Clan"),
@@ -115,7 +119,7 @@ async def restart_dm_recruitment(
 # ║           DM Recruitment Clan Selection (Step 2)          ║
 # ╚══════════════════════════════════════════════════════════╝
 
-@register_action("dm_select_clan", no_return=True, opens_modal=True)
+@register_action("dm_select_clan", no_return=True)
 @lightbulb.di.with_di
 async def dm_select_clan(
         ctx: lightbulb.components.MenuContext,
@@ -123,20 +127,96 @@ async def dm_select_clan(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    """Handle clan selection for DM recruitment"""
+    """Handle clan selection for DM recruitment - show user selection"""
     user_id = action_id
     selected_clan = ctx.interaction.values[0]
+    
+    # Store the selected clan in session for later
+    session_key = f"dm_recruitment_{user_id}"
+    dm_recruitment_sessions[session_key] = {
+        "clan_tag": selected_clan,
+        "user_id": user_id
+    }
 
-    # Create modal for recruitment details
-    discord_id_input = ModalActionRow().add_text_input(
-        "discord_id",
-        "Discord User ID of Recruited Member",
-        placeholder="e.g., 123456789012345678",
-        required=True,
-        min_length=17,
-        max_length=19
-    )
+    # Get clan details for display
+    clan_data = await mongo.clans.find_one({"tag": selected_clan})
+    clan_name = clan_data.get("name", "Unknown Clan") if clan_data else "Unknown Clan"
 
+    # Show user selection menu
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=create_progress_header(2, 4, ["Select Clan", "Select User", "Enter Details", "Review"])),
+                Separator(),
+                
+                Text(content="## 👤 Select Recruited Member"),
+                Text(content=f"**Selected Clan:** {clan_name}"),
+                Text(content="Choose the Discord user you recruited:"),
+                
+                ActionRow(
+                    components=[
+                        SelectMenu(
+                            min_values=1,
+                            max_values=1,
+                            type=hikari.ComponentType.USER_SELECT_MENU,
+                            custom_id=f"dm_select_user:{session_key}",
+                            placeholder="Select the recruited member...",
+                        ),
+                    ]
+                ),
+                
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            label="Back",
+                            emoji="⬅️",
+                            custom_id=f"show_dm_recruitment:{user_id}"
+                        ),
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            label="Cancel",
+                            emoji="❌",
+                            custom_id=f"cancel_report:{user_id}"
+                        )
+                    ]
+                ),
+                
+                Text(content="-# Select the Discord user who was recruited via DM"),
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+
+    await ctx.respond(components=components, edit=True)
+
+
+# ╔══════════════════════════════════════════════════════════╗
+# ║           DM Recruitment User Selection (Step 3)          ║
+# ╚══════════════════════════════════════════════════════════╝
+
+@register_action("dm_select_user", no_return=True, opens_modal=True)
+@lightbulb.di.with_di
+async def dm_select_user(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle user selection for DM recruitment"""
+    session_key = action_id
+    session = dm_recruitment_sessions.get(session_key)
+    
+    if not session:
+        await ctx.respond("❌ Session expired. Please start over.", ephemeral=True)
+        return
+    
+    # Get selected user ID
+    selected_user_id = ctx.interaction.values[0]
+    session["recruited_user_id"] = selected_user_id
+    
+    # Create modal for context only (no need for Discord ID input anymore)
     context_input = ModalActionRow().add_text_input(
         "context",
         "How/Where did you recruit them?",
@@ -148,14 +228,14 @@ async def dm_select_clan(
 
     await ctx.respond_with_modal(
         title="DM Recruitment Details",
-        custom_id=f"dm_submit_details:{selected_clan}_{user_id}",
-        components=[discord_id_input, context_input]
+        custom_id=f"dm_submit_details:{session_key}",
+        components=[context_input]
     )
 
 
 # ╔══════════════════════════════════════════════════════════╗
-# ║         DM Recruitment Details Submission (Step 3)       ║
-# ╚══════════════════════════════════════════════════════════╝
+# ║         DM Recruitment Details Submission (Step 4)       ║
+# ╚══════════════════════════════════════════════════════════════════════════════════╝
 
 @register_action("dm_submit_details", no_return=True, is_modal=True)
 @lightbulb.di.with_di
@@ -169,47 +249,25 @@ async def dm_submit_details(
     """Process DM recruitment details and prompt for screenshot"""
     print(f"[DEBUG] dm_submit_details called with action_id: {action_id}")
 
-    parts = action_id.split("_")
-    clan_tag = parts[0]
-    user_id = parts[1]
-
-    discord_id = ""
-    context = ""
-
-    for row in ctx.interaction.components:
-        for comp in row:
-            if comp.custom_id == "discord_id":
-                discord_id = comp.value.strip()
-            elif comp.custom_id == "context":
-                context = comp.value.strip()
-
-    # Always use DEFERRED_MESSAGE_UPDATE for consistent response handling
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
-
-    # Handle validation errors by updating the message with error info
-    if not validate_discord_id(discord_id):
+    session_key = action_id
+    session = dm_recruitment_sessions.get(session_key)
+    
+    if not session:
+        await ctx.interaction.create_initial_response(
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+        )
         error_components = [
             Container(
                 accent_color=RED_ACCENT,
                 components=[
-                    Text(content="## ❌ Invalid Discord ID"),
-                    Text(content="Please enter a valid 17-19 digit Discord user ID."),
-                    Separator(),
+                    Text(content="## ❌ Session Expired"),
+                    Text(content="Please start the recruitment report over."),
                     ActionRow(
                         components=[
                             Button(
                                 style=hikari.ButtonStyle.PRIMARY,
-                                label="Try Again",
-                                emoji="🔄",
-                                custom_id=f"show_dm_recruitment:{user_id}"
-                            ),
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                label="Cancel",
-                                emoji="❌",
-                                custom_id=f"cancel_report:{user_id}"
+                                label="Start Over",
+                                custom_id=f"report_type:dm_recruitment_{session.get('user_id', '0')}"
                             )
                         ]
                     ),
@@ -219,6 +277,31 @@ async def dm_submit_details(
         ]
         await ctx.interaction.edit_initial_response(components=error_components)
         return
+    
+    clan_tag = session["clan_tag"]
+    user_id = session["user_id"]
+    discord_id = session["recruited_user_id"]
+    context = ""
+
+    for row in ctx.interaction.components:
+        for comp in row:
+            if comp.custom_id == "context":
+                context = comp.value.strip()
+
+    # Store the message ID before we defer the response
+    # In modal contexts, we need to be careful about message IDs
+    original_message_id = ctx.interaction.message.id if ctx.interaction.message else None
+    print(f"[DEBUG] Modal interaction - original message ID: {original_message_id}")
+    print(f"[DEBUG] Interaction type: {ctx.interaction.type}")
+    print(f"[DEBUG] Has message: {ctx.interaction.message is not None}")
+    
+    # Always use DEFERRED_MESSAGE_UPDATE for consistent response handling
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+
+    # No need to validate Discord ID since it comes from user selector
+    # The user selector ensures it's a valid Discord user ID
 
     clan = await get_clan_by_tag(mongo, clan_tag)
     if not clan:
@@ -260,7 +343,7 @@ async def dm_submit_details(
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content=create_progress_header(2.5, 3, ["Select Clan", "Enter Details", "Review"])),
+                Text(content=create_progress_header(3.5, 4, ["Select Clan", "Select User", "Enter Details", "Review"])),
                 Separator(),
 
                 Text(content="## 📸 **Show Your Proof of Recruitment!**"),
@@ -296,6 +379,30 @@ async def dm_submit_details(
     # Update the original message with upload instructions
     await ctx.interaction.edit_initial_response(components=components)
 
+    # For modal interactions, the message ID should be consistent
+    # Use the original_message_id we stored before deferring
+    message_id = original_message_id
+    
+    # If we don't have a message ID, this is a problem
+    if not message_id:
+        print(f"[ERROR] No message ID available after modal interaction!")
+        # Try to get it from the interaction again
+        if ctx.interaction.message:
+            message_id = ctx.interaction.message.id
+            print(f"[DEBUG] Retrieved message ID from interaction: {message_id}")
+        else:
+            # This shouldn't happen, but if it does, we need to handle it
+            print(f"[ERROR] Cannot determine message ID for upload prompt!")
+            # Create a new message instead
+            new_msg = await bot.rest.create_message(
+                channel=ctx.channel_id,
+                components=components
+            )
+            message_id = new_msg.id
+            print(f"[DEBUG] Created new message with ID: {message_id}")
+            
+    print(f"[DEBUG] Final message ID to store: {message_id}")
+
     # Store session data with the message ID of the UPDATED message
     image_collection_sessions[session_key] = {
         "discord_id": discord_id,
@@ -304,15 +411,17 @@ async def dm_submit_details(
         "user_id": int(user_id),
         "clan": clan,
         "timestamp": datetime.now(),
-        "upload_prompt_message_id": ctx.interaction.message.id  # This is the same message we just updated
+        "upload_prompt_message_id": message_id
     }
 
-    print(f"[DEBUG] Stored message ID: {ctx.interaction.message.id}")
+    print(f"[DEBUG] Stored message ID: {message_id} for session {session_key}")
+    print(f"[DEBUG] Channel ID: {ctx.channel_id}")
+    print(f"[DEBUG] User ID: {user_id}")
 
     # Also store in MongoDB for persistence
     await mongo.button_store.insert_one({
         "_id": f"dm_upload_{session_key}",
-        "message_id": ctx.interaction.message.id,
+        "message_id": message_id,
         "channel_id": ctx.channel_id,
         "session_key": session_key
     })
@@ -362,6 +471,7 @@ async def show_dm_review_in_channel(bot: hikari.GatewayBot, session_key: str, us
 
     if upload_message_id:
         try:
+            print(f"[DEBUG] Attempting to edit message {upload_message_id} in channel {channel_id}")
             # Edit the upload prompt message with the review form
             # This is NOT using DEFERRED_MESSAGE_UPDATE because it's from an event, not an interaction
             await bot.rest.edit_message(
@@ -386,6 +496,8 @@ async def show_dm_review_in_channel(bot: hikari.GatewayBot, session_key: str, us
                         )
                         # Clean up data
                         del dm_recruitment_data[session_key]
+                        if session_key in dm_recruitment_sessions:
+                            del dm_recruitment_sessions[session_key]
                         print(f"[AUTO-CLEANUP] Deleted review message after 5 minutes: {upload_message_id}")
                     except:
                         pass  # Message already deleted or other error
@@ -393,8 +505,15 @@ async def show_dm_review_in_channel(bot: hikari.GatewayBot, session_key: str, us
             # Start the cleanup task
             asyncio.create_task(auto_cleanup())
 
+        except hikari.NotFoundError:
+            print(f"[ERROR] Message {upload_message_id} not found (404), creating new message")
+            # Message doesn't exist, create a new one
+            new_msg = await bot.rest.create_message(
+                channel=channel_id,
+                components=review_components
+            )
         except Exception as e:
-            print(f"[ERROR] Failed to edit message {upload_message_id}: {e}")
+            print(f"[ERROR] Failed to edit message {upload_message_id}: {type(e).__name__}: {e}")
             # Fallback: create new message
             new_msg = await bot.rest.create_message(
                 channel=channel_id,
@@ -411,6 +530,8 @@ async def show_dm_review_in_channel(bot: hikari.GatewayBot, session_key: str, us
                             message=new_msg.id
                         )
                         del dm_recruitment_data[session_key]
+                        if session_key in dm_recruitment_sessions:
+                            del dm_recruitment_sessions[session_key]
                         print(f"[AUTO-CLEANUP] Deleted review message after 5 minutes: {new_msg.id}")
                     except:
                         pass
@@ -460,6 +581,8 @@ async def dm_cancel_review(
     # Clean up data
     if session_key in dm_recruitment_data:
         del dm_recruitment_data[session_key]
+    if session_key in dm_recruitment_sessions:
+        del dm_recruitment_sessions[session_key]
 
     try:
         # Delete the message
@@ -490,7 +613,7 @@ async def dm_cancel_review(
 def create_review_components(clan: Clan, data: dict, session_key: str, user_id: str) -> list:
     """Create review screen components"""
     review_components = [
-        Text(content=create_progress_header(3, 3, ["Select Clan", "Enter Details", "Review"])),
+        Text(content=create_progress_header(4, 4, ["Select Clan", "Select User", "Enter Details", "Review"])),
         Separator(),
 
         Text(content="## 📋 Review Your Submission"),
@@ -727,6 +850,8 @@ async def dm_cancel_review(
     # Clean up data
     if session_key in dm_recruitment_data:
         del dm_recruitment_data[session_key]
+    if session_key in dm_recruitment_sessions:
+        del dm_recruitment_sessions[session_key]
 
     try:
         # Delete the message

@@ -1,5 +1,14 @@
 import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+# Ignore deprecation warnings from coc.py library about datetime.utcnow()
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="coc.http")
+# Also ignore from any coc submodules
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="coc.*")
+# Ignore specific datetime.utcnow() deprecation warning
+warnings.filterwarnings("ignore", message="datetime.datetime.utcnow\\(\\) is deprecated")
+
+import logging
+# Suppress py.warnings logger to hide deprecation warnings in terminal
+logging.getLogger("py.warnings").setLevel(logging.ERROR)
 
 import os
 import hikari
@@ -84,6 +93,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.commands.clan.info_hub",
         "extensions.events.message.ticket_account_collection",
          "extensions.commands.help",
+        "extensions.commands.utilities",
     ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)

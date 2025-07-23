@@ -1,7 +1,7 @@
 import asyncio
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 
 import hikari
@@ -152,7 +152,7 @@ async def create_reddit_post_notification(post, clan_data: Dict) -> List[Contain
     return components
 
 
-async def check_reddit_posts():
+async def check_reddit_posts(startup_mode=False):
     """Check Reddit for new posts matching our criteria"""
     global reddit_instance, mongo_client, bot_instance
 
@@ -164,26 +164,49 @@ async def check_reddit_posts():
         # Get subreddit
         subreddit = await reddit_instance.subreddit(MONITORED_SUBREDDIT)
 
-        # Get recent posts (last 25)
-        new_posts = [post async for post in subreddit.new(limit=25)]
+        # Get recent posts (increase limit on startup to catch older posts)
+        post_limit = 100 if startup_mode else 50
+        new_posts = [post async for post in subreddit.new(limit=post_limit)]
 
         # Get last checked timestamp from MongoDB
         last_check_doc = await mongo_client.reddit_monitor.find_one({"_id": "last_check"})
         last_check_time = last_check_doc.get("timestamp", 0) if last_check_doc else 0
+        
+        # On startup mode, check posts from last 48 hours
+        now = datetime.now(timezone.utc).timestamp()
+        if startup_mode:
+            print(f"[Clan Post Monitor] Startup mode: checking posts from last 48 hours")
+            last_check_time = now - 172800  # 48 hours in seconds
+            print(f"[Clan Post Monitor] Will check posts newer than {datetime.fromtimestamp(last_check_time, tz=timezone.utc).isoformat()}")
+        elif last_check_time == 0 or (now - last_check_time) > 86400:  # 86400 seconds = 24 hours
+            debug_print("First run or stale timestamp detected, checking posts from last 24 hours")
+            last_check_time = now - 86400  # Check posts from last 24 hours
 
+        print(f"[Clan Post Monitor] Checking {len(new_posts)} posts. Keywords: {', '.join(SEARCH_KEYWORDS)}")
         debug_print(
             f"Checking {len(new_posts)} posts. Last check: {datetime.fromtimestamp(last_check_time) if last_check_time else 'Never'}")
 
         # Process posts from oldest to newest
+        posts_checked = 0
+        posts_matched = 0
         for post in reversed(new_posts):
+            debug_print(f"Checking post: '{post.title}' (created: {datetime.fromtimestamp(post.created_utc)})")
+            
             # Skip if we've already processed this post
             if post.created_utc <= last_check_time:
+                debug_print(f"  -> Skipping: Post created before last check ({datetime.fromtimestamp(last_check_time)})")
                 continue
+            
+            posts_checked += 1
 
             # Check if title contains our keywords
             title_lower = post.title.lower()
-            if any(keyword.lower() in title_lower for keyword in SEARCH_KEYWORDS):
-                debug_print(f"Found matching post: {post.title}")
+            keyword_found = any(keyword.lower() in title_lower for keyword in SEARCH_KEYWORDS)
+            
+            if keyword_found:
+                matching_keyword = next(keyword for keyword in SEARCH_KEYWORDS if keyword.lower() in title_lower)
+                debug_print(f"  -> Match found! Keyword: '{matching_keyword}' in title: '{post.title}'")
+                posts_matched += 1
 
                 # Extract clan tags from title
                 clan_tags = extract_clan_tags(post.title)
@@ -244,14 +267,22 @@ async def check_reddit_posts():
                             except Exception as e:
                                 debug_print(f"Error sending notification: {e}")
                     else:
-                        debug_print(f"Clan tag {tag} not found in database")
+                        debug_print(f"  -> Clan tag {tag} not found in database")
+            else:
+                debug_print(f"  -> No matching keywords found in title")
 
-        # Update last check timestamp
-        await mongo_client.reddit_monitor.update_one(
-            {"_id": "last_check"},
-            {"$set": {"timestamp": datetime.now(timezone.utc).timestamp()}},
-            upsert=True
-        )
+        # Log summary
+        if startup_mode:
+            print(f"[Clan Post Monitor] Startup check complete: {posts_checked} posts checked, {posts_matched} matches found")
+        
+        # Update last check timestamp only if not in startup mode
+        # This prevents skipping posts on subsequent regular checks
+        if not startup_mode:
+            await mongo_client.reddit_monitor.update_one(
+                {"_id": "last_check"},
+                {"$set": {"timestamp": datetime.now(timezone.utc).timestamp()}},
+                upsert=True
+            )
 
     except asyncprawcore.exceptions.ResponseException as e:
         debug_print(f"Reddit API error: {e}")
@@ -262,6 +293,13 @@ async def check_reddit_posts():
 async def reddit_monitor_loop():
     """Main loop that monitors Reddit"""
     debug_print("Starting Reddit monitoring loop...")
+    
+    # Run initial check immediately on startup
+    try:
+        print("[Clan Post Monitor] Running initial startup check for posts from last 48 hours...")
+        await check_reddit_posts(startup_mode=True)
+    except Exception as e:
+        print(f"[Clan Post Monitor] Error in startup check: {type(e).__name__}: {e}")
 
     while True:
         try:
@@ -338,6 +376,9 @@ async def on_bot_started(
     if reddit_instance:
         # Start monitoring task
         reddit_monitor_task = asyncio.create_task(reddit_monitor_loop())
+        print(f"[Clan Post Monitor] Task started at {datetime.now(timezone.utc).isoformat()}")
+        print(f"[Clan Post Monitor] Monitoring r/{MONITORED_SUBREDDIT} for keywords: {', '.join(SEARCH_KEYWORDS)}")
+        print(f"[Clan Post Monitor] Check interval: {REDDIT_CHECK_INTERVAL} seconds")
         debug_print("Clan Post Monitor task started!")
     else:
         print("[Clan Post Monitor] Failed to initialize Reddit API. Check your credentials.")
@@ -392,3 +433,259 @@ class ClanPostTest(
             await ctx.respond("✅ Clan post check completed!")
         except Exception as e:
             await ctx.respond(f"❌ Clan post check failed: {str(e)}")
+
+
+@loader.command
+class ClanPostCheckUrl(
+    lightbulb.SlashCommand,
+    name="clan-post-check-url",
+    description="Check a specific Reddit post URL for clan recruitment",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    url = lightbulb.string("url", "The Reddit post URL to check")
+
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        await ctx.defer(ephemeral=True)
+
+        try:
+            global reddit_instance
+            if not reddit_instance:
+                await ctx.respond("❌ Reddit instance not initialized")
+                return
+
+            # Extract post ID from URL
+            import re
+            url_pattern = r'reddit\.com/r/\w+/comments/([a-z0-9]+)'
+            match = re.search(url_pattern, self.url)
+            
+            if not match:
+                await ctx.respond("❌ Invalid Reddit URL format")
+                return
+
+            post_id = match.group(1)
+            
+            # Get the post
+            post = await reddit_instance.submission(id=post_id)
+            await post.load()  # Load post data
+            
+            response = f"**Post Title:** {post.title}\n"
+            response += f"**Author:** u/{post.author.name if post.author else '[deleted]'}\n"
+            response += f"**Posted:** <t:{int(post.created_utc)}:f>\n\n"
+            
+            # Check if title contains keywords
+            title_lower = post.title.lower()
+            keyword_found = any(keyword.lower() in title_lower for keyword in SEARCH_KEYWORDS)
+            
+            if keyword_found:
+                matching_keyword = next(keyword for keyword in SEARCH_KEYWORDS if keyword.lower() in title_lower)
+                response += f"✅ **Keyword Found:** '{matching_keyword}'\n\n"
+                
+                # Extract clan tags
+                clan_tags = extract_clan_tags(post.title)
+                response += f"**Clan Tags Found:** {', '.join(clan_tags) if clan_tags else 'None'}\n\n"
+                
+                # Check each clan tag in database
+                if clan_tags:
+                    for tag in clan_tags:
+                        clan_data = await get_clan_by_tag_from_db(mongo, tag)
+                        if clan_data:
+                            response += f"✅ **{tag}**: {clan_data.get('name')} (found in database)\n"
+                            
+                            # Check if already notified
+                            notification_id = f"{post.id}_{tag}"
+                            existing = await mongo.reddit_notifications.find_one({"_id": notification_id})
+                            if existing:
+                                response += f"   ⚠️ Already notified on {existing.get('notified_at')}\n"
+                            else:
+                                response += f"   ✨ Not yet notified\n"
+                        else:
+                            response += f"❌ **{tag}**: Not found in database\n"
+                else:
+                    response += "❌ No clan tags found in title\n"
+            else:
+                response += f"❌ **No matching keywords found**\n"
+                response += f"Looking for: {', '.join(SEARCH_KEYWORDS)}\n"
+            
+            await ctx.respond(response)
+            
+        except Exception as e:
+            await ctx.respond(f"❌ Error checking post: {str(e)}")
+
+
+@loader.command
+class ClanPostTimestamp(
+    lightbulb.SlashCommand,
+    name="clan-post-timestamp",
+    description="Check or reset the Reddit monitor timestamp",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    reset = lightbulb.boolean("reset", "Reset the timestamp to check all recent posts", default=False)
+
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        await ctx.defer(ephemeral=True)
+
+        try:
+            if self.reset:
+                # Reset to 24 hours ago
+                new_timestamp = (datetime.now(timezone.utc) - timedelta(days=1)).timestamp()
+                await mongo.reddit_monitor.update_one(
+                    {"_id": "last_check"},
+                    {"$set": {"timestamp": new_timestamp}},
+                    upsert=True
+                )
+                await ctx.respond(f"✅ Reset timestamp to 24 hours ago\n"
+                                f"New timestamp: <t:{int(new_timestamp)}:f>")
+            else:
+                # Check current timestamp
+                last_check_doc = await mongo.reddit_monitor.find_one({"_id": "last_check"})
+                if last_check_doc:
+                    timestamp = last_check_doc.get("timestamp", 0)
+                    if timestamp:
+                        await ctx.respond(f"📅 Last check timestamp: <t:{int(timestamp)}:f>\n"
+                                        f"That's {datetime.now(timezone.utc).timestamp() - timestamp:.0f} seconds ago")
+                    else:
+                        await ctx.respond("❌ No timestamp found in database")
+                else:
+                    await ctx.respond("❌ No last check record found")
+        except Exception as e:
+            await ctx.respond(f"❌ Error: {str(e)}")
+
+
+@loader.command
+class ClanPostProcessUrl(
+    lightbulb.SlashCommand,
+    name="clan-post-process-url",
+    description="Manually process a Reddit post URL and award points",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    url = lightbulb.string("url", "The Reddit post URL to process")
+
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        await ctx.defer(ephemeral=True)
+
+        try:
+            global reddit_instance, bot_instance
+            if not reddit_instance:
+                await ctx.respond("❌ Reddit instance not initialized")
+                return
+
+            # Extract post ID from URL
+            import re
+            url_pattern = r'reddit\.com/r/\w+/comments/([a-z0-9]+)'
+            match = re.search(url_pattern, self.url)
+            
+            if not match:
+                await ctx.respond("❌ Invalid Reddit URL format")
+                return
+
+            post_id = match.group(1)
+            
+            # Get the post
+            post = await reddit_instance.submission(id=post_id)
+            await post.load()  # Load post data
+            
+            # Check if title contains keywords
+            title_lower = post.title.lower()
+            keyword_found = any(keyword.lower() in title_lower for keyword in SEARCH_KEYWORDS)
+            
+            if not keyword_found:
+                await ctx.respond(f"❌ Post does not contain required keywords: {', '.join(SEARCH_KEYWORDS)}")
+                return
+            
+            # Extract clan tags
+            clan_tags = extract_clan_tags(post.title)
+            if not clan_tags:
+                await ctx.respond("❌ No clan tags found in post title")
+                return
+            
+            processed_clans = []
+            already_processed = []
+            
+            for tag in clan_tags:
+                # Check if clan exists in database
+                clan_data = await get_clan_by_tag_from_db(mongo, tag)
+                
+                if not clan_data:
+                    continue
+                
+                # Check if already notified
+                notification_id = f"{post.id}_{tag}"
+                existing_notification = await mongo.reddit_notifications.find_one({
+                    "_id": notification_id
+                })
+                
+                if existing_notification:
+                    already_processed.append(f"{clan_data.get('name')} ({tag})")
+                    continue
+                
+                # Process the post
+                # Create and send notification
+                components = await create_reddit_post_notification(post, clan_data)
+                
+                try:
+                    await bot_instance.rest.create_message(
+                        channel=DISCORD_CHANNEL_ID,
+                        components=components
+                    )
+                    
+                    # Award points to the clan
+                    current_points = clan_data.get("points", 0)
+                    new_points = current_points + REDDIT_POST_POINTS
+                    
+                    await mongo.clans.update_one(
+                        {"tag": tag},
+                        {"$set": {"points": new_points}}
+                    )
+                    
+                    # Send points notification
+                    points_components = await create_points_notification(clan_data)
+                    await bot_instance.rest.create_message(
+                        channel=POINTS_CHANNEL_ID,
+                        components=points_components
+                    )
+                    
+                    # Mark as notified
+                    await mongo.reddit_notifications.insert_one({
+                        "_id": notification_id,
+                        "post_id": post.id,
+                        "clan_tag": tag,
+                        "points_awarded": REDDIT_POST_POINTS,
+                        "notified_at": datetime.now(timezone.utc).isoformat(),
+                        "manually_processed": True,
+                        "processed_by": str(ctx.user.id)
+                    })
+                    
+                    processed_clans.append(f"{clan_data.get('name')} ({tag}) - +{REDDIT_POST_POINTS} points")
+                    
+                except Exception as e:
+                    await ctx.respond(f"❌ Error processing {tag}: {str(e)}")
+                    return
+            
+            # Build response
+            response = "## 📋 Manual Reddit Post Processing\n\n"
+            response += f"**Post:** {post.title}\n"
+            response += f"**Author:** u/{post.author.name if post.author else '[deleted]'}\n\n"
+            
+            if processed_clans:
+                response += "✅ **Successfully Processed:**\n"
+                for clan in processed_clans:
+                    response += f"• {clan}\n"
+            
+            if already_processed:
+                response += "\n⚠️ **Already Processed:**\n"
+                for clan in already_processed:
+                    response += f"• {clan}\n"
+            
+            if not processed_clans and not already_processed:
+                response += "❌ No clans found in our database from this post."
+            
+            await ctx.respond(response)
+            
+        except Exception as e:
+            await ctx.respond(f"❌ Error processing post: {str(e)}")

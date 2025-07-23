@@ -35,6 +35,55 @@ from utils.classes import Clan
 from utils.emoji import emojis
 from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLD_ACCENT
 
+# Helper function for safe placeholder_points adjustments
+async def safe_adjust_placeholder_points(mongo: MongoClient, clan_tag: str, amount: float, operation: str = "inc"):
+    """Safely adjust placeholder_points to prevent negative values
+    
+    Args:
+        mongo: MongoDB client
+        clan_tag: The clan tag to adjust
+        amount: The amount to adjust (positive for increase, negative for decrease)
+        operation: "inc" for increment, "set" for setting value
+    
+    Returns:
+        bool: True if successful, False if would result in negative
+    """
+    clan = await mongo.clans.find_one({"tag": clan_tag})
+    if not clan:
+        print(f"[ERROR] Clan {clan_tag} not found for placeholder_points adjustment")
+        return False
+    
+    current_placeholder = clan.get("placeholder_points", 0)
+    
+    if operation == "inc":
+        new_value = current_placeholder + amount
+    else:  # set
+        new_value = amount
+    
+    # Prevent negative values
+    if new_value < 0:
+        print(f"[WARNING] Preventing negative placeholder_points for {clan_tag}: current={current_placeholder}, adjustment={amount}, would be={new_value}")
+        # Set to 0 instead
+        await mongo.clans.update_one(
+            {"tag": clan_tag},
+            {"$set": {"placeholder_points": 0}}
+        )
+        return False
+    
+    # Safe to proceed
+    if operation == "inc":
+        await mongo.clans.update_one(
+            {"tag": clan_tag},
+            {"$inc": {"placeholder_points": amount}}
+        )
+    else:
+        await mongo.clans.update_one(
+            {"tag": clan_tag},
+            {"$set": {"placeholder_points": new_value}}
+        )
+    
+    return True
+
 # Constants
 BIDDING_DURATION = 25  # minutes
 LOG_CHANNEL_ID = 1381395856317747302  # Channel for bid logs
@@ -150,6 +199,66 @@ class Bidding(
             )
         ]
 
+        await ctx.respond(components=components, ephemeral=True)
+
+
+@recruit.register()
+class FixPlaceholderPoints(
+    lightbulb.SlashCommand,
+    name="fix-placeholder-points",
+    description="Fix negative placeholder points for all clans",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+            self,
+            ctx: lightbulb.Context,
+            mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+        
+        # Find all clans with negative placeholder_points
+        negative_clans = await mongo.clans.find({
+            "placeholder_points": {"$lt": 0}
+        }).to_list(length=None)
+        
+        if not negative_clans:
+            await ctx.respond("✅ No clans found with negative placeholder points!", ephemeral=True)
+            return
+        
+        # Fix each clan
+        fixed_clans = []
+        for clan in negative_clans:
+            fixed_clans.append({
+                "name": clan.get("name", "Unknown"),
+                "tag": clan.get("tag"),
+                "old_value": clan.get("placeholder_points", 0)
+            })
+            
+            # Reset to 0
+            await mongo.clans.update_one(
+                {"tag": clan["tag"]},
+                {"$set": {"placeholder_points": 0}}
+            )
+        
+        # Build response
+        response_text = "## 🔧 Fixed Negative Placeholder Points\n\n"
+        for clan_info in fixed_clans:
+            response_text += f"**{clan_info['name']}** ({clan_info['tag']}): {clan_info['old_value']} → 0\n"
+        
+        response_text += f"\n✅ Fixed {len(fixed_clans)} clan(s)"
+        
+        components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content=response_text),
+                    Media(items=[MediaItem(media="assets/Green_Footer.png")])
+                ]
+            )
+        ]
+        
         await ctx.respond(components=components, ephemeral=True)
 
 @register_action("select_recruit_bidding", no_return=True)
@@ -480,7 +589,7 @@ async def handle_place_bid(
     options = []
     for clan_data in clans[:25]:
         clan = Clan(data=clan_data)
-        available_points = clan.points #- clan.placeholder_points
+        available_points = clan.points - clan.placeholder_points
 
         option_kwargs = {
             "label": clan.name,
@@ -691,10 +800,7 @@ async def handle_bid_amount_modal(
     )
 
     # Update placeholder points
-    await mongo.clans.update_one(
-        {"tag": session["selected_clan"]},
-        {"$inc": {"placeholder_points": bid_amount}}
-    )
+    await safe_adjust_placeholder_points(mongo, session["selected_clan"], bid_amount)
 
     # Edit the select menu to show success
     await ctx.interaction.edit_initial_response(
@@ -996,6 +1102,19 @@ async def confirm_bid_removal(
     clan_tag = session.get("clan_to_remove")
     player_tag = main_session["playerTag"]
 
+    # First, get the bid amount before removing
+    bid_data = await mongo.clan_bidding.find_one(
+        {"player_tag": player_tag},
+        {"bids": {"$elemMatch": {"clan_tag": clan_tag}}}
+    )
+    
+    bid_amount = 10.0  # Default fallback
+    if bid_data and bid_data.get("bids"):
+        for bid in bid_data["bids"]:
+            if bid["clan_tag"] == clan_tag:
+                bid_amount = bid["amount"]
+                break
+
     # Remove the bid
     result = await mongo.clan_bidding.update_one(
         {"player_tag": player_tag},
@@ -1017,10 +1136,7 @@ async def confirm_bid_removal(
     # Restore placeholder points
     clan = await mongo.clans.find_one({"tag": clan_tag})
     if clan:
-        await mongo.clans.update_one(
-            {"tag": clan_tag},
-            {"$inc": {"placeholder_points": -10.0}}  # Restore 10 points
-        )
+        await safe_adjust_placeholder_points(mongo, clan_tag, -bid_amount)
 
     # Edit the message to show success
     await ctx.interaction.edit_initial_response(
@@ -1029,7 +1145,7 @@ async def confirm_bid_removal(
             components=[
                 Text(content="## ✅ Bid Removed Successfully!"),
                 Text(content=f"**Clan:** {clan['name'] if clan else 'Unknown'}"),
-                Text(content="**Amount:** 10.0 points"),
+                Text(content=f"**Amount:** {bid_amount} points"),
                 Separator(divider=True),
                 Text(content="Points have been restored to your clan."),
                 Media(items=[MediaItem(media="assets/Green_Footer.png")])
@@ -1047,7 +1163,7 @@ async def confirm_bid_removal(
                 Text(content=(
                     f"**Player:** {player_tag}\n"
                     f"**Clan:** {clan['name'] if clan else clan_tag}\n"
-                    f"**Amount:** 10.0 points\n"
+                    f"**Amount:** {bid_amount} points\n"
                     f"**Removed by:** <@{ctx.user.id}>\n"
                     f"**Thread:** <#{main_session['threadId']}>"
                 )),
@@ -1203,10 +1319,7 @@ async def handle_single_bid(
         return
 
     # Reduce placeholder points only (no actual deduction)
-    await mongo.clans.update_one(
-        {"tag": winner["clan_tag"]},
-        {"$inc": {"placeholder_points": -winner["amount"]}}
-    )
+    await safe_adjust_placeholder_points(mongo, winner["clan_tag"], -winner["amount"])
 
     # Mark as finalized
     await mongo.clan_bidding.update_one(
@@ -1288,23 +1401,22 @@ async def handle_multiple_bids(
     # Deduct points from winner
     winning_clan = await mongo.clans.find_one({"tag": winning_bid["clan_tag"]})
     if winning_clan:
+        # Deduct actual points
         await mongo.clans.update_one(
             {"tag": winning_bid["clan_tag"]},
             {
                 "$inc": {
-                    "points": -winning_bid["amount"],
-                    "placeholder_points": -winning_bid["amount"]
+                    "points": -winning_bid["amount"]
                 }
             }
         )
+        # Safely adjust placeholder points
+        await safe_adjust_placeholder_points(mongo, winning_bid["clan_tag"], -winning_bid["amount"])
 
     # Refund placeholder points for losers
     for bid in bids:
         if bid["clan_tag"] != winning_bid["clan_tag"]:
-            await mongo.clans.update_one(
-                {"tag": bid["clan_tag"]},
-                {"$inc": {"placeholder_points": -bid["amount"]}}
-            )
+            await safe_adjust_placeholder_points(mongo, bid["clan_tag"], -bid["amount"])
 
     # Build all bids display
     all_bids_text = []

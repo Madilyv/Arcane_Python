@@ -264,12 +264,20 @@ async def confirm_denial(
         **kwargs
 ):
     """Process denial with reason"""
+    # Defer the response immediately to prevent timeout
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_CREATE,
+        flags=hikari.MessageFlag.EPHEMERAL
+    )
+    
     denial_key = action_id
 
     # Retrieve stored denial info_hub
     denial_info = await mongo.button_store.find_one({"_id": denial_key})
     if not denial_info:
-        await ctx.respond("❌ Error: Session expired. Please try again.", ephemeral=True)
+        await ctx.interaction.edit_initial_response(
+            "❌ Error: Session expired. Please try again."
+        )
         return
 
     # Clean up stored data
@@ -307,7 +315,7 @@ async def confirm_denial(
     # Get clan data
     clan = await get_clan_by_tag(mongo, clan_tag)
     if not clan:
-        await ctx.respond("❌ Clan not found!", ephemeral=True)
+        await ctx.interaction.edit_initial_response("❌ Clan not found!")
         return
 
     # Format submission type
@@ -380,13 +388,7 @@ async def confirm_denial(
     except:
         pass  # User has DMs disabled
 
-    # First respond to the modal
-    await ctx.respond(
-        "✅ Denial processed successfully. The approval message has been removed.",
-        ephemeral=True
-    )
-
-    # Then delete the approval message using the stored info_hub
+    # Delete the approval message first
     try:
         await bot.rest.delete_message(
             channel=channel_id,
@@ -394,3 +396,8 @@ async def confirm_denial(
         )
     except Exception as e:
         print(f"Error deleting approval message: {e}")
+    
+    # Then update the deferred response
+    await ctx.interaction.edit_initial_response(
+        "✅ Denial processed successfully. The approval message has been removed."
+    )

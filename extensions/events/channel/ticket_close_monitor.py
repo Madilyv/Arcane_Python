@@ -151,7 +151,8 @@ async def update_recruit_history(recruit: Dict, clan_tag: str):
                     # IMPORTANT: Refresh the 12-day monitoring period
                     "expires_at": new_expires_at,
                     "is_expired": False,  # Reset expiration status
-                    "joined_clan_at": now  # Track when they actually joined
+                    "joined_clan_at": now,  # Track when they actually joined
+                    "monitoring_active": True  # Start active monitoring for this recruitment
                 },
                 "$push": {
                     "recruitment_history": {
@@ -229,15 +230,21 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
                 "is_finalized": False
             })
 
-            # For this scenario, we only handle no bids + joined our clan
-            if bid_data and bid_data.get("bids", []):
-                print(f"[DEBUG] Recruit {player_tag} has bids - skipping no-bid processing")
-                # TODO: Handle with-bids scenario
-                await process_with_bids_recruitment(recruit, bid_data, player_clan, db_clan, event.app)
-                continue
-
             # Check what clan the player joined
             player_clan = await check_player_clan_membership(player_tag)
+
+            # For this scenario, we only handle no bids + joined our clan
+            if bid_data and bid_data.get("bids", []):
+                print(f"[DEBUG] Recruit {player_tag} has bids - processing with-bids scenario")
+                
+                # Check if the clan is in our database (if they joined one)
+                db_clan = None
+                if player_clan:
+                    db_clan = await get_clan_from_db(player_clan["tag"])
+                
+                # Process with-bids scenario
+                await process_with_bids_recruitment(recruit, bid_data, player_clan, db_clan, event.app)
+                continue
 
             if not player_clan:
                 print(f"[DEBUG] Player {player_tag} has not joined any clan")
@@ -404,18 +411,93 @@ async def process_external_clan_join(recruit: Dict, player_clan: Dict, bid_data:
 
 
 async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_clan: Dict, db_clan: Dict, bot_app):
-    """Process recruitment when bids were placed - to be implemented"""
-    # TODO: Implement logic for when bids were placed
-    # This would include:
-    # 1. Check if the winner matches the clan they joined
-    # 2. Deduct points from winning clan
-    # 3. Send appropriate success/failure messages
-    # 4. IMPORTANT: Refresh 12-day monitor if they joined a tracked clan
-    # 5. Update recruitment history with bid details
-
-    # For now, just log it
-    print(f"[TODO] Process with-bids recruitment for {recruit['player_tag']}")
-    pass
+    """Process recruitment when bids were placed"""
+    now = datetime.now(timezone.utc)
+    new_expires_at = now + timedelta(days=12)
+    
+    # Get the winning bid info
+    winner_tag = bid_data.get("winner")
+    winning_amount = bid_data.get("amount", 0)
+    
+    # Check if player joined the winning clan
+    if player_clan and player_clan["tag"] == winner_tag:
+        # Success! They joined the winning clan
+        print(f"[INFO] {recruit['player_name']} joined winning clan {winner_tag}")
+        
+        # Update recruit record
+        await mongo_client.new_recruits.update_one(
+            {"_id": recruit["_id"]},
+            {
+                "$set": {
+                    "current_clan": player_clan["tag"],
+                    "ticket_closed_at": now,
+                    "expires_at": new_expires_at,
+                    "is_expired": False,
+                    "joined_clan_at": now,
+                    "monitoring_active": True  # Start monitoring
+                },
+                "$push": {
+                    "recruitment_history": {
+                        "clan_tag": player_clan["tag"],
+                        "recruited_at": now,
+                        "bid_amount": winning_amount,
+                        "recruited_by": f"Won Bid - {winning_amount} points",
+                        "left_at": None,
+                        "duration_days": None,
+                        "expires_at": new_expires_at
+                    }
+                },
+                "$inc": {
+                    "total_clans_joined": 1
+                }
+            }
+        )
+        
+        # Note: Points should already be deducted when auction ended
+        # Just need to clear placeholder_points (handled in auction end)
+        
+    else:
+        # They didn't join the winning clan
+        print(f"[WARN] {recruit['player_name']} did not join winning clan. Winner: {winner_tag}, Joined: {player_clan['tag'] if player_clan else 'None'}")
+        
+        # Refund points to the winning clan
+        if winner_tag:
+            winning_clan = await mongo_client.clans.find_one({"tag": winner_tag})
+            if winning_clan:
+                # Refund the points
+                await mongo_client.clans.update_one(
+                    {"tag": winner_tag},
+                    {"$inc": {"points": winning_amount}}
+                )
+                print(f"[INFO] Refunded {winning_amount} points to {winning_clan['name']}")
+        
+        # Update recruit record - they joined a different clan or no clan
+        if player_clan:
+            # They joined a different clan
+            await mongo_client.new_recruits.update_one(
+                {"_id": recruit["_id"]},
+                {
+                    "$set": {
+                        "current_clan": player_clan["tag"],
+                        "ticket_closed_at": now,
+                        "monitoring_active": False  # Don't monitor since they didn't join a bid clan
+                    }
+                }
+            )
+        else:
+            # They didn't join any clan
+            await mongo_client.new_recruits.update_one(
+                {"_id": recruit["_id"]},
+                {
+                    "$set": {
+                        "current_clan": None,
+                        "ticket_closed_at": now,
+                        "monitoring_active": False
+                    }
+                }
+            )
+    
+    # TODO: Send appropriate Discord notifications
 
 
 async def process_expired_recruitment(recruit: Dict):
