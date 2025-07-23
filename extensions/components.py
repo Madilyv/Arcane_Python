@@ -71,7 +71,11 @@ async def component_handler(
         ctx: lightbulb.components.MenuContext | lightbulb.components.ModalContext,
         mongo: MongoClient = lightbulb.di.INJECTED,
 ):
-    command_name, action_id = ctx.interaction.custom_id.split(":")
+    # Split custom_id and handle cases with multiple colons
+    parts = ctx.interaction.custom_id.split(":", 1)
+    command_name = parts[0]
+    action_id = parts[1] if len(parts) > 1 else ""
+    
     function, owner_only, no_return, is_modal, ephemeral, opens_modal, group = registered_functions.get(command_name)
 
     if group:

@@ -37,6 +37,11 @@ coc_client = None
 
 async def check_expired_recruits():
     """Check for recruits whose 12-day monitoring period has expired"""
+    # Check if coc_client is initialized
+    if not coc_client:
+        print("[ERROR] CoC client not initialized in check_expired_recruits")
+        return
+    
     now = datetime.now(timezone.utc)
 
     # Find all expired recruits who are still being tracked
@@ -66,16 +71,42 @@ async def check_expired_recruits():
 
 async def check_early_departures():
     """Check for recruits who left their clan before 12 days - NO automatic refunds"""
-    # Find all active recruits
+    # Check if coc_client is initialized
+    if not coc_client:
+        print("[ERROR] CoC client not initialized in check_early_departures")
+        return
+    
+    # Find all active recruits who are still being monitored
+    # We need to check if they have an active recruitment (no left_at) for their current clan
     active_recruits = await mongo_client.new_recruits.find({
         "is_expired": False,
         "current_clan": {"$ne": None},
-        "expires_at": {"$gt": datetime.now(timezone.utc)}
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+        "$or": [
+            {"monitoring_active": True},
+            {"monitoring_active": {"$exists": False}}  # Handle existing records without this field
+        ]
     }).to_list(length=None)
 
-    print(f"[Recruit Monitor] Checking {len(active_recruits)} active recruits for departures")
-
+    # Filter to only those who have matching recruitment history
+    recruits_to_monitor = []
     for recruit in active_recruits:
+        # Check if current_clan matches any recruitment history entry without left_at
+        has_active_recruitment = False
+        for hist in recruit.get("recruitment_history", []):
+            if hist["clan_tag"] == recruit["current_clan"] and not hist.get("left_at"):
+                has_active_recruitment = True
+                break
+        
+        if has_active_recruitment:
+            recruits_to_monitor.append(recruit)
+        else:
+            # Skip monitoring this recruit - they're in a clan they weren't recruited to
+            print(f"[INFO] Skipping {recruit['player_tag']} - no active recruitment for {recruit['current_clan']}")
+
+    print(f"[Recruit Monitor] Checking {len(recruits_to_monitor)} active recruits for departures (filtered from {len(active_recruits)})")
+
+    for recruit in recruits_to_monitor:
         try:
             # Check current clan status
             player = await coc_client.get_player(recruit["player_tag"])
@@ -99,7 +130,8 @@ async def process_successful_recruitment(recruit: Dict, player):
             "$set": {
                 "is_expired": True,
                 "completion_status": "successful",
-                "completed_at": datetime.now(timezone.utc)
+                "completed_at": datetime.now(timezone.utc),
+                "monitoring_active": False  # Stop monitoring since they completed their 12 days
             }
         }
     )
@@ -172,7 +204,13 @@ async def track_early_departure(recruit: Dict, player):
             break
 
     if not current_recruitment:
-        print(f"[ERROR] No recruitment history found for {recruit['player_tag']}")
+        # This shouldn't happen with our new filtering, but handle it gracefully
+        print(f"[WARN] No recruitment history found for {recruit['player_tag']} - setting monitoring_active to false")
+        # Stop monitoring this recruit
+        await mongo_client.new_recruits.update_one(
+            {"_id": recruit["_id"]},
+            {"$set": {"monitoring_active": False}}
+        )
         return
 
     # Just track the departure - NO automatic refund
@@ -189,7 +227,8 @@ async def track_early_departure(recruit: Dict, player):
                 "recruitment_history.$.duration_days": days_stayed,
                 "recruitment_history.$.refund_eligible": days_stayed < 12,  # Full refund if < 12 days
                 "recruitment_history.$.refund_processed": False,  # Not processed yet
-                "current_clan": player.clan.tag if player.clan else None  # They might have joined another clan
+                "current_clan": player.clan.tag if player.clan else None,  # They might have joined another clan
+                "monitoring_active": False  # Stop monitoring since they left their recruited clan
             }
         }
     )
@@ -219,6 +258,17 @@ async def process_expired_departure(recruit: Dict, player):
 async def monitor_loop():
     """Main monitoring loop"""
     print("[Recruit Monitor] Starting recruitment monitoring task...")
+    
+    # Wait for coc_client to be initialized
+    retry_count = 0
+    while not coc_client and retry_count < 10:
+        print(f"[Recruit Monitor] Waiting for CoC client initialization... (attempt {retry_count + 1}/10)")
+        await asyncio.sleep(5)
+        retry_count += 1
+    
+    if not coc_client:
+        print("[ERROR] CoC client failed to initialize after 50 seconds. Stopping recruit monitor.")
+        return
 
     while True:
         try:
@@ -254,6 +304,12 @@ async def on_bot_started(
     bot_instance = event.app
     mongo_client = mongo
     coc_client = coc_api
+    
+    # Fallback to bot_data if dependency injection didn't work
+    if not coc_client:
+        coc_client = bot_data.data.get("coc_client")
+        if coc_client:
+            print("[Recruit Monitor] Using CoC client from bot_data")
 
     # Start the background task
     monitor_task = asyncio.create_task(monitor_loop())
