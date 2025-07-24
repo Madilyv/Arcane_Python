@@ -486,38 +486,38 @@ if ENABLE_REDDIT_DEBUG_COMMANDS:
     ):
         @lightbulb.invoke
         async def invoke(self, ctx: lightbulb.Context) -> None:
-        await ctx.defer(ephemeral=True)
-        
-        global reddit_instance, reddit_instance_created_at
-        
-        response = "## 🔍 TH15 Reddit Connection Check\n\n"
-        
-        # Check current status
-        if reddit_instance:
-            response += "✅ **Reddit instance exists**\n"
-            if reddit_instance_created_at:
-                age = (datetime.now(timezone.utc) - reddit_instance_created_at).total_seconds()
-                response += f"📅 **Instance age:** {age:.0f} seconds ({age/60:.1f} minutes)\n"
-                response += f"🕐 **Created at:** <t:{int(reddit_instance_created_at.timestamp())}:f>\n\n"
-            else:
-                response += "⚠️ **Creation time unknown**\n\n"
-        else:
-            response += "❌ **No Reddit instance**\n\n"
-        
-        # Test connection
-        response += "**Testing connection...**\n"
-        
-        if await check_and_refresh_reddit_connection():
-            response += "✅ Connection test passed!\n"
+            await ctx.defer(ephemeral=True)
             
-            # Show updated status if refreshed
-            if reddit_instance and reddit_instance_created_at:
-                new_age = (datetime.now(timezone.utc) - reddit_instance_created_at).total_seconds()
-                if new_age < 60:  # Recently refreshed
-                    response += "♻️ Connection was refreshed!\n"
-        else:
-            response += "❌ Connection test failed!\n"
-        
+            global reddit_instance, reddit_instance_created_at
+            
+            response = "## 🔍 TH15 Reddit Connection Check\n\n"
+            
+            # Check current status
+            if reddit_instance:
+                response += "✅ **Reddit instance exists**\n"
+                if reddit_instance_created_at:
+                    age = (datetime.now(timezone.utc) - reddit_instance_created_at).total_seconds()
+                    response += f"📅 **Instance age:** {age:.0f} seconds ({age/60:.1f} minutes)\n"
+                    response += f"🕐 **Created at:** <t:{int(reddit_instance_created_at.timestamp())}:f>\n\n"
+                else:
+                    response += "⚠️ **Creation time unknown**\n\n"
+            else:
+                response += "❌ **No Reddit instance**\n\n"
+            
+            # Test connection
+            response += "**Testing connection...**\n"
+            
+            if await check_and_refresh_reddit_connection():
+                response += "✅ Connection test passed!\n"
+                
+                # Show updated status if refreshed
+                if reddit_instance and reddit_instance_created_at:
+                    new_age = (datetime.now(timezone.utc) - reddit_instance_created_at).total_seconds()
+                    if new_age < 60:  # Recently refreshed
+                        response += "♻️ Connection was refreshed!\n"
+            else:
+                response += "❌ Connection test failed!\n"
+            
             await ctx.respond(response)
 
 
@@ -531,35 +531,35 @@ if ENABLE_REDDIT_DEBUG_COMMANDS:
         @lightbulb.invoke
         @lightbulb.di.with_di
         async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await ctx.defer(ephemeral=True)
+            await ctx.defer(ephemeral=True)
 
-        status_lines = []
+            status_lines = []
 
-        # Check if monitor is running
-        if reddit_monitor_task and not reddit_monitor_task.done():
-            status_lines.append("✅ Monitor is running")
-        else:
-            status_lines.append("❌ Monitor is not running")
+            # Check if monitor is running
+            if reddit_monitor_task and not reddit_monitor_task.done():
+                status_lines.append("✅ Monitor is running")
+            else:
+                status_lines.append("❌ Monitor is not running")
 
-        # Check Reddit connection
-        if reddit_instance:
-            status_lines.append("✅ Reddit connection established")
-        else:
-            status_lines.append("❌ Reddit connection not established")
+            # Check Reddit connection
+            if reddit_instance:
+                status_lines.append("✅ Reddit connection established")
+            else:
+                status_lines.append("❌ Reddit connection not established")
 
-        # Check last check time
-        last_check_doc = await mongo.reddit_monitor.find_one({"_id": "th15_last_check"})
-        if last_check_doc:
-            last_check_time = datetime.fromtimestamp(last_check_doc.get("timestamp", 0))
-            status_lines.append(f"📅 Last check: <t:{int(last_check_doc.get('timestamp', 0))}:R>")
-        else:
-            status_lines.append("📅 Last check: Never")
+            # Check last check time
+            last_check_doc = await mongo.reddit_monitor.find_one({"_id": "th15_last_check"})
+            if last_check_doc:
+                last_check_time = datetime.fromtimestamp(last_check_doc.get("timestamp", 0))
+                status_lines.append(f"📅 Last check: <t:{int(last_check_doc.get('timestamp', 0))}:R>")
+            else:
+                status_lines.append("📅 Last check: Never")
 
-        # Get recent notifications count
-        recent_notifications = await mongo.reddit_notifications.count_documents({
-            "_id": {"$regex": "^th15_"}
-        })
-        status_lines.append(f"📊 Total notifications sent: {recent_notifications}")
+            # Get recent notifications count
+            recent_notifications = await mongo.reddit_notifications.count_documents({
+                "_id": {"$regex": "^th15_"}
+            })
+            status_lines.append(f"📊 Total notifications sent: {recent_notifications}")
 
             await ctx.respond("\n".join(status_lines), ephemeral=True)
 
@@ -578,17 +578,17 @@ if ENABLE_REDDIT_DEBUG_COMMANDS:
 
         @lightbulb.invoke
         async def invoke(self, ctx: lightbulb.Context) -> None:
-        test_title = self.title
+            test_title = self.title
 
-        # Test the conditions
-        is_searching = is_searching_post(test_title)
-        has_th15 = contains_th15(test_title)
-        would_match = is_searching and has_th15
+            # Test the conditions
+            is_searching = is_searching_post(test_title)
+            has_th15 = contains_th15(test_title)
+            would_match = is_searching and has_th15
 
-        response = f"**Testing:** `{test_title}`\n\n"
-        response += f"Starts with [Searching]: {'✅ Yes' if is_searching else '❌ No'}\n"
-        response += f"Contains TH15: {'✅ Yes' if has_th15 else '❌ No'}\n"
-        response += f"**Would be detected:** {'✅ YES' if would_match else '❌ NO'}"
+            response = f"**Testing:** `{test_title}`\n\n"
+            response += f"Starts with [Searching]: {'✅ Yes' if is_searching else '❌ No'}\n"
+            response += f"Contains TH15: {'✅ Yes' if has_th15 else '❌ No'}\n"
+            response += f"**Would be detected:** {'✅ YES' if would_match else '❌ NO'}"
 
             await ctx.respond(response, ephemeral=True)
 
@@ -603,20 +603,20 @@ if ENABLE_REDDIT_DEBUG_COMMANDS:
         @lightbulb.invoke
         @lightbulb.di.with_di
         async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await ctx.defer(ephemeral=True)
+            await ctx.defer(ephemeral=True)
 
-        # Delete the timestamp record
-        result = await mongo.reddit_monitor.delete_one({"_id": "th15_last_check"})
+            # Delete the timestamp record
+            result = await mongo.reddit_monitor.delete_one({"_id": "th15_last_check"})
 
-        if result.deleted_count > 0:
-            await ctx.respond(
-                "✅ TH15 search timestamp reset!\n"
-                "The next check will process ALL posts in the subreddit.\n"
-                "Use `/th15-search-test` to trigger an immediate check."
-            )
-        else:
-            await ctx.respond(
-                "ℹ️ No timestamp to reset. The monitor will check all posts on next run."
+            if result.deleted_count > 0:
+                await ctx.respond(
+                    "✅ TH15 search timestamp reset!\n"
+                    "The next check will process ALL posts in the subreddit.\n"
+                    "Use `/th15-search-test` to trigger an immediate check."
+                )
+            else:
+                await ctx.respond(
+                    "ℹ️ No timestamp to reset. The monitor will check all posts on next run."
                 )
 
 
@@ -629,63 +629,63 @@ if ENABLE_REDDIT_DEBUG_COMMANDS:
     ):
         @lightbulb.invoke
         async def invoke(self, ctx: lightbulb.Context) -> None:
-        await ctx.defer(ephemeral=True)
+            await ctx.defer(ephemeral=True)
 
-        global reddit_instance, mongo_client, bot_instance
+            global reddit_instance, mongo_client, bot_instance
 
-        if not reddit_instance or not mongo_client or not bot_instance:
-            await ctx.respond("❌ Missing required instances!")
-            return
+            if not reddit_instance or not mongo_client or not bot_instance:
+                await ctx.respond("❌ Missing required instances!")
+                return
 
-        try:
-            # Get subreddit
-            subreddit = await reddit_instance.subreddit(MONITORED_SUBREDDIT)
-            new_posts = [post async for post in subreddit.new(limit=25)]
+            try:
+                # Get subreddit
+                subreddit = await reddit_instance.subreddit(MONITORED_SUBREDDIT)
+                new_posts = [post async for post in subreddit.new(limit=25)]
 
-            found_count = 0
-            notified_count = 0
+                found_count = 0
+                notified_count = 0
 
-            # Process ALL posts without timestamp check
-            for post in new_posts:
-                # Check if it's a searching post and contains TH15
-                if is_searching_post(post.title) and contains_th15(post.title):
-                    found_count += 1
+                # Process ALL posts without timestamp check
+                for post in new_posts:
+                    # Check if it's a searching post and contains TH15
+                    if is_searching_post(post.title) and contains_th15(post.title):
+                        found_count += 1
 
-                    # Check if we've already notified about this post
-                    notification_id = f"th15_{post.id}"
-                    existing_notification = await mongo_client.reddit_notifications.find_one({
-                        "_id": notification_id
-                    })
+                        # Check if we've already notified about this post
+                        notification_id = f"th15_{post.id}"
+                        existing_notification = await mongo_client.reddit_notifications.find_one({
+                            "_id": notification_id
+                        })
 
-                    if not existing_notification:
-                        # Create and send notification
-                        components = await create_th15_search_notification(post)
+                        if not existing_notification:
+                            # Create and send notification
+                            components = await create_th15_search_notification(post)
 
-                        try:
-                            await bot_instance.rest.create_message(
-                                channel=DISCORD_CHANNEL_ID,
-                                components=components,
-                                role_mentions=True
-                            )
+                            try:
+                                await bot_instance.rest.create_message(
+                                    channel=DISCORD_CHANNEL_ID,
+                                    components=components,
+                                    role_mentions=True
+                                )
 
-                            # Mark as notified
-                            await mongo_client.reddit_notifications.insert_one({
-                                "_id": notification_id,
-                                "post_id": post.id,
-                                "post_title": post.title,
-                                "author": post.author.name if post.author else "deleted",
-                                "notified_at": datetime.now(timezone.utc).isoformat()
-                            })
+                                # Mark as notified
+                                await mongo_client.reddit_notifications.insert_one({
+                                    "_id": notification_id,
+                                    "post_id": post.id,
+                                    "post_title": post.title,
+                                    "author": post.author.name if post.author else "deleted",
+                                    "notified_at": datetime.now(timezone.utc).isoformat()
+                                })
 
-                            notified_count += 1
-                        except Exception as e:
-                            debug_print(f"Error sending notification: {e}")
+                                notified_count += 1
+                            except Exception as e:
+                                debug_print(f"Error sending notification: {e}")
 
-            await ctx.respond(
-                f"✅ Force check completed!\n"
-                f"Found {found_count} TH15 searching posts\n"
-                f"Sent {notified_count} new notifications"
-            )
+                await ctx.respond(
+                    f"✅ Force check completed!\n"
+                    f"Found {found_count} TH15 searching posts\n"
+                    f"Sent {notified_count} new notifications"
+                )
 
             except Exception as e:
                 await ctx.respond(f"❌ Error: {str(e)}")
