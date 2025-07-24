@@ -481,35 +481,39 @@ class ToggleDebug(
         debug_print(f"[DEBUG] Debug mode toggled to: {status} by {ctx.user.username}")
 
 
-@loader.command
-class TestWarSync(
-    lightbulb.SlashCommand,
-    name="test-war-sync",
-    description="Test the war sync notification with custom emojis",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        await ctx.respond("🚀 Sending test war sync notification...", ephemeral=True)
-        
-        # Create a dummy post for testing
-        test_post = {
-            'author': {
-                'name': 'Test FWA Rep'
-            },
-            'content': 'TEST WAR SYNC - This is a test notification to verify custom emojis are working correctly.',
-            'post_key': 'test_' + str(datetime.now().timestamp())
-        }
-        
-        try:
-            # Call the send function directly
-            await send_war_sync_to_discord(test_post)
-            await ctx.edit_last_response(
-                f"✅ **Test war sync sent!**\n"
-                f"Check <#{NOTIFICATION_CHANNEL_ID}> to see the notification and test the buttons."
-            )
-        except Exception as e:
-            await ctx.edit_last_response(
-                f"❌ **Failed to send test notification!**\n"
-                f"Error: {str(e)}"
-            )
+# Check if test commands are enabled
+ENABLE_TEST_COMMANDS = os.getenv("ENABLE_TEST_COMMANDS", "false").lower() == "true"
+
+if ENABLE_TEST_COMMANDS:
+    @loader.command
+    class TestWarSync(
+        lightbulb.SlashCommand,
+        name="test-war-sync",
+        description="Test the war sync notification with custom emojis",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            await ctx.respond("🚀 Sending test war sync notification...", ephemeral=True)
+            
+            # Create a dummy post for testing
+            test_post = {
+                'author': {
+                    'name': 'Test FWA Rep'
+                },
+                'content': 'TEST WAR SYNC - This is a test notification to verify custom emojis are working correctly.',
+                'post_key': 'test_' + str(datetime.now().timestamp())
+            }
+            
+            try:
+                # Call the send function directly
+                await send_war_sync_to_discord(test_post)
+                await ctx.edit_last_response(
+                    f"✅ **Test war sync sent!**\n"
+                    f"Check <#{NOTIFICATION_CHANNEL_ID}> to see the notification and test the buttons."
+                )
+            except Exception as e:
+                await ctx.edit_last_response(
+                    f"❌ **Failed to send test notification!**\n"
+                    f"Error: {str(e)}"
+                )

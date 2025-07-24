@@ -473,51 +473,55 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
         await reddit_instance.close()
 
 
-@loader.command
-class ClanPostDebug(
-    lightbulb.SlashCommand,
-    name="clan-post-debug",
-    description="Toggle Clan Post Monitor debug mode",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        global DEBUG_MODE
-        DEBUG_MODE = not DEBUG_MODE
-        status = "ON" if DEBUG_MODE else "OFF"
-        await ctx.respond(f"🔧 Clan Post Monitor debug mode: **{status}**", ephemeral=True)
+# Check if Reddit debug commands are enabled
+ENABLE_REDDIT_DEBUG_COMMANDS = os.getenv("ENABLE_REDDIT_DEBUG_COMMANDS", "false").lower() == "true"
+
+if ENABLE_REDDIT_DEBUG_COMMANDS:
+    @loader.command
+    class ClanPostDebug(
+        lightbulb.SlashCommand,
+        name="clan-post-debug",
+        description="Toggle Clan Post Monitor debug mode",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            global DEBUG_MODE
+            DEBUG_MODE = not DEBUG_MODE
+            status = "ON" if DEBUG_MODE else "OFF"
+            await ctx.respond(f"🔧 Clan Post Monitor debug mode: **{status}**", ephemeral=True)
 
 
-@loader.command
-class ClanPostTest(
-    lightbulb.SlashCommand,
-    name="clan-post-test",
-    description="Manually trigger clan post check",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        await ctx.defer(ephemeral=True)
+    @loader.command
+    class ClanPostTest(
+        lightbulb.SlashCommand,
+        name="clan-post-test",
+        description="Manually trigger clan post check",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            await ctx.defer(ephemeral=True)
 
-        try:
-            await check_reddit_posts()
-            await ctx.respond("✅ Clan post check completed!")
-        except Exception as e:
-            await ctx.respond(f"❌ Clan post check failed: {str(e)}")
+            try:
+                await check_reddit_posts()
+                await ctx.respond("✅ Clan post check completed!")
+            except Exception as e:
+                await ctx.respond(f"❌ Clan post check failed: {str(e)}")
 
 
-@loader.command
-class ClanPostCheckUrl(
-    lightbulb.SlashCommand,
-    name="clan-post-check-url",
-    description="Check a specific Reddit post URL for clan recruitment",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    url = lightbulb.string("url", "The Reddit post URL to check")
+    @loader.command
+    class ClanPostCheckUrl(
+        lightbulb.SlashCommand,
+        name="clan-post-check-url",
+        description="Check a specific Reddit post URL for clan recruitment",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        url = lightbulb.string("url", "The Reddit post URL to check")
 
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        @lightbulb.invoke
+        @lightbulb.di.with_di
+        async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
 
         try:
@@ -581,22 +585,22 @@ class ClanPostCheckUrl(
             
             await ctx.respond(response)
             
-        except Exception as e:
-            await ctx.respond(f"❌ Error checking post: {str(e)}")
+            except Exception as e:
+                await ctx.respond(f"❌ Error checking post: {str(e)}")
 
 
-@loader.command
-class ClanPostTimestamp(
-    lightbulb.SlashCommand,
-    name="clan-post-timestamp",
-    description="Check or reset the Reddit monitor timestamp",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    reset = lightbulb.boolean("reset", "Reset the timestamp to check all recent posts", default=False)
+    @loader.command
+    class ClanPostTimestamp(
+        lightbulb.SlashCommand,
+        name="clan-post-timestamp",
+        description="Check or reset the Reddit monitor timestamp",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        reset = lightbulb.boolean("reset", "Reset the timestamp to check all recent posts", default=False)
 
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        @lightbulb.invoke
+        @lightbulb.di.with_di
+        async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
 
         try:
@@ -622,19 +626,19 @@ class ClanPostTimestamp(
                         await ctx.respond("❌ No timestamp found in database")
                 else:
                     await ctx.respond("❌ No last check record found")
-        except Exception as e:
-            await ctx.respond(f"❌ Error: {str(e)}")
+            except Exception as e:
+                await ctx.respond(f"❌ Error: {str(e)}")
 
 
-@loader.command
-class ClanPostCheckConnection(
-    lightbulb.SlashCommand,
-    name="clan-post-check-connection",
-    description="Check Reddit connection health and refresh if needed",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
+    @loader.command
+    class ClanPostCheckConnection(
+        lightbulb.SlashCommand,
+        name="clan-post-check-connection",
+        description="Check Reddit connection health and refresh if needed",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
         await ctx.defer(ephemeral=True)
         
         global reddit_instance, reddit_instance_created_at
@@ -667,21 +671,21 @@ class ClanPostCheckConnection(
         else:
             response += "❌ Connection test failed!\n"
         
-        await ctx.respond(response)
+            await ctx.respond(response)
 
 
-@loader.command
-class ClanPostProcessUrl(
-    lightbulb.SlashCommand,
-    name="clan-post-process-url",
-    description="Manually process a Reddit post URL and award points",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    url = lightbulb.string("url", "The Reddit post URL to process")
+    @loader.command
+    class ClanPostProcessUrl(
+        lightbulb.SlashCommand,
+        name="clan-post-process-url",
+        description="Manually process a Reddit post URL and award points",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        url = lightbulb.string("url", "The Reddit post URL to process")
 
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        @lightbulb.invoke
+        @lightbulb.di.with_di
+        async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
 
         try:
@@ -802,5 +806,5 @@ class ClanPostProcessUrl(
             
             await ctx.respond(response)
             
-        except Exception as e:
-            await ctx.respond(f"❌ Error processing post: {str(e)}")
+            except Exception as e:
+                await ctx.respond(f"❌ Error processing post: {str(e)}")

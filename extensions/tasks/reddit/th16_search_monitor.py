@@ -438,51 +438,55 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
         await reddit_instance.close()
 
 
-@loader.command
-class TH16SearchDebug(
-    lightbulb.SlashCommand,
-    name="th16-search-debug",
-    description="Toggle TH16 Search Monitor debug mode",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        global DEBUG_MODE
-        DEBUG_MODE = not DEBUG_MODE
-        status = "ON" if DEBUG_MODE else "OFF"
-        # Also update the environment variable
-        os.environ["TH16_SEARCH_DEBUG"] = "true" if DEBUG_MODE else "false"
-        await ctx.respond(f"🔧 TH16 Search Monitor debug mode: **{status}**", ephemeral=True)
+# Check if Reddit debug commands are enabled
+ENABLE_REDDIT_DEBUG_COMMANDS = os.getenv("ENABLE_REDDIT_DEBUG_COMMANDS", "false").lower() == "true"
+
+if ENABLE_REDDIT_DEBUG_COMMANDS:
+    @loader.command
+    class TH16SearchDebug(
+        lightbulb.SlashCommand,
+        name="th16-search-debug",
+        description="Toggle TH16 Search Monitor debug mode",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            global DEBUG_MODE
+            DEBUG_MODE = not DEBUG_MODE
+            status = "ON" if DEBUG_MODE else "OFF"
+            # Also update the environment variable
+            os.environ["TH16_SEARCH_DEBUG"] = "true" if DEBUG_MODE else "false"
+            await ctx.respond(f"🔧 TH16 Search Monitor debug mode: **{status}**", ephemeral=True)
 
 
-@loader.command
-class TH16SearchTest(
-    lightbulb.SlashCommand,
-    name="th16-search-test",
-    description="Manually trigger TH16 search check",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        await ctx.defer(ephemeral=True)
+    @loader.command
+    class TH16SearchTest(
+        lightbulb.SlashCommand,
+        name="th16-search-test",
+        description="Manually trigger TH16 search check",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            await ctx.defer(ephemeral=True)
 
-        try:
-            await check_th16_posts()
-            await ctx.respond("✅ TH16 search check completed!")
-        except Exception as e:
-            await ctx.respond(f"❌ TH16 search check failed: {str(e)}")
+            try:
+                await check_th16_posts()
+                await ctx.respond("✅ TH16 search check completed!")
+            except Exception as e:
+                await ctx.respond(f"❌ TH16 search check failed: {str(e)}")
 
 
-@loader.command
-class TH16SearchStatus(
-    lightbulb.SlashCommand,
-    name="th16-search-status",
-    description="Check TH16 Search Monitor status",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+    @loader.command
+    class TH16SearchStatus(
+        lightbulb.SlashCommand,
+        name="th16-search-status",
+        description="Check TH16 Search Monitor status",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        @lightbulb.di.with_di
+        async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
 
         status_lines = []
@@ -513,23 +517,23 @@ class TH16SearchStatus(
         })
         status_lines.append(f"📊 Total notifications sent: {recent_notifications}")
 
-        await ctx.respond("\n".join(status_lines), ephemeral=True)
+            await ctx.respond("\n".join(status_lines), ephemeral=True)
 
 
-@loader.command
-class TH16SearchTestTitle(
-    lightbulb.SlashCommand,
-    name="th16-search-test-title",
-    description="Test if a title would match TH16 search criteria",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    title = lightbulb.string(
-        "title",
-        "The post title to test"
-    )
+    @loader.command
+    class TH16SearchTestTitle(
+        lightbulb.SlashCommand,
+        name="th16-search-test-title",
+        description="Test if a title would match TH16 search criteria",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        title = lightbulb.string(
+            "title",
+            "The post title to test"
+        )
 
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
         test_title = self.title
 
         # Test the conditions
@@ -542,19 +546,19 @@ class TH16SearchTestTitle(
         response += f"Contains TH16: {'✅ Yes' if has_th16 else '❌ No'}\n"
         response += f"**Would be detected:** {'✅ YES' if would_match else '❌ NO'}"
 
-        await ctx.respond(response, ephemeral=True)
+            await ctx.respond(response, ephemeral=True)
 
 
-@loader.command
-class TH16SearchReset(
-    lightbulb.SlashCommand,
-    name="th16-search-reset",
-    description="Reset TH16 search timestamp to check all posts",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+    @loader.command
+    class TH16SearchReset(
+        lightbulb.SlashCommand,
+        name="th16-search-reset",
+        description="Reset TH16 search timestamp to check all posts",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        @lightbulb.di.with_di
+        async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
 
         # Delete the timestamp record
@@ -569,18 +573,18 @@ class TH16SearchReset(
         else:
             await ctx.respond(
                 "ℹ️ No timestamp to reset. The monitor will check all posts on next run."
-            )
+                )
 
 
-@loader.command
-class TH16SearchForceCheck(
-    lightbulb.SlashCommand,
-    name="th16-search-force-check",
-    description="Force check ALL posts regardless of timestamp (one-time bypass)",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
+    @loader.command
+    class TH16SearchForceCheck(
+        lightbulb.SlashCommand,
+        name="th16-search-force-check",
+        description="Force check ALL posts regardless of timestamp (one-time bypass)",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
         await ctx.defer(ephemeral=True)
 
         global reddit_instance, mongo_client, bot_instance
@@ -639,5 +643,5 @@ class TH16SearchForceCheck(
                 f"Sent {notified_count} new notifications"
             )
 
-        except Exception as e:
-            await ctx.respond(f"❌ Error: {str(e)}")
+            except Exception as e:
+                await ctx.respond(f"❌ Error: {str(e)}")

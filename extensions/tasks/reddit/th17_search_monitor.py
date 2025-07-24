@@ -438,51 +438,55 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
         await reddit_instance.close()
 
 
-@loader.command
-class TH17SearchDebug(
-    lightbulb.SlashCommand,
-    name="th17-search-debug",
-    description="Toggle TH17 Search Monitor debug mode",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        global DEBUG_MODE
-        DEBUG_MODE = not DEBUG_MODE
-        status = "ON" if DEBUG_MODE else "OFF"
-        # Also update the environment variable
-        os.environ["TH17_SEARCH_DEBUG"] = "true" if DEBUG_MODE else "false"
-        await ctx.respond(f"🔧 TH17 Search Monitor debug mode: **{status}**", ephemeral=True)
+# Check if Reddit debug commands are enabled
+ENABLE_REDDIT_DEBUG_COMMANDS = os.getenv("ENABLE_REDDIT_DEBUG_COMMANDS", "false").lower() == "true"
+
+if ENABLE_REDDIT_DEBUG_COMMANDS:
+    @loader.command
+    class TH17SearchDebug(
+        lightbulb.SlashCommand,
+        name="th17-search-debug",
+        description="Toggle TH17 Search Monitor debug mode",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            global DEBUG_MODE
+            DEBUG_MODE = not DEBUG_MODE
+            status = "ON" if DEBUG_MODE else "OFF"
+            # Also update the environment variable
+            os.environ["TH17_SEARCH_DEBUG"] = "true" if DEBUG_MODE else "false"
+            await ctx.respond(f"🔧 TH17 Search Monitor debug mode: **{status}**", ephemeral=True)
 
 
-@loader.command
-class TH17SearchTest(
-    lightbulb.SlashCommand,
-    name="th17-search-test",
-    description="Manually trigger TH17 search check",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        await ctx.defer(ephemeral=True)
+    @loader.command
+    class TH17SearchTest(
+        lightbulb.SlashCommand,
+        name="th17-search-test",
+        description="Manually trigger TH17 search check",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            await ctx.defer(ephemeral=True)
 
-        try:
-            await check_th17_posts()
-            await ctx.respond("✅ TH17 search check completed!")
-        except Exception as e:
-            await ctx.respond(f"❌ TH17 search check failed: {str(e)}")
+            try:
+                await check_th17_posts()
+                await ctx.respond("✅ TH17 search check completed!")
+            except Exception as e:
+                await ctx.respond(f"❌ TH17 search check failed: {str(e)}")
 
 
-@loader.command
-class TH17SearchStatus(
-    lightbulb.SlashCommand,
-    name="th17-search-status",
-    description="Check TH17 Search Monitor status",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+    @loader.command
+    class TH17SearchStatus(
+        lightbulb.SlashCommand,
+        name="th17-search-status",
+        description="Check TH17 Search Monitor status",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        @lightbulb.di.with_di
+        async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
 
         status_lines = []
@@ -513,23 +517,23 @@ class TH17SearchStatus(
         })
         status_lines.append(f"📊 Total notifications sent: {recent_notifications}")
 
-        await ctx.respond("\n".join(status_lines), ephemeral=True)
+            await ctx.respond("\n".join(status_lines), ephemeral=True)
 
 
-@loader.command
-class TH17SearchTestTitle(
-    lightbulb.SlashCommand,
-    name="th17-search-test-title",
-    description="Test if a title would match TH17 search criteria",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    title = lightbulb.string(
-        "title",
-        "The post title to test"
-    )
+    @loader.command
+    class TH17SearchTestTitle(
+        lightbulb.SlashCommand,
+        name="th17-search-test-title",
+        description="Test if a title would match TH17 search criteria",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        title = lightbulb.string(
+            "title",
+            "The post title to test"
+        )
 
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
         test_title = self.title
 
         # Test the conditions
@@ -542,18 +546,18 @@ class TH17SearchTestTitle(
         response += f"Contains TH17: {'✅ Yes' if has_th17 else '❌ No'}\n"
         response += f"**Would be detected:** {'✅ YES' if would_match else '❌ NO'}"
 
-        await ctx.respond(response, ephemeral=True)
+            await ctx.respond(response, ephemeral=True)
 
 
-@loader.command
-class TH17SearchForceCheck(
-    lightbulb.SlashCommand,
-    name="th17-search-force-check",
-    description="Force check ALL posts regardless of timestamp (one-time bypass)",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
-):
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
+    @loader.command
+    class TH17SearchForceCheck(
+        lightbulb.SlashCommand,
+        name="th17-search-force-check",
+        description="Force check ALL posts regardless of timestamp (one-time bypass)",
+        default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
         await ctx.defer(ephemeral=True)
 
         global reddit_instance, mongo_client, bot_instance
@@ -612,5 +616,5 @@ class TH17SearchForceCheck(
                 f"Sent {notified_count} new notifications"
             )
 
-        except Exception as e:
-            await ctx.respond(f"❌ Error: {str(e)}")
+            except Exception as e:
+                await ctx.respond(f"❌ Error: {str(e)}")
