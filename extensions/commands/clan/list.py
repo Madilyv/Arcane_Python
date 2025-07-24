@@ -161,7 +161,7 @@ async def on_clan_chosen(
                     components=[Text(content="\n".join(lines))],
                     accessory=Thumbnail(media=api_clan.badge.large if api_clan else db_clan.logo),
                 ),
-                Media(items=[MediaItem(media=db_clan.banner)]),
+                Media(items=[MediaItem(media=db_clan.banner if db_clan.banner and db_clan.banner != '.' else "assets/Red_Footer.png")]),
                 ActionRow(
                     components=[
                         LinkButton(

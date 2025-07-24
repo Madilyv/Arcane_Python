@@ -358,25 +358,25 @@ async def initialize_reddit():
         client_secret = os.getenv("REDDIT_CLIENT_SECRET")
         user_agent = os.getenv("REDDIT_USER_AGENT", "KingsAllianceBot/1.0")
 
-        print(
-            f"[TH17 REDDIT DEBUG] Client ID: {client_id[:10]}..." if client_id else "[TH17 REDDIT DEBUG] Client ID is None!")
-        print(f"[TH17 REDDIT DEBUG] Secret exists: {bool(client_secret)}")
-        print(f"[TH17 REDDIT DEBUG] User Agent: {user_agent}")
+        # print(
+        #     f"[TH17 REDDIT DEBUG] Client ID: {client_id[:10]}..." if client_id else "[TH17 REDDIT DEBUG] Client ID is None!")
+        # print(f"[TH17 REDDIT DEBUG] Secret exists: {bool(client_secret)}")
+        # print(f"[TH17 REDDIT DEBUG] User Agent: {user_agent}")
 
         # Try to create Reddit instance
-        print("[TH17 REDDIT DEBUG] Creating Reddit instance...")
+        # print("[TH17 REDDIT DEBUG] Creating Reddit instance...")
         reddit = asyncpraw.Reddit(
             client_id=client_id,
             client_secret=client_secret,
             user_agent=user_agent
         )
-        print("[TH17 REDDIT DEBUG] Reddit instance created")
+        # print("[TH17 REDDIT DEBUG] Reddit instance created")
 
         # Test the connection
-        print(f"[TH17 REDDIT DEBUG] Testing connection to r/{MONITORED_SUBREDDIT}...")
+        # print(f"[TH17 REDDIT DEBUG] Testing connection to r/{MONITORED_SUBREDDIT}...")
         test_subreddit = await reddit.subreddit(MONITORED_SUBREDDIT)
         subreddit_name = test_subreddit.display_name
-        print(f"[TH17 REDDIT DEBUG] Successfully connected! Subreddit: {subreddit_name}")
+        # print(f"[TH17 REDDIT DEBUG] Successfully connected! Subreddit: {subreddit_name}")
 
         # Set creation timestamp
         reddit_instance_created_at = datetime.now(timezone.utc)

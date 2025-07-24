@@ -86,6 +86,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.expire_new_recruits",
         "extensions.tasks.recruit_monitor",
         "extensions.tasks.clan_info_updater",
+        "extensions.tasks.bidding_recovery",
         "extensions.commands.moderation",
         "extensions.commands.fwa.upload_images",
         "extensions.commands.fwa.war_plans",
