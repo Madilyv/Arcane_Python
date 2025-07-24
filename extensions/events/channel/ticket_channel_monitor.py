@@ -153,49 +153,76 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
     except Exception as e:
         print(f"[DEBUG] Error fetching threads: {e}")
 
-    # Make API call to get ticket information
+    # Make API call to get ticket information with retry logic
     api_data = None
     player_data = None
     stored_in_db = False
+    
+    max_api_retries = 3
+    api_retry_count = 0
+    
+    while api_retry_count < max_api_retries:
+        try:
+            async with aiohttp.ClientSession() as session:
+                api_url = f"https://api.clashk.ing/ticketing/open/json/{channel_id}"
+                print(f"[DEBUG] Making API call to: {api_url} (attempt {api_retry_count + 1}/{max_api_retries})")
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            api_url = f"https://api.clashk.ing/ticketing/open/json/{channel_id}"
-            print(f"[DEBUG] Making API call to: {api_url}")
+                async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        api_data = await response.json()
+                        print(f"[DEBUG] API response: {api_data}")
+                        break  # Success, exit retry loop
+                    elif 400 <= response.status < 500:
+                        # Client error (4xx) - don't retry
+                        print(f"[ERROR] API returned client error status {response.status}")
+                        break
+                    else:
+                        # Server error (5xx) or other - retry
+                        print(f"[ERROR] API returned status {response.status}")
+                        api_retry_count += 1
+                        if api_retry_count < max_api_retries:
+                            wait_time = 2 ** (api_retry_count - 1)  # Exponential backoff: 1s, 2s, 4s
+                            print(f"[INFO] Retrying API call in {wait_time} seconds...")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            print(f"[ERROR] Max API retries reached")
+                            
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            api_retry_count += 1
+            print(f"[ERROR] Failed to call API (attempt {api_retry_count}/{max_api_retries}): {e}")
+            if api_retry_count < max_api_retries:
+                wait_time = 2 ** (api_retry_count - 1)  # Exponential backoff: 1s, 2s, 4s
+                print(f"[INFO] Retrying API call in {wait_time} seconds...")
+                await asyncio.sleep(wait_time)
+            else:
+                print(f"[ERROR] Max API retries reached due to connection error")
+        except Exception as e:
+            print(f"[ERROR] Unexpected error calling API: {e}")
+            break  # Don't retry on unexpected errors
+    
+    # Fetch player data if we got API data
+    if api_data and api_data.get('apply_account') and coc_client:
+        player_tag = api_data.get('apply_account')
+        print(f"[DEBUG] Fetching player data for tag: {player_tag}")
 
-            async with session.get(api_url) as response:
-                if response.status == 200:
-                    api_data = await response.json()
-                    print(f"[DEBUG] API response: {api_data}")
+        max_retries = 3
+        retry_count = 0
 
-                    # Fetch player data using coc.py if apply_account exists
-                    # Add retry logic here (3 attempts)
-                    if api_data.get('apply_account') and coc_client:
-                        player_tag = api_data.get('apply_account')
-                        print(f"[DEBUG] Fetching player data for tag: {player_tag}")
-
-                        max_retries = 3
-                        retry_count = 0
-
-                        while retry_count < max_retries:
-                            try:
-                                player_data = await coc_client.get_player(player_tag)
-                                print(f"[DEBUG] Player found: {player_data.name} (TH{player_data.town_hall})")
-                                break  # Success, exit retry loop
-                            except coc.NotFound:
-                                print(f"[ERROR] Player not found: {player_tag}")
-                                break  # Don't retry for not found
-                            except Exception as e:
-                                retry_count += 1
-                                print(f"[ERROR] Failed to fetch player (attempt {retry_count}/{max_retries}): {e}")
-                                if retry_count < max_retries:
-                                    await asyncio.sleep(1)  # Wait 1 second before retry
-                                else:
-                                    print(f"[ERROR] Max retries reached for player fetch")
+        while retry_count < max_retries:
+            try:
+                player_data = await coc_client.get_player(player_tag)
+                print(f"[DEBUG] Player found: {player_data.name} (TH{player_data.town_hall})")
+                break  # Success, exit retry loop
+            except coc.NotFound:
+                print(f"[ERROR] Player not found: {player_tag}")
+                break  # Don't retry for not found
+            except Exception as e:
+                retry_count += 1
+                print(f"[ERROR] Failed to fetch player (attempt {retry_count}/{max_retries}): {e}")
+                if retry_count < max_retries:
+                    await asyncio.sleep(1)  # Wait 1 second before retry
                 else:
-                    print(f"[ERROR] API returned status {response.status}")
-    except Exception as e:
-        print(f"[ERROR] Failed to call API: {e}")
+                    print(f"[ERROR] Max retries reached for player fetch")
 
     # Store in MongoDB if we have API data and player info
     if api_data and api_data.get('apply_account') and mongo_client:
