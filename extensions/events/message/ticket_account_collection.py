@@ -328,7 +328,8 @@ async def handle_player_tag_modal_submit(
                 "is_additional_account": True,
                 "primary_account_tag": ticket_state["ticket_info"].get("user_tag", None),
 
-                "activeBid": False
+                "activeBid": False,
+                "ticket_open": True
             }
 
             await mongo.new_recruits.insert_one(new_recruit_data)

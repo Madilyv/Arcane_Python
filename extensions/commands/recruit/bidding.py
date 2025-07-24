@@ -124,10 +124,14 @@ class Bidding(
     ) -> None:
         await ctx.defer(ephemeral=True)
 
-        # Get recruits where activeBid is not true
+        # Get recruits where activeBid is not true and ticket is still open
         recruits_cursor = mongo.new_recruits.find({
             "discord_user_id": str(self.discord_user.id),
-            "activeBid": {"$ne": True}
+            "activeBid": {"$ne": True},
+            "$or": [
+                {"ticket_open": True},
+                {"ticket_open": {"$exists": False}}  # For backward compatibility
+            ]
         })
 
         # Filter out already recruited players (have finalized bids)

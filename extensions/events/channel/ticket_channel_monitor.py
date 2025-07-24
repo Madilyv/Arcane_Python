@@ -225,7 +225,8 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                 "total_clans_joined": 0,
                 "is_expired": False,
 
-                "activeBid": False
+                "activeBid": False,
+                "ticket_open": True
             }
 
             # Insert into MongoDB

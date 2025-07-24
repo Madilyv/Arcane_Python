@@ -53,6 +53,7 @@ reddit_monitor_task = None
 bot_instance = None
 mongo_client = None
 reddit_instance = None
+reddit_instance_created_at = None  # Track when Reddit instance was created
 
 
 def extract_clan_tags(text: str) -> List[str]:
@@ -75,6 +76,48 @@ async def get_clan_by_tag_from_db(mongo: MongoClient, tag: str) -> Optional[Dict
         clan = await mongo.clans.find_one({"tag": clean_tag})
 
     return clan
+
+
+async def check_and_refresh_reddit_connection():
+    """Check Reddit connection health and refresh if needed"""
+    global reddit_instance, reddit_instance_created_at
+    
+    try:
+        # Check if we need to refresh (every 30 minutes)
+        now = datetime.now(timezone.utc)
+        if reddit_instance_created_at:
+            time_since_creation = (now - reddit_instance_created_at).total_seconds()
+            if time_since_creation > 1800:  # 30 minutes
+                debug_print(f"Reddit instance is {time_since_creation:.0f} seconds old, refreshing...")
+                if reddit_instance:
+                    await reddit_instance.close()
+                reddit_instance = await initialize_reddit()
+                reddit_instance_created_at = now if reddit_instance else None
+                return reddit_instance is not None
+        
+        # Test the connection
+        if reddit_instance:
+            try:
+                # Simple test - try to get subreddit info
+                test_subreddit = await reddit_instance.subreddit(MONITORED_SUBREDDIT, fetch=True)
+                return True
+            except Exception as e:
+                debug_print(f"Reddit connection test failed: {e}")
+                # Try to reconnect
+                if reddit_instance:
+                    await reddit_instance.close()
+                reddit_instance = await initialize_reddit()
+                reddit_instance_created_at = now if reddit_instance else None
+                return reddit_instance is not None
+        else:
+            # No instance, try to create one
+            reddit_instance = await initialize_reddit()
+            reddit_instance_created_at = now if reddit_instance else None
+            return reddit_instance is not None
+            
+    except Exception as e:
+        debug_print(f"Error in connection check: {e}")
+        return False
 
 
 async def create_points_notification(clan_data: Dict) -> List[Container]:
@@ -156,24 +199,24 @@ async def check_reddit_posts(startup_mode=False):
     """Check Reddit for new posts matching our criteria"""
     global reddit_instance, mongo_client, bot_instance
 
-    if not reddit_instance or not mongo_client or not bot_instance:
+    if not mongo_client or not bot_instance:
         debug_print("Missing required instances")
         return
 
+    # Check and refresh Reddit connection if needed
+    if not await check_and_refresh_reddit_connection():
+        debug_print("Failed to establish Reddit connection")
+        return
+
     try:
-        # Get subreddit
-        subreddit = await reddit_instance.subreddit(MONITORED_SUBREDDIT)
-
-        # Get recent posts (increase limit on startup to catch older posts)
-        post_limit = 100 if startup_mode else 50
-        new_posts = [post async for post in subreddit.new(limit=post_limit)]
-
-        # Get last checked timestamp from MongoDB
+        # Get last checked timestamp from MongoDB BEFORE we start
         last_check_doc = await mongo_client.reddit_monitor.find_one({"_id": "last_check"})
         last_check_time = last_check_doc.get("timestamp", 0) if last_check_doc else 0
         
         # On startup mode, check posts from last 48 hours
         now = datetime.now(timezone.utc).timestamp()
+        check_start_time = now  # Store when we started checking
+        
         if startup_mode:
             print(f"[Clan Post Monitor] Startup mode: checking posts from last 48 hours")
             last_check_time = now - 172800  # 48 hours in seconds
@@ -181,6 +224,26 @@ async def check_reddit_posts(startup_mode=False):
         elif last_check_time == 0 or (now - last_check_time) > 86400:  # 86400 seconds = 24 hours
             debug_print("First run or stale timestamp detected, checking posts from last 24 hours")
             last_check_time = now - 86400  # Check posts from last 24 hours
+        
+        # Update timestamp at the START (only if not in startup mode)
+        # This prevents missing posts if there's an error during processing
+        if not startup_mode:
+            await mongo_client.reddit_monitor.update_one(
+                {"_id": "last_check"},
+                {"$set": {
+                    "timestamp": check_start_time,
+                    "last_check_start": check_start_time,
+                    "status": "checking"
+                }},
+                upsert=True
+            )
+
+        # Get subreddit
+        subreddit = await reddit_instance.subreddit(MONITORED_SUBREDDIT)
+
+        # Get recent posts (increase limit on startup to catch older posts)
+        post_limit = 100 if startup_mode else 50
+        new_posts = [post async for post in subreddit.new(limit=post_limit)]
 
         print(f"[Clan Post Monitor] Checking {len(new_posts)} posts. Keywords: {', '.join(SEARCH_KEYWORDS)}")
         debug_print(
@@ -275,12 +338,16 @@ async def check_reddit_posts(startup_mode=False):
         if startup_mode:
             print(f"[Clan Post Monitor] Startup check complete: {posts_checked} posts checked, {posts_matched} matches found")
         
-        # Update last check timestamp only if not in startup mode
-        # This prevents skipping posts on subsequent regular checks
+        # Update completion status (but don't change timestamp - it was set at start)
         if not startup_mode:
             await mongo_client.reddit_monitor.update_one(
                 {"_id": "last_check"},
-                {"$set": {"timestamp": datetime.now(timezone.utc).timestamp()}},
+                {"$set": {
+                    "last_check_complete": datetime.now(timezone.utc).timestamp(),
+                    "status": "completed",
+                    "posts_checked": posts_checked,
+                    "posts_matched": posts_matched
+                }},
                 upsert=True
             )
 
@@ -316,6 +383,8 @@ async def reddit_monitor_loop():
 
 async def initialize_reddit():  # Note: async
     """Initialize Reddit instance with detailed debugging"""
+    global reddit_instance_created_at
+    
     try:
         # Debug: Check if env vars are loaded
         client_id = os.getenv("REDDIT_CLIENT_ID")
@@ -341,7 +410,9 @@ async def initialize_reddit():  # Note: async
         subreddit_name = test_subreddit.display_name
         print(f"[REDDIT DEBUG] Successfully connected! Subreddit: {subreddit_name}")
 
-        debug_print("Reddit connection successful")
+        # Set creation timestamp
+        reddit_instance_created_at = datetime.now(timezone.utc)
+        debug_print(f"Reddit connection successful, instance created at {reddit_instance_created_at.isoformat()}")
         return reddit
 
     except Exception as e:
@@ -553,6 +624,50 @@ class ClanPostTimestamp(
                     await ctx.respond("❌ No last check record found")
         except Exception as e:
             await ctx.respond(f"❌ Error: {str(e)}")
+
+
+@loader.command
+class ClanPostCheckConnection(
+    lightbulb.SlashCommand,
+    name="clan-post-check-connection",
+    description="Check Reddit connection health and refresh if needed",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        await ctx.defer(ephemeral=True)
+        
+        global reddit_instance, reddit_instance_created_at
+        
+        response = "## 🔍 Reddit Connection Check\n\n"
+        
+        # Check current status
+        if reddit_instance:
+            response += "✅ **Reddit instance exists**\n"
+            if reddit_instance_created_at:
+                age = (datetime.now(timezone.utc) - reddit_instance_created_at).total_seconds()
+                response += f"📅 **Instance age:** {age:.0f} seconds ({age/60:.1f} minutes)\n"
+                response += f"🕐 **Created at:** <t:{int(reddit_instance_created_at.timestamp())}:f>\n\n"
+            else:
+                response += "⚠️ **Creation time unknown**\n\n"
+        else:
+            response += "❌ **No Reddit instance**\n\n"
+        
+        # Test connection
+        response += "**Testing connection...**\n"
+        
+        if await check_and_refresh_reddit_connection():
+            response += "✅ Connection test passed!\n"
+            
+            # Show updated status if refreshed
+            if reddit_instance and reddit_instance_created_at:
+                new_age = (datetime.now(timezone.utc) - reddit_instance_created_at).total_seconds()
+                if new_age < 60:  # Recently refreshed
+                    response += "♻️ Connection was refreshed!\n"
+        else:
+            response += "❌ Connection test failed!\n"
+        
+        await ctx.respond(response)
 
 
 @loader.command

@@ -215,6 +215,13 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
             return
 
         print(f"[INFO] Found {len(recruits)} recruit(s) for closed ticket {channel_id}")
+        
+        # Mark all recruits for this ticket as closed
+        await mongo_client.new_recruits.update_many(
+            {"ticket_channel_id": channel_id},
+            {"$set": {"ticket_open": False}}
+        )
+        print(f"[DEBUG] Marked {len(recruits)} recruit(s) as ticket_open=False")
 
         # Process each recruit
         for recruit in recruits:

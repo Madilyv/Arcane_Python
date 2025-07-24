@@ -51,6 +51,7 @@ reddit_monitor_task = None
 bot_instance = None
 mongo_client = None
 reddit_instance = None
+reddit_instance_created_at = None  # Track when Reddit instance was created
 
 
 def is_searching_post(title: str) -> bool:
@@ -76,6 +77,48 @@ def contains_th17(text: str) -> bool:
         return True
 
     return False
+
+
+async def check_and_refresh_reddit_connection():
+    """Check Reddit connection health and refresh if needed"""
+    global reddit_instance, reddit_instance_created_at
+    
+    try:
+        # Check if we need to refresh (every 30 minutes)
+        now = datetime.now(timezone.utc)
+        if reddit_instance_created_at:
+            time_since_creation = (now - reddit_instance_created_at).total_seconds()
+            if time_since_creation > 1800:  # 30 minutes
+                debug_print(f"Reddit instance is {time_since_creation:.0f} seconds old, refreshing...")
+                if reddit_instance:
+                    await reddit_instance.close()
+                reddit_instance = await initialize_reddit()
+                reddit_instance_created_at = now if reddit_instance else None
+                return reddit_instance is not None
+        
+        # Test the connection
+        if reddit_instance:
+            try:
+                # Simple test - try to get subreddit info
+                test_subreddit = await reddit_instance.subreddit(MONITORED_SUBREDDIT, fetch=True)
+                return True
+            except Exception as e:
+                debug_print(f"Reddit connection test failed: {e}")
+                # Try to reconnect
+                if reddit_instance:
+                    await reddit_instance.close()
+                reddit_instance = await initialize_reddit()
+                reddit_instance_created_at = now if reddit_instance else None
+                return reddit_instance is not None
+        else:
+            # No instance, try to create one
+            reddit_instance = await initialize_reddit()
+            reddit_instance_created_at = now if reddit_instance else None
+            return reddit_instance is not None
+            
+    except Exception as e:
+        debug_print(f"Error in connection check: {e}")
+        return False
 
 
 async def create_th17_search_notification(post) -> List[Container]:
@@ -154,9 +197,6 @@ async def check_th17_posts():
 
     debug_print("Starting check_th17_posts()...")
 
-    if not reddit_instance:
-        debug_print("ERROR: reddit_instance is None!")
-        return
     if not mongo_client:
         debug_print("ERROR: mongo_client is None!")
         return
@@ -164,18 +204,44 @@ async def check_th17_posts():
         debug_print("ERROR: bot_instance is None!")
         return
 
+    # Check and refresh Reddit connection if needed
+    if not await check_and_refresh_reddit_connection():
+        debug_print("Failed to establish Reddit connection")
+        return
+
     debug_print("All instances are available, proceeding...")
 
     try:
+        # Get last checked timestamp from MongoDB BEFORE we start
+        last_check_doc = await mongo_client.reddit_monitor.find_one({"_id": "th17_last_check"})
+        last_check_time = last_check_doc.get("timestamp", 0) if last_check_doc else 0
+
+        # Store when we started checking
+        now = datetime.now(timezone.utc).timestamp()
+        check_start_time = now
+        
+        # If no last check or it's very old, check posts from last 24 hours
+        if last_check_time == 0 or (now - last_check_time) > 86400:  # 86400 seconds = 24 hours
+            debug_print("First run or stale timestamp detected, checking posts from last 24 hours")
+            last_check_time = now - 86400
+        
+        # Update timestamp at the START
+        # This prevents missing posts if there's an error during processing
+        await mongo_client.reddit_monitor.update_one(
+            {"_id": "th17_last_check"},
+            {"$set": {
+                "timestamp": check_start_time,
+                "last_check_start": check_start_time,
+                "status": "checking"
+            }},
+            upsert=True
+        )
+
         # Get subreddit
         subreddit = await reddit_instance.subreddit(MONITORED_SUBREDDIT)
 
         # Get recent posts (last 25)
         new_posts = [post async for post in subreddit.new(limit=25)]
-
-        # Get last checked timestamp from MongoDB (using separate collection)
-        last_check_doc = await mongo_client.reddit_monitor.find_one({"_id": "th17_last_check"})
-        last_check_time = last_check_doc.get("timestamp", 0) if last_check_doc else 0
 
         debug_print(
             f"Checking {len(new_posts)} posts. Last check: {datetime.fromtimestamp(last_check_time) if last_check_time else 'Never'}"
@@ -247,10 +313,15 @@ async def check_th17_posts():
 
         debug_print(f"\n=== SUMMARY: Found {matched_count} matching posts ===")
 
-        # Update last check timestamp
+        # Update completion status (but don't change timestamp - it was set at start)
         await mongo_client.reddit_monitor.update_one(
             {"_id": "th17_last_check"},
-            {"$set": {"timestamp": datetime.now(timezone.utc).timestamp()}},
+            {"$set": {
+                "last_check_complete": datetime.now(timezone.utc).timestamp(),
+                "status": "completed",
+                "posts_checked": len(new_posts),
+                "posts_matched": matched_count
+            }},
             upsert=True
         )
 
@@ -279,6 +350,8 @@ async def reddit_monitor_loop():
 
 async def initialize_reddit():
     """Initialize Reddit instance with detailed debugging"""
+    global reddit_instance_created_at
+    
     try:
         # Debug: Check if env vars are loaded
         client_id = os.getenv("REDDIT_CLIENT_ID")
@@ -305,7 +378,9 @@ async def initialize_reddit():
         subreddit_name = test_subreddit.display_name
         print(f"[TH17 REDDIT DEBUG] Successfully connected! Subreddit: {subreddit_name}")
 
-        debug_print("Reddit connection successful")
+        # Set creation timestamp
+        reddit_instance_created_at = datetime.now(timezone.utc)
+        debug_print(f"Reddit connection successful, instance created at {reddit_instance_created_at.isoformat()}")
         return reddit
 
     except Exception as e:
