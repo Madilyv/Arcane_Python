@@ -231,10 +231,9 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
 
             print(f"[DEBUG] Processing recruit: {player_tag}")
 
-            # Check if any bids were placed
+            # Check if any bids were placed (finalized or not)
             bid_data = await mongo_client.clan_bidding.find_one({
-                "player_tag": player_tag,
-                "is_finalized": False
+                "player_tag": player_tag
             })
 
             # Check what clan the player joined
@@ -251,6 +250,10 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
                 
                 # Process with-bids scenario
                 await process_with_bids_recruitment(recruit, bid_data, player_clan, db_clan, event.app)
+                
+                # Clean up clan_bidding document
+                await mongo_client.clan_bidding.delete_one({"player_tag": player_tag})
+                print(f"[DEBUG] Deleted clan_bidding document for {player_tag}")
                 continue
 
             if not player_clan:
@@ -283,12 +286,10 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
                     }
                 )
 
-                # Cancel any bids if they exist
+                # Delete any bids if they exist
                 if bid_data:
-                    await mongo_client.clan_bidding.update_one(
-                        {"player_tag": player_tag, "is_finalized": False},
-                        {"$set": {"is_finalized": True, "winner": "EXTERNAL_CLAN", "amount": 0}}
-                    )
+                    await mongo_client.clan_bidding.delete_one({"player_tag": player_tag})
+                    print(f"[DEBUG] Deleted clan_bidding document for {player_tag} (external clan)")
                 continue
 
             print(f"[INFO] Processing no-bid recruitment: {player_tag} -> {db_clan['name']}")
@@ -299,20 +300,10 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
             # Update recruit history
             await update_recruit_history(recruit, player_clan["tag"])
 
-            # Mark any unfinalized bids as cancelled (though there shouldn't be any in this scenario)
-            await mongo_client.clan_bidding.update_one(
-                {
-                    "player_tag": player_tag,
-                    "is_finalized": False
-                },
-                {
-                    "$set": {
-                        "is_finalized": True,
-                        "winner": "NO_BIDS_CANCELLED",
-                        "amount": 0
-                    }
-                }
-            )
+            # Delete any bid documents (cleanup)
+            if bid_data:
+                await mongo_client.clan_bidding.delete_one({"player_tag": player_tag})
+                print(f"[DEBUG] Deleted clan_bidding document for {player_tag} (no-bid recruitment)")
 
     except Exception as e:
         print(f"[ERROR] Failed to process ticket closure: {e}")
@@ -426,6 +417,14 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
     winner_tag = bid_data.get("winner")
     winning_amount = bid_data.get("amount", 0)
     
+    # If no winner set but bids exist, find the highest bidder
+    if not winner_tag and bid_data.get("bids"):
+        bids = sorted(bid_data["bids"], key=lambda x: x["amount"], reverse=True)
+        if bids:
+            winner_tag = bids[0]["clan_tag"]
+            winning_amount = bids[0]["amount"]
+            print(f"[WARN] No winner set in bid_data, using highest bid: {winner_tag} for {winning_amount}")
+    
     # Check if player joined the winning clan
     if player_clan and player_clan["tag"] == winner_tag:
         # Success! They joined the winning clan
@@ -463,6 +462,50 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
         # Note: Points should already be deducted when auction ended
         # Just need to clear placeholder_points (handled in auction end)
         
+        # Send success notification to recruitment log
+        if db_clan:
+            success_components = [
+                Container(
+                    accent_color=GREEN_ACCENT,
+                    components=[
+                        Text(content=(
+                            f"## ✅ Successful Bid Recruitment - {db_clan.get('name', 'Unknown')} - "
+                            f"TH{recruit.get('player_th_level', '??')}"
+                        )),
+                        Separator(divider=True),
+                        Text(content="### Recruitment Details:"),
+                        Text(content=(
+                            f"{db_clan.get('name', 'Unknown')} successfully recruited {recruit.get('player_name', 'Unknown')} "
+                            f"through the bidding system.\n\n"
+                            f"**Winning Bid:** {winning_amount} points"
+                        )),
+                        Separator(divider=True),
+                        Text(content="### Player Details"),
+                        Text(content=(
+                            f"• **Discord ID:** <@{recruit.get('discord_user_id', 'Unknown')}>\n"
+                            f"• **Name:** {recruit.get('player_name', 'Unknown')}\n"
+                            f"• **Player Tag:** {recruit.get('player_tag', 'Unknown')}\n"
+                            f"• **TH Level:** {recruit.get('player_th_level', '??')}"
+                        )),
+                        Separator(divider=True),
+                        Text(content=(
+                            f"📅 **12-day monitoring period started**\n"
+                            f"-# Expires: <t:{int(new_expires_at.timestamp())}:R>"
+                        )),
+                        Media(items=[MediaItem(media="assets/Green_Footer.png")])
+                    ]
+                )
+            ]
+            
+            try:
+                await bot_app.rest.create_message(
+                    channel=RECRUITMENT_LOG_CHANNEL,
+                    components=success_components
+                )
+                print(f"[INFO] Logged successful bid recruitment for {recruit.get('player_tag')}")
+            except Exception as e:
+                print(f"[ERROR] Failed to send bid recruitment success message: {e}")
+        
     else:
         # They didn't join the winning clan
         print(f"[WARN] {recruit['player_name']} did not join winning clan. Winner: {winner_tag}, Joined: {player_clan['tag'] if player_clan else 'None'}")
@@ -477,6 +520,45 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
                     {"$inc": {"points": winning_amount}}
                 )
                 print(f"[INFO] Refunded {winning_amount} points to {winning_clan['name']}")
+        
+        # Send failed recruitment notification
+        failure_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content=(
+                        f"## ❌ Failed Bid Recruitment - {winning_clan['name'] if winning_clan else 'Unknown'} - "
+                        f"TH{recruit.get('player_th_level', '??')}"
+                    )),
+                    Separator(divider=True),
+                    Text(content="### Recruitment Outcome:"),
+                    Text(content=(
+                        f"**{winning_clan['name'] if winning_clan else 'Unknown'}** won the bid with {winning_amount} points, "
+                        f"but the recruit joined {'**' + db_clan['name'] + '**' if db_clan else 'a different clan'} instead.\n\n"
+                        f"✅ **Points Refunded:** {winning_amount} points returned to {winning_clan['name'] if winning_clan else 'winning clan'}"
+                    )),
+                    Separator(divider=True),
+                    Text(content="### Player Details"),
+                    Text(content=(
+                        f"• **Discord ID:** <@{recruit.get('discord_user_id', 'Unknown')}>\n"
+                        f"• **Name:** {recruit.get('player_name', 'Unknown')}\n"
+                        f"• **Player Tag:** {recruit.get('player_tag', 'Unknown')}\n"
+                        f"• **TH Level:** {recruit.get('player_th_level', '??')}\n"
+                        f"• **Joined:** {player_clan['name'] if player_clan else 'No clan'} ({player_clan['tag'] if player_clan else 'N/A'})"
+                    )),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        
+        try:
+            await bot_app.rest.create_message(
+                channel=RECRUITMENT_LOG_CHANNEL,
+                components=failure_components
+            )
+            print(f"[INFO] Logged failed bid recruitment for {recruit.get('player_tag')}")
+        except Exception as e:
+            print(f"[ERROR] Failed to send bid recruitment failure message: {e}")
         
         # Update recruit record - they joined a different clan or no clan
         if player_clan:
