@@ -66,7 +66,8 @@ def create_clan_expectations_components(
         show_done_button: bool = True,
         include_user_ping: bool = True,
         channel_id: Optional[int] = None,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        progress: Optional[dict] = None
 ) -> List[Container]:
     """Create container components for clan expectations messages"""
 
@@ -84,6 +85,35 @@ def create_clan_expectations_components(
 
     # Add title
     components_list.append(Text(content=title))
+    
+    # Add requirements info box
+    components_list.append(Separator(divider=True))
+    components_list.append(Text(content=(
+        "📋 **Requirements:**\n"
+        "• At least one expectation from your future clan *(required)*\n"
+        "• Minimum clan level *(optional)*\n"
+        "• Minimum Capital Hall level *(optional)*\n"
+        "• CWL league preference *(optional)*\n"
+        "• Preferred playstyle *(optional)*"
+    )))
+    
+    # Add progress indicators if we have progress data
+    if progress is not None:
+        has_expectations = progress.get("has_expectations", False)
+        has_clan_level = progress.get("has_clan_level", False)
+        has_capital_hall = progress.get("has_capital_hall", False)
+        has_cwl_league = progress.get("has_cwl_league", False)
+        has_clan_style = progress.get("has_clan_style", False)
+        
+        progress_text = (
+            f"\n**Progress:**\n"
+            f"{'✅' if has_expectations else '⬜'} Expectations {'✓' if has_expectations else '*(required)*'}\n"
+            f"{'✅' if has_clan_level else '⬜'} Minimum Clan Level\n"
+            f"{'✅' if has_capital_hall else '⬜'} Minimum Capital Hall Level\n"
+            f"{'✅' if has_cwl_league else '⬜'} CWL League Preference\n"
+            f"{'✅' if has_clan_style else '⬜'} Clan Style Preference"
+        )
+        components_list.append(Text(content=progress_text))
 
     if not formatted_summary:
         # Initial message with detailed instructions
@@ -114,13 +144,17 @@ def create_clan_expectations_components(
     # Add Done button if requested
     if show_done_button:
         custom_id = f"clan_expectations_done:{channel_id}_{user_id}" if channel_id and user_id else "clan_expectations_done:done"
-
+        
+        # Check if expectations are provided
+        has_expectations = progress and progress.get("has_expectations", False)
+        
         done_button = Button(
-            style=hikari.ButtonStyle.SUCCESS,
-            label="Done",
+            style=hikari.ButtonStyle.SUCCESS if has_expectations else hikari.ButtonStyle.SECONDARY,
+            label="Done" if has_expectations else "Add expectations first",
             custom_id=custom_id,
+            is_disabled=not has_expectations
         )
-        done_button.set_emoji("✅")
+        done_button.set_emoji("✅" if has_expectations else "⏳")
 
         # Add button in a Section
         components_list.append(
@@ -157,7 +191,14 @@ async def send_clan_expectations(channel_id: int, user_id: int) -> None:
                     "step_data.questionnaire.current_question": "future_clan_expectations",
                     "step_data.questionnaire.awaiting_response": True,
                     "step_data.questionnaire.collecting_expectations": True,
-                    "step_data.questionnaire.expectations_started_at": datetime.now(timezone.utc)
+                    "step_data.questionnaire.expectations_started_at": datetime.now(timezone.utc),
+                    "step_data.questionnaire.expectations_progress": {
+                        "has_expectations": False,
+                        "has_clan_level": False,
+                        "has_capital_hall": False,
+                        "has_cwl_league": False,
+                        "has_clan_style": False
+                    }
                 }
             }
         )
@@ -165,6 +206,15 @@ async def send_clan_expectations(channel_id: int, user_id: int) -> None:
         # Build the question content inline
         title = QUESTION_TITLE
         detailed_content = QUESTION_CONTENT()
+        
+        # Create components with initial progress state
+        initial_progress = {
+            "has_expectations": False,
+            "has_clan_level": False,
+            "has_capital_hall": False,
+            "has_cwl_league": False,
+            "has_clan_style": False
+        }
 
         # Create components
         components = create_clan_expectations_components(
@@ -174,7 +224,8 @@ async def send_clan_expectations(channel_id: int, user_id: int) -> None:
             show_done_button=True,
             include_user_ping=True,
             channel_id=channel_id,
-            user_id=user_id
+            user_id=user_id,
+            progress=initial_progress
         )
 
         # Send message
@@ -215,16 +266,17 @@ async def process_user_input(channel_id: int, user_id: int, content: str) -> Non
         current_summary = ticket_state.get("step_data", {}).get("questionnaire", {}).get("expectations_summary", "")
 
         # Process with AI (using the imported processor like attack_strategies does)
-        updated_summary = await process_clan_expectations_with_ai(current_summary, content)
+        updated_summary, progress = await process_clan_expectations_with_ai(current_summary, content)
 
-        # Update the summary in state
+        # Update the summary and progress in state
         await mongo_client.ticket_automation_state.update_one(
             {"_id": str(channel_id)},
             {
                 "$set": {
                     "step_data.questionnaire.expectations_summary": updated_summary,
                     "step_data.questionnaire.last_expectations_input": content,
-                    "step_data.questionnaire.last_input_at": datetime.now(timezone.utc)
+                    "step_data.questionnaire.last_input_at": datetime.now(timezone.utc),
+                    "step_data.questionnaire.expectations_progress": progress
                 }
             }
         )
@@ -239,7 +291,7 @@ async def process_user_input(channel_id: int, user_id: int, content: str) -> Non
         title = QUESTION_TITLE
         detailed_content = QUESTION_CONTENT()
 
-        # Update the message with new summary
+        # Update the message with new summary and progress
         new_components = create_clan_expectations_components(
             current_summary=updated_summary,
             title=title,
@@ -247,7 +299,8 @@ async def process_user_input(channel_id: int, user_id: int, content: str) -> Non
             show_done_button=True,
             include_user_ping=True,
             channel_id=channel_id,
-            user_id=user_id
+            user_id=user_id,
+            progress=progress
         )
 
         await bot_instance.rest.edit_message(
@@ -298,6 +351,12 @@ async def handle_clan_expectations_done(
     if not stored_user_id or user_id != stored_user_id:
         await ctx.respond("❌ You cannot interact with this ticket.", ephemeral=True)
         return
+    
+    # Check if they have provided at least one expectation
+    progress = ticket_state.get("step_data", {}).get("questionnaire", {}).get("expectations_progress", {})
+    if not progress.get("has_expectations", False):
+        await ctx.respond("❌ Please provide at least one expectation from your future clan before continuing.", ephemeral=True)
+        return
 
     # Stop collecting expectations
     await mongo_client.ticket_automation_state.update_one(
@@ -310,8 +369,15 @@ async def handle_clan_expectations_done(
         }
     )
 
-    # Get the current expectations summary
+    # Get the current expectations summary and progress
     current_summary = ticket_state.get("step_data", {}).get("questionnaire", {}).get("expectations_summary", "")
+    current_progress = ticket_state.get("step_data", {}).get("questionnaire", {}).get("expectations_progress", {
+        "has_expectations": False,
+        "has_clan_level": False,
+        "has_capital_hall": False,
+        "has_cwl_league": False,
+        "has_clan_style": False
+    })
 
     # Format summary with emojis for display
     formatted_summary = current_summary.replace("{red_arrow}", str(emojis.red_arrow_right))
@@ -328,7 +394,8 @@ async def handle_clan_expectations_done(
         title=title,
         detailed_content=detailed_content,
         show_done_button=False,
-        include_user_ping=False  # No ping on final version
+        include_user_ping=False,  # No ping on final version
+        progress=current_progress
     )
 
     # Update the message to remove the Done button

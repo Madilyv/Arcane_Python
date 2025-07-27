@@ -5,6 +5,7 @@ Waits for Friend Time confirmation before proceeding.
 """
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Optional
 import hikari
@@ -263,13 +264,27 @@ async def check_friend_time_confirmation(event: hikari.GuildMessageCreateEvent) 
                     "Congratulations!" in embed.description and "You've completed user setup!" in embed.description):
                 print(f"[Timezone] Friend Time confirmation detected!")
 
-                # Extract timezone if possible
+                # Extract timezone from embed description
                 timezone_str = None
-                if embed.fields:
-                    for field in embed.fields:
-                        if "time zone" in field.name.lower() or "timezone" in field.name.lower():
-                            timezone_str = field.value.strip()
+                if embed.description:
+                    # Try multiple patterns to extract timezone
+                    patterns = [
+                        r'Time Zone.*?:\s*\n?\s*([^\n⠀]+)',  # Flexible pattern with special char
+                        r'Time Zone.*?:\s*([^\n⠀]+)',  # Without newline
+                        r'timeZone.*?:\s*\n?\s*([^\n⠀]+)',  # Case variation
+                        r'Europe/\w+|America/\w+|Asia/\w+|Africa/\w+|Australia/\w+|Pacific/\w+',  # Direct timezone pattern
+                    ]
+                    
+                    for pattern in patterns:
+                        timezone_match = re.search(pattern, embed.description, re.IGNORECASE)
+                        if timezone_match:
+                            timezone_str = timezone_match.group(1) if '/' not in pattern else timezone_match.group(0)
+                            timezone_str = timezone_str.strip()
+                            print(f"[Timezone] Extracted timezone: {timezone_str}")
                             break
+                    
+                    if not timezone_str:
+                        print(f"[Timezone] Could not extract timezone from embed")
 
                 # Update state
                 await mongo_client.ticket_automation_state.update_one(

@@ -4,6 +4,7 @@ Handles questionnaire completion.
 Sends final messages and updates automation state.
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 import hikari
@@ -19,6 +20,7 @@ from hikari.impl import (
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, BLUE_ACCENT
 from ..core.state_manager import StateManager
+from . import summary_generator
 
 # Global instances
 mongo_client: Optional[MongoClient] = None
@@ -43,6 +45,9 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     global mongo_client, bot_instance
     mongo_client = mongo
     bot_instance = bot
+    
+    # Initialize summary generator
+    summary_generator.initialize(mongo, bot)
 
 
 async def send_completion_message(channel_id: int, user_id: int) -> None:
@@ -70,6 +75,28 @@ async def send_completion_message(channel_id: int, user_id: int) -> None:
 
         print(f"[Completion] Questionnaire completed for user {user_id} in channel {channel_id}")
 
+        # Send candidate summary to the thread
+        ticket_state = await StateManager.get_ticket_state(str(channel_id))
+        if ticket_state:
+            thread_id = ticket_state.get("ticket_info", {}).get("thread_id")
+            if thread_id:
+                # Wait a moment before sending summary
+                await asyncio.sleep(2)
+                
+                # Send the summary
+                success = await summary_generator.send_candidate_summary(
+                    channel_id,
+                    int(thread_id),
+                    user_id
+                )
+                
+                if success:
+                    print(f"[Completion] Sent candidate summary to thread {thread_id}")
+                else:
+                    print(f"[Completion] Failed to send candidate summary")
+            else:
+                print(f"[Completion] No thread ID found in ticket state")
+        
         # TODO: Trigger next automation step (clan selection)
         # This would be implemented when clan selection automation is built
 

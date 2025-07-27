@@ -60,7 +60,8 @@ def create_attack_strategy_components(
         show_done_button: bool = True,
         include_user_ping: bool = True,
         channel_id: Optional[int] = None,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        progress: Optional[dict] = None
 ) -> List[Container]:
     """Create container components for attack strategy messages"""
 
@@ -78,6 +79,29 @@ def create_attack_strategy_components(
 
     # Add title
     components_list.append(Text(content=title))
+    
+    # Add requirements info box
+    components_list.append(Separator(divider=True))
+    components_list.append(Text(content=(
+        "📋 **Requirements:**\n"
+        "• At least one main village strategy *(required)*\n"
+        "• Clan Capital strategies *(optional)*\n"
+        "• Highest CH level attacked *(optional)*"
+    )))
+    
+    # Add progress indicators if we have progress data
+    if progress is not None:
+        has_main = progress.get("has_main_village", False)
+        has_capital = progress.get("has_capital", False)
+        has_ch_level = progress.get("has_ch_level", False)
+        
+        progress_text = (
+            f"\n**Progress:**\n"
+            f"{'✅' if has_main else '⬜'} Main Village Strategies {'✓' if has_main else '*(required)*'}\n"
+            f"{'✅' if has_capital else '⬜'} Clan Capital Strategies\n"
+            f"{'✅' if has_ch_level else '⬜'} Highest CH Level Attacked"
+        )
+        components_list.append(Text(content=progress_text))
 
     if not formatted_summary:
         # Initial message with detailed instructions
@@ -108,13 +132,17 @@ def create_attack_strategy_components(
     # Add Done button if requested
     if show_done_button:
         custom_id = f"attack_strategies_done:{channel_id}_{user_id}" if channel_id and user_id else "attack_strategies_done:done"
-
+        
+        # Check if main village strategy is provided
+        has_main_village = progress and progress.get("has_main_village", False)
+        
         done_button = Button(
-            style=hikari.ButtonStyle.SUCCESS,
-            label="Done",
+            style=hikari.ButtonStyle.SUCCESS if has_main_village else hikari.ButtonStyle.SECONDARY,
+            label="Done" if has_main_village else "Add strategies first",
             custom_id=custom_id,
+            is_disabled=not has_main_village
         )
-        done_button.set_emoji("✅")
+        done_button.set_emoji("✅" if has_main_village else "⏳")
 
         # Add button in a Section
         components_list.append(
@@ -151,7 +179,12 @@ async def send_attack_strategies(channel_id: int, user_id: int) -> None:
                     "step_data.questionnaire.current_question": "attack_strategies",
                     "step_data.questionnaire.awaiting_response": True,
                     "step_data.questionnaire.collecting_strategies": True,
-                    "step_data.questionnaire.strategies_started_at": datetime.now(timezone.utc)
+                    "step_data.questionnaire.strategies_started_at": datetime.now(timezone.utc),
+                    "step_data.questionnaire.progress": {
+                        "has_main_village": False,
+                        "has_capital": False,
+                        "has_ch_level": False
+                    }
                 }
             }
         )
@@ -160,7 +193,13 @@ async def send_attack_strategies(channel_id: int, user_id: int) -> None:
         title = QUESTION_TITLE
         detailed_content = QUESTION_CONTENT()
 
-        # Create components
+        # Create components with initial progress state
+        initial_progress = {
+            "has_main_village": False,
+            "has_capital": False,
+            "has_ch_level": False
+        }
+        
         components = create_attack_strategy_components(
             current_summary="",  # Empty initially
             title=title,
@@ -168,7 +207,8 @@ async def send_attack_strategies(channel_id: int, user_id: int) -> None:
             show_done_button=True,
             include_user_ping=True,
             channel_id=channel_id,
-            user_id=user_id
+            user_id=user_id,
+            progress=initial_progress
         )
 
         # Send message
@@ -209,9 +249,9 @@ async def process_user_input(channel_id: int, user_id: int, content: str) -> Non
         current_summary = ticket_state.get("step_data", {}).get("questionnaire", {}).get("attack_summary", "")
 
         # Process with AI (using the imported processor)
-        updated_summary = await process_attack_strategies_with_ai(current_summary, content)
+        updated_summary, progress = await process_attack_strategies_with_ai(current_summary, content)
 
-        # Update the summary in state
+        # Update the summary and progress in state
         await mongo_client.ticket_automation_state.update_one(
             {"_id": str(channel_id)},
             {
@@ -219,7 +259,8 @@ async def process_user_input(channel_id: int, user_id: int, content: str) -> Non
                     "step_data.questionnaire.attack_summary": updated_summary,
                     "step_data.questionnaire.responses.attack_strategies": updated_summary,
                     "step_data.questionnaire.last_strategies_input": content,
-                    "step_data.questionnaire.last_input_at": datetime.now(timezone.utc)
+                    "step_data.questionnaire.last_input_at": datetime.now(timezone.utc),
+                    "step_data.questionnaire.progress": progress
                 }
             }
         )
@@ -234,7 +275,7 @@ async def process_user_input(channel_id: int, user_id: int, content: str) -> Non
         title = QUESTION_TITLE
         detailed_content = QUESTION_CONTENT()
 
-        # Update the message with new summary
+        # Update the message with new summary and progress
         new_components = create_attack_strategy_components(
             current_summary=updated_summary,
             title=title,
@@ -242,7 +283,8 @@ async def process_user_input(channel_id: int, user_id: int, content: str) -> Non
             show_done_button=True,
             include_user_ping=True,
             channel_id=channel_id,
-            user_id=user_id
+            user_id=user_id,
+            progress=progress
         )
 
         await bot_instance.rest.edit_message(
@@ -294,6 +336,12 @@ async def handle_attack_strategies_done(
         await ctx.respond("❌ You cannot interact with this ticket.", ephemeral=True)
         return
 
+    # Check if they have provided at least a main village strategy
+    progress = ticket_state.get("step_data", {}).get("questionnaire", {}).get("progress", {})
+    if not progress.get("has_main_village", False):
+        await ctx.respond("❌ Please provide at least one main village strategy before continuing.", ephemeral=True)
+        return
+
     # Stop collecting strategies
     await mongo_client.ticket_automation_state.update_one(
         {"_id": str(channel_id)},
@@ -305,8 +353,13 @@ async def handle_attack_strategies_done(
         }
     )
 
-    # Get the current attack summary
+    # Get the current attack summary and progress
     current_summary = ticket_state.get("step_data", {}).get("questionnaire", {}).get("attack_summary", "")
+    current_progress = ticket_state.get("step_data", {}).get("questionnaire", {}).get("progress", {
+        "has_main_village": False,
+        "has_capital": False,
+        "has_ch_level": False
+    })
 
     # Build content again
     title = QUESTION_TITLE
@@ -318,7 +371,8 @@ async def handle_attack_strategies_done(
         title=title,
         detailed_content=detailed_content,
         show_done_button=False,
-        include_user_ping=False  # No ping on final version
+        include_user_ping=False,  # No ping on final version
+        progress=current_progress
     )
 
     # Update the message to remove the Done button
