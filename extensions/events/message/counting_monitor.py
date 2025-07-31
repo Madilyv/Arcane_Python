@@ -110,6 +110,21 @@ async def on_counting_message(event: hikari.GuildMessageCreateEvent):
     last_counter_id = channel_data.get("last_counter_id")
     
     # Check if the message is a valid number
+    # First check if message has any content or is just attachments/embeds
+    if not event.content or event.content.strip() == "":
+        # Message is empty (likely just images/attachments) - delete and warn
+        try:
+            await event.message.delete()
+            warning = await event.get_channel().send(
+                f"<@{event.author_id}> HEY this is a counting channel! what do you think you're doing. 🤨",
+                user_mentions=[event.author_id]
+            )
+            await asyncio.sleep(5)
+            await warning.delete()
+        except:
+            pass
+        return
+    
     try:
         user_number = int(event.content.strip())
     except ValueError:
