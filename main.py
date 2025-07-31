@@ -64,10 +64,9 @@ registry.register_value(hikari.GatewayBot, bot)
 @bot.listen(hikari.StartingEvent)
 async def on_starting(_: hikari.StartingEvent) -> None:
     """Bot starting event"""
+    # Non-command extensions that need to be loaded explicitly
     all_extensions = [
         "extensions.components",
-        "extensions.commands.clan.list",
-        "extensions.commands.fwa.bases",
         "extensions.context_menus.get_message_id",
         "extensions.context_menus.get_user_id",
         "extensions.events.message.message_events",
@@ -76,8 +75,6 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.events.channel.ticket_channel_monitor",
         "extensions.events.channel.ticket_close_monitor",
         "extensions.events.message.ticket_screenshot",
-        "extensions.commands.clan.dashboard.dashboard",
-        "extensions.commands.recruit.questions",
         "extensions.tasks.band_monitor",
         "extensions.tasks.clanpoints_autoboard",
         "extensions.tasks.reddit.clan_post_monitor",
@@ -88,15 +85,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.recruit_monitor",
         "extensions.tasks.clan_info_updater",
         "extensions.tasks.bidding_recovery",
-        "extensions.commands.moderation",
-        "extensions.commands.counting",
-        "extensions.commands.fwa.upload_images",
-        "extensions.commands.fwa.war_plans",
-        "extensions.commands.clan.report",
-        "extensions.commands.clan.info_hub",
         "extensions.events.message.ticket_account_collection",
-         "extensions.commands.help",
-        "extensions.commands.utilities",
     ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)
