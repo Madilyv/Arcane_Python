@@ -67,6 +67,120 @@ async def on_bot_started(
     print("[INFO] Ticket channel monitor ready with MongoDB and CoC connections")
 
 
+async def retry_api_for_full_data(
+    channel_id: int,
+    thread_id: str,
+    user_id: str,
+    matched_pattern: str,
+    mongo: MongoClient,
+    coc: coc.Client
+) -> None:
+    """Background task to retry API and get full ticket data after fallback"""
+    print(f"[INFO] Background retry scheduled for channel {channel_id}, waiting 60 seconds...")
+    await asyncio.sleep(60)
+    
+    print(f"[INFO] Starting background API retry for channel {channel_id}")
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            api_url = f"https://api.clashk.ing/ticketing/open/json/{channel_id}"
+            print(f"[DEBUG] Background API call to: {api_url}")
+            
+            async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=20)) as response:
+                if response.status == 200:
+                    api_data = await response.json()
+                    print(f"[SUCCESS] Background API call succeeded: {api_data}")
+                    
+                    # Only proceed if we got a player tag
+                    if api_data.get('apply_account'):
+                        player_tag = api_data.get('apply_account')
+                        player_data = None
+                        
+                        # Try to fetch player data
+                        if coc:
+                            try:
+                                player_data = await coc.get_player(player_tag)
+                                print(f"[SUCCESS] Retrieved player data: {player_data.name} (TH{player_data.town_hall})")
+                            except Exception as e:
+                                print(f"[ERROR] Failed to fetch player data in background: {e}")
+                        
+                        # Update MongoDB with full data
+                        if mongo:
+                            try:
+                                from datetime import datetime, timedelta, timezone
+                                now = datetime.now(timezone.utc)
+                                
+                                # Update the existing new_recruits document with full data
+                                update_result = await mongo.new_recruits.update_one(
+                                    {"ticket_channel_id": str(channel_id)},
+                                    {
+                                        "$set": {
+                                            "player_tag": player_tag,
+                                            "player_name": player_data.name if player_data else None,
+                                            "player_th_level": player_data.town_hall if player_data else None,
+                                            "api_data_retrieved": True,
+                                            "api_data_retrieved_at": now
+                                        }
+                                    }
+                                )
+                                
+                                if update_result.modified_count > 0:
+                                    print(f"[SUCCESS] Updated MongoDB with full ticket data for channel {channel_id}")
+                                else:
+                                    # Document doesn't exist yet, create it
+                                    recruit_doc = {
+                                        "player_tag": player_tag,
+                                        "player_name": player_data.name if player_data else None,
+                                        "player_th_level": player_data.town_hall if player_data else None,
+                                        "discord_user_id": str(user_id),
+                                        "ticket_channel_id": str(channel_id),
+                                        "ticket_thread_id": str(thread_id) if thread_id else None,
+                                        "created_at": now,
+                                        "expires_at": now + timedelta(days=12),
+                                        "recruitment_history": [],
+                                        "current_clan": None,
+                                        "total_clans_joined": 0,
+                                        "is_expired": False,
+                                        "activeBid": False,
+                                        "ticket_open": True,
+                                        "api_data_retrieved": True,
+                                        "api_data_retrieved_at": now
+                                    }
+                                    await mongo.new_recruits.insert_one(recruit_doc)
+                                    print(f"[SUCCESS] Created new MongoDB document with full ticket data")
+                                    
+                                # Also update ticket automation state if it exists
+                                await mongo.ticket_automation_state.update_one(
+                                    {"_id": str(channel_id)},
+                                    {
+                                        "$set": {
+                                            "ticket_info.user_tag": player_tag,
+                                            "player_info.player_tag": player_tag,
+                                            "player_info.player_name": player_data.name if player_data else None,
+                                            "player_info.town_hall": player_data.town_hall if player_data else None,
+                                            "player_info.clan_tag": player_data.clan.tag if player_data and player_data.clan else None,
+                                            "player_info.clan_name": player_data.clan.name if player_data and player_data.clan else None,
+                                            "ticket_info.ticket_number": api_data.get('number'),
+                                            "api_recovered": True,
+                                            "api_recovered_at": now
+                                        }
+                                    }
+                                )
+                                print(f"[SUCCESS] Updated ticket automation state with recovered data")
+                                
+                            except Exception as e:
+                                print(f"[ERROR] Failed to update MongoDB in background: {e}")
+                    else:
+                        print(f"[WARNING] Background API succeeded but no player tag found")
+                else:
+                    print(f"[ERROR] Background API returned status {response.status}")
+                    
+    except Exception as e:
+        print(f"[ERROR] Background API retry failed: {e}")
+    
+    print(f"[INFO] Background retry completed for channel {channel_id}")
+
+
 @loader.listener(hikari.GuildChannelCreateEvent)
 async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
     """Handle channel creation events"""
@@ -160,6 +274,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
     
     max_api_retries = 3
     api_retry_count = 0
+    retry_delays = [3, 15, 30]  # Custom delays in seconds for each retry
     
     while api_retry_count < max_api_retries:
         try:
@@ -167,7 +282,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                 api_url = f"https://api.clashk.ing/ticketing/open/json/{channel_id}"
                 print(f"[DEBUG] Making API call to: {api_url} (attempt {api_retry_count + 1}/{max_api_retries})")
 
-                async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=15)) as response:
                     if response.status == 200:
                         api_data = await response.json()
                         print(f"[DEBUG] API response: {api_data}")
@@ -181,7 +296,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                         print(f"[ERROR] API returned status {response.status}")
                         api_retry_count += 1
                         if api_retry_count < max_api_retries:
-                            wait_time = 2 ** (api_retry_count - 1)  # Exponential backoff: 1s, 2s, 4s
+                            wait_time = retry_delays[api_retry_count - 1]  # Use custom delays: 3s, 15s, 30s
                             print(f"[INFO] Retrying API call in {wait_time} seconds...")
                             await asyncio.sleep(wait_time)
                         else:
@@ -191,7 +306,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
             api_retry_count += 1
             print(f"[ERROR] Failed to call API (attempt {api_retry_count}/{max_api_retries}): {e}")
             if api_retry_count < max_api_retries:
-                wait_time = 2 ** (api_retry_count - 1)  # Exponential backoff: 1s, 2s, 4s
+                wait_time = retry_delays[api_retry_count - 1]  # Use custom delays: 3s, 15s, 30s
                 print(f"[INFO] Retrying API call in {wait_time} seconds...")
                 await asyncio.sleep(wait_time)
             else:
@@ -199,6 +314,53 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         except Exception as e:
             print(f"[ERROR] Unexpected error calling API: {e}")
             break  # Don't retry on unexpected errors
+    
+    # If API failed, try to extract user from channel permissions as fallback
+    if not api_data:
+        print(f"[INFO] API failed, attempting to extract user from channel permissions")
+        try:
+            # Fetch full channel details to access permission overwrites
+            channel_details = await event.app.rest.fetch_channel(channel_id)
+            
+            if hasattr(channel_details, 'permission_overwrites') and channel_details.permission_overwrites:
+                print(f"[DEBUG] Found {len(channel_details.permission_overwrites)} permission overwrites")
+                
+                # Look for user (member) type permission overrides
+                for override_id, override in channel_details.permission_overwrites.items():
+                    # Check if this is a user override (not a role)
+                    # User IDs are typically 17-19 digits, role IDs are similar but we check the type
+                    if override.type == hikari.PermissionOverwriteType.MEMBER:
+                        print(f"[INFO] Found user permission override for user ID: {override_id}")
+                        # Create minimal API data with extracted user ID
+                        api_data = {
+                            "user": str(override_id),
+                            "channel": str(channel_id),
+                            "thread": str(thread_id) if thread_id else "",
+                            "fallback_mode": True,  # Flag to indicate this is fallback data
+                            "number": "Unknown"  # We don't have ticket number from permissions
+                        }
+                        print(f"[SUCCESS] Extracted user {override_id} from channel permissions")
+                        
+                        # Schedule background retry to get full data after 60 seconds
+                        print(f"[INFO] Scheduling background API retry for full data")
+                        asyncio.create_task(
+                            retry_api_for_full_data(
+                                channel_id=channel_id,
+                                thread_id=str(thread_id) if thread_id else "",
+                                user_id=str(override_id),
+                                matched_pattern=matched_pattern,
+                                mongo=mongo_client,
+                                coc=coc_client
+                            )
+                        )
+                        break
+                else:
+                    print(f"[WARNING] No user permission overrides found in channel")
+            else:
+                print(f"[WARNING] Channel has no permission overwrites or property not accessible")
+                
+        except Exception as e:
+            print(f"[ERROR] Failed to extract user from channel permissions: {e}")
     
     # Fetch player data if we got API data
     if api_data and api_data.get('apply_account') and coc_client:
@@ -344,34 +506,43 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         stored_in_db = False
 
     # Prepare the message components
-    if api_data and stored_in_db:
+    # Check if we have API data (either from API or fallback)
+    if api_data and (stored_in_db or api_data.get('fallback_mode')):
         # Check if this is an FWA ticket
         is_fwa = matched_pattern in ["FWA", "FWA_TEST"]
 
         if is_fwa:
             # For FWA tickets, send war weight request using exact recruit questions format
+            fwa_components = [
+                Text(content=f"## ⚖️ **War Weight Check** · <@{api_data.get('user', '')}>"),
+                Separator(divider=True),
+                Text(content=(
+                    "We need your **current war weight** to ensure fair matchups. Please:\n\n"
+                    f"{emojis.red_arrow_right} **Post** a Friendly Challenge in-game.\n"
+                    f"{emojis.red_arrow_right} **Scout** that challenge you posted\n"
+                    f"{emojis.red_arrow_right} **Tap** on your Town Hall, then hit **Info**.\n"
+                    f"{emojis.red_arrow_right} **Upload** a screenshot of the Town Hall info popup here.\n\n"
+                    "*See the example below for reference.*"
+                )),
+                Media(
+                    items=[
+                        MediaItem(
+                            media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1751550804/TH_Weight.png"),
+                        ]
+                ),
+                Text(content=f"-# Requested by Kings Alliance FWA Recruitment"),
+            ]
+            
+            # Add fallback mode warning if applicable
+            if api_data.get('fallback_mode'):
+                fwa_components.append(Text(content=(
+                    "-# ⚠️ Limited ticket data available. Please also provide your player tag in chat."
+                )))
+            
             components = [
                 Container(
                     accent_color=GOLD_ACCENT,
-                    components=[
-                        Text(content=f"## ⚖️ **War Weight Check** · <@{api_data.get('user', '')}>"),
-                        Separator(divider=True),
-                        Text(content=(
-                            "We need your **current war weight** to ensure fair matchups. Please:\n\n"
-                            f"{emojis.red_arrow_right} **Post** a Friendly Challenge in-game.\n"
-                            f"{emojis.red_arrow_right} **Scout** that challenge you posted\n"
-                            f"{emojis.red_arrow_right} **Tap** on your Town Hall, then hit **Info**.\n"
-                            f"{emojis.red_arrow_right} **Upload** a screenshot of the Town Hall info popup here.\n\n"
-                            "*See the example below for reference.*"
-                        )),
-                        Media(
-                            items=[
-                                MediaItem(
-                                    media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1751550804/TH_Weight.png"),
-                            ]
-                        ),
-                        Text(content=f"-# Requested by Kings Alliance FWA Recruitment"),
-                    ]
+                    components=fwa_components
                 )
             ]
 
@@ -386,21 +557,29 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                 print(f"[DEBUG] Sent chocolate link to thread {thread_id}")
         else:
             # Regular ticket - existing screenshot request
+            regular_components = [
+                Text(content=f"<@{api_data.get('user', '')}>\n\n"),
+                Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+                Text(content=(
+                    f"{emojis.Alert_Strobing} **SCREENSHOT REQUIRED** {emojis.Alert_Strobing}\n"
+                    "-# Provide a screenshot of your base."
+                )),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                Text(content=(
+                    f"-# **Kings Alliance Recruitment** - Your base layout says a lot about you—make it a good one!"
+                ))
+            ]
+            
+            # Add fallback mode warning if applicable
+            if api_data.get('fallback_mode'):
+                regular_components.append(Text(content=(
+                    "-# ⚠️ Limited ticket data available. Please also provide your player tag in chat."
+                )))
+            
             components = [
                 Container(
                     accent_color=RED_ACCENT,
-                    components=[
-                        Text(content=f"<@{api_data.get('user', '')}>\n\n"),
-                        Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                        Text(content=(
-                            f"{emojis.Alert_Strobing} **SCREENSHOT REQUIRED** {emojis.Alert_Strobing}\n"
-                            "-# Provide a screenshot of your base."
-                        )),
-                        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                        Text(content=(
-                            f"-# **Kings Alliance Recruitment** - Your base layout says a lot about you—make it a good one!"
-                        ))
-                    ]
+                    components=regular_components
                 )
             ]
     else:
