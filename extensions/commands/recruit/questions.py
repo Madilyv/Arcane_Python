@@ -939,6 +939,56 @@ async def explanations(
                 ]
             )
         ]
+    elif choice == "fwa_war_plans":
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content=f"## ⚔️ **FWA War Plans** ⚔️ · {user.mention}"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "Below are your two main war plans for FWA. Follow these and all will be good.\n\n"
+                        "**💎 __WIN WAR__ 💎**\n"
+                        "1st hit: ⭐⭐⭐ star your mirror.\n"
+                        "2nd hit: ⭐⭐ BASE 1 for loot or any base above you for loot or wait for 8 hr cleanup call in Discord. "
+                        "**Goal is 150 Stars!!**\n\n"
+                        "**❌ __LOSE WAR__ ❌**\n"
+                        "1st hit: ⭐⭐ star your mirror.\n"
+                        "2nd hit: ⭐ BASE 1 for loot or wait for 8 hr cleanup call in Discord. The goal is 100 Stars!\n\n"
+                        "There are two other plans \"Blacklisted War\" and \"Mismatch War\" but the above two are the most used.\n\n"
+                        "War Plans are posted via Discord and Clan Mail. Don't hesitate to ping me in your Clan's Chat Channel "
+                        "with any questions you may have.\n\n"
+                        "Following the posted war plans is an important part of FWA. Deviation can cause headaches and potentially "
+                        "harm to the clan. **Don't be \"that guy\"**...🫡"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Blue_Footer.png")
+                        ]),
+                ]
+            ),
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ⚔️ **DAILY FWA EXPECTATIONS** ⚔️"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "✅ **Attack in wars. Every. Single. Time.**\n"
+                        "✅ **Follow posted war plans. They're not suggestions—they're the playbook.**\n"
+                        "✅ **Check Discord & Clan Mail for instructions.**\n\n"
+                        "Wondering what happens if you ghost a war?\n"
+                        "👻 **You land on the Naughty List.**\n"
+                        "That means we start looking for a replacement. No hard feelings, just FWA business.\n\n"
+                        "Let's keep it fun, but let's keep it serious too. 💥"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMjg1amo0dmdsa2lpbnB3NzAzOWhsYWkyczRuNGwwdmRiZHpxb3YxNiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3o6ZtnrDUtbqynaOys/giphy.gif")
+                        ]),
+                    Text(content=f"-# Requested by {ctx.member.mention}"),
+                ]
+            )
+        ]
     elif choice == "wu_fwa_partner":
         components = [
             Container(
@@ -1196,6 +1246,11 @@ async def recruit_questions_page(
                                     emoji=1387882523358527608,
                                     label="What is FWA",
                                     value="what_is_fwa"
+                                ),
+                                SelectOption(
+                                    emoji="⚔️",
+                                    label="FWA War Plans",
+                                    value="fwa_war_plans"
                                 ),
                                 SelectOption(
                                     emoji=1390465929632153640,

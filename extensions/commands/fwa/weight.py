@@ -166,9 +166,15 @@ class WeightCommand(
             position = calculate_position_in_range(total_weight, th_level)
             additional_info.append(f"• {position}% through TH{th_level} weight range")
 
-        # Add FWA suitability
-        if 56000 <= total_weight <= 170000:
-            additional_info.append("• Suitable weight for FWA clan wars")
+        # Add FWA suitability with separator
+        if total_weight >= 56000:  # Only show FWA info for TH9+
+            additional_info.append("")  # Add empty line for separator
+            if total_weight < 115000:
+                additional_info.append("❌ **War Weight not suitable for FWA Wars.**")
+                additional_info.append("**Minimum weight requirement = 115,000.**")
+                additional_info.append("**Recommend a Zen Clan.**")
+            else:
+                additional_info.append("✅ Suitable weight for FWA clan wars")
 
         # Build the response components
         components = [
@@ -193,16 +199,24 @@ class WeightCommand(
             )
         ]
 
-        # Add additional info_hub container if we have any
+        # Add additional info container if we have any
         if additional_info:
+            # Build components for additional info
+            additional_components = [Text(content="### 📈 **Additional Information**")]
+            
+            # Process additional info items
+            for info in additional_info:
+                if info == "":  # Empty string indicates separator
+                    additional_components.append(Separator(divider=True))
+                else:
+                    additional_components.append(Text(content=info))
+            
+            additional_components.append(Media(items=[MediaItem(media="assets/Gold_Footer.png")]))
+            
             components.append(
                 Container(
                     accent_color=GOLD_ACCENT,
-                    components=[
-                        Text(content="### 📈 **Additional Information**"),
-                        Text(content="\n".join(additional_info)),
-                        Media(items=[MediaItem(media="assets/Gold_Footer.png")])
-                    ]
+                    components=additional_components
                 )
             )
         else:
