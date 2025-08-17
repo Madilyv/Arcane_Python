@@ -84,9 +84,9 @@ def create_attack_strategy_components(
     components_list.append(Separator(divider=True))
     components_list.append(Text(content=(
         "📋 **Requirements:**\n"
-        "• At least one main village strategy *(required)*\n"
-        "• Clan Capital strategies *(optional)*\n"
-        "• Highest CH level attacked *(optional)*"
+        "• At least one main village strategy\n"
+        "• Clan Capital strategies\n"
+        "• Highest CH level attacked"
     )))
     
     # Add progress indicators if we have progress data
@@ -97,7 +97,7 @@ def create_attack_strategy_components(
         
         progress_text = (
             f"\n**Progress:**\n"
-            f"{'✅' if has_main else '⬜'} Main Village Strategies {'✓' if has_main else '*(required)*'}\n"
+            f"{'✅' if has_main else '⬜'} Main Village Strategies {'✓' if has_main else ''}\n"
             f"{'✅' if has_capital else '⬜'} Clan Capital Strategies\n"
             f"{'✅' if has_ch_level else '⬜'} Highest CH Level Attacked"
         )

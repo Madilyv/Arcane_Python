@@ -90,11 +90,11 @@ def create_clan_expectations_components(
     components_list.append(Separator(divider=True))
     components_list.append(Text(content=(
         "📋 **Requirements:**\n"
-        "• At least one expectation from your future clan *(required)*\n"
-        "• Minimum clan level *(optional)*\n"
-        "• Minimum Capital Hall level *(optional)*\n"
-        "• CWL league preference *(optional)*\n"
-        "• Preferred playstyle *(optional)*"
+        "• At least one expectation from your future clan\n"
+        "• Minimum clan level\n"
+        "• Minimum Capital Hall level\n"
+        "• CWL league preference\n"
+        "• Preferred playstyle"
     )))
     
     # Add progress indicators if we have progress data
@@ -107,7 +107,7 @@ def create_clan_expectations_components(
         
         progress_text = (
             f"\n**Progress:**\n"
-            f"{'✅' if has_expectations else '⬜'} Expectations {'✓' if has_expectations else '*(required)*'}\n"
+            f"{'✅' if has_expectations else '⬜'} Expectations {'✓' if has_expectations else ''}\n"
             f"{'✅' if has_clan_level else '⬜'} Minimum Clan Level\n"
             f"{'✅' if has_capital_hall else '⬜'} Minimum Capital Hall Level\n"
             f"{'✅' if has_cwl_league else '⬜'} CWL League Preference\n"
