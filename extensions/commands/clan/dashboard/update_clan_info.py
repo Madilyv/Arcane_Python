@@ -571,6 +571,12 @@ async def clan_edit_menu(
                         label="Edit Recruit Welcome",
                         emoji="💬"
                     ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"update_clan_profile:{db_clan.tag}",
+                        label="Edit Clan Profile",
+                        emoji="📝"
+                    ),
                 ]
             ),
             Separator(divider=True, spacing=hikari.SpacingType.LARGE),
@@ -1695,3 +1701,138 @@ async def update_recruit_welcome_modal_submission(
         ]
 
         await ctx.interaction.edit_initial_response(components=error_components)
+@register_action("update_clan_profile", no_return=True, is_modal=True)
+@lightbulb.di.with_di
+async def update_clan_profile_modal_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Show modal for editing clan profile"""
+    tag = action_id
+
+    # Get clan data to show current profile
+    clan_data = await mongo.clans.find_one({"tag": tag})
+    if not clan_data:
+        await ctx.respond("❌ Clan not found in database.", ephemeral=True)
+        return
+
+    clan = Clan(data=clan_data)
+    current_profile = clan.profile or ""
+
+    # Create modal with text area
+    profile_input = ModalActionRow().add_text_input(
+        "clan_profile",
+        "Clan Profile Description",
+        style=hikari.TextInputStyle.PARAGRAPH,
+        placeholder="Enter the clan profile description...",
+        value=current_profile,
+        required=False,
+        max_length=2048
+    )
+
+    await ctx.respond_with_modal(
+        title=f"Edit Profile - {clan.name}",
+        custom_id=f"update_clan_profile_modal:{tag}",
+        components=[profile_input],
+    )
+
+
+@register_action("update_clan_profile_modal", no_return=True, is_modal=True)
+@lightbulb.di.with_di
+async def update_clan_profile_modal_submission(
+        ctx: lightbulb.components.ModalContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle clan profile modal submission"""
+    tag = action_id
+
+    # Helper function to extract values from modal components
+    def get_val(cid: str) -> str:
+        for row in ctx.interaction.components:
+            for comp in row:
+                if comp.custom_id == cid:
+                    return comp.value
+        return ""
+
+    new_profile = get_val("clan_profile")
+
+    # Create a deferred response first
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+
+    try:
+        # Update the database with new profile
+        await mongo.clans.update_one(
+            {"tag": tag},
+            {"$set": {"profile": new_profile}}
+        )
+
+        # Get updated clan data for display
+        clan_data = await mongo.clans.find_one({"tag": tag})
+        clan = Clan(data=clan_data)
+
+        # Create success message
+        success_components = [
+            Container(
+                accent_color=0x00FF00,  # Green
+                components=[
+                    Text(content="## ✅ Clan Profile Updated Successfully!"),
+                    Separator(divider=True),
+                    Text(content=(
+                        f"**Clan:** {clan.name}\n\n"
+                        f"**Profile Description:**\n{new_profile if new_profile else '*Empty - no profile description set*'}"
+                    )),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"back_to_clan_edit:{tag}",
+                                label="← Back to Edit Menu",
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=success_components)
+
+    except Exception as e:
+        # Create error components
+        profile_error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Update Failed"),
+                    Separator(divider=True),
+                    Text(content=f"**Error:** {str(e)[:200]}"),
+                    Text(content=(
+                        "\n**Please try again.**\n"
+                        "If the problem persists, contact an administrator."
+                    )),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"update_clan_profile:{tag}",
+                                label="← Try Again",
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"back_to_clan_edit:{tag}",
+                                label="← Back to Edit Menu",
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=profile_error_components)
