@@ -562,6 +562,17 @@ async def clan_edit_menu(
                     ),
                 ]
             ),
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"update_recruit_welcome:{db_clan.tag}",
+                        label="Edit Recruit Welcome",
+                        emoji="💬"
+                    ),
+                ]
+            ),
             Separator(divider=True, spacing=hikari.SpacingType.LARGE),
 
             ActionRow(
@@ -1546,3 +1557,141 @@ async def update_emoji_modal(
         mongo=mongo,
         bot=bot
     )
+
+
+@register_action("update_recruit_welcome", no_return=True, is_modal=True)
+@lightbulb.di.with_di
+async def update_recruit_welcome_modal_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Show modal for editing recruit welcome message"""
+    tag = action_id
+
+    # Get clan data to show current welcome message
+    clan_data = await mongo.clans.find_one({"tag": tag})
+    if not clan_data:
+        await ctx.respond("❌ Clan not found in database.", ephemeral=True)
+        return
+
+    clan = Clan(data=clan_data)
+    current_welcome = clan.recruit_welcome or ""
+
+    # Create modal with text area
+    welcome_input = ModalActionRow().add_text_input(
+        "recruit_welcome",
+        "Recruit Welcome Message",
+        style=hikari.TextInputStyle.PARAGRAPH,
+        placeholder="Enter the welcome message for new recruits...",
+        value=current_welcome,
+        required=False,
+        max_length=1024
+    )
+
+    await ctx.respond_with_modal(
+        title=f"Edit Welcome - {clan.name}",
+        custom_id=f"update_recruit_welcome_modal:{tag}",
+        components=[welcome_input],
+    )
+
+
+@register_action("update_recruit_welcome_modal", no_return=True, is_modal=True)
+@lightbulb.di.with_di
+async def update_recruit_welcome_modal_submission(
+        ctx: lightbulb.components.ModalContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle recruit welcome modal submission"""
+    tag = action_id
+
+    # Helper function to extract values from modal components
+    def get_val(cid: str) -> str:
+        for row in ctx.interaction.components:
+            for comp in row:
+                if comp.custom_id == cid:
+                    return comp.value
+        return ""
+
+    new_welcome = get_val("recruit_welcome")
+
+    # Create a deferred response first
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+
+    try:
+        # Update the database with new welcome message
+        await mongo.clans.update_one(
+            {"tag": tag},
+            {"$set": {"recruit_welcome": new_welcome}}
+        )
+
+        # Get updated clan data for display
+        clan_data = await mongo.clans.find_one({"tag": tag})
+        clan = Clan(data=clan_data)
+
+        # Create success message
+        success_components = [
+            Container(
+                accent_color=0x00FF00,  # Green
+                components=[
+                    Text(content="## ✅ Recruit Welcome Updated Successfully!"),
+                    Separator(divider=True),
+                    Text(content=(
+                        f"**Clan:** {clan.name}\n\n"
+                        f"**Welcome Message:**\n{new_welcome if new_welcome else '*Empty - will show default message*'}"
+                    )),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"back_to_clan_edit:{tag}",
+                                label="← Back to Edit Menu",
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+
+        # Return to the clan edit menu
+        await ctx.interaction.edit_initial_response(components=success_components)
+
+    except Exception as e:
+        # Create error components
+        error_components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Update Failed"),
+                    Separator(divider=True),
+                    Text(content=f"**Error:** {str(e)[:200]}"),
+                    Text(content=(
+                        "\n**Please try again.**\n"
+                        "If the problem persists, contact an administrator."
+                    )),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"update_recruit_welcome:{tag}",
+                                label="← Try Again",
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"back_to_clan_edit:{tag}",
+                                label="← Back to Edit Menu",
+                            )
+                        ]
+                    ),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=error_components)
