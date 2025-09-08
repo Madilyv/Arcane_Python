@@ -26,7 +26,7 @@ loader = lightbulb.Loader()
 
 # Configuration
 REQUIRED_ROLE_ID = 1060318031575793694
-TASK_CHANNEL_ID = 1344445706588389466
+TASK_CHANNEL_ID = 1349392747336958102
 AUTO_DELETE_DELAY = 60  # seconds
 MAX_TASK_DESCRIPTION_LENGTH = 500
 MAX_TASKS_PER_USER = 50
@@ -563,8 +563,10 @@ async def on_task_command(
         edit_match = re.match(r'^edit task\s+#?(\d+)$', content, re.IGNORECASE)
         del_all_match = re.match(r'^del all tasks$', content, re.IGNORECASE)
         remind_match = re.match(r'^remind(?:er)?\s+(?:task\s+)?#?(\d+)\s+(.+)$', content, re.IGNORECASE)
+        view_match = re.match(r'^view tasks?$', content, re.IGNORECASE)
+        help_match = re.match(r'^(?:help tasks?|tasks? help)$', content, re.IGNORECASE)
 
-        if not any([add_match, del_match, complete_match, edit_match, del_all_match, remind_match]):
+        if not any([add_match, del_match, complete_match, edit_match, del_all_match, remind_match, view_match, help_match]):
             return
 
         # Check role permission (only in guilds)
@@ -582,6 +584,12 @@ async def on_task_command(
                     return
             except Exception:
                 return
+
+        # Delete the user's command message
+        try:
+            await bot.rest.delete_message(event.channel_id, event.message_id)
+        except Exception:
+            pass  # Continue even if deletion fails
 
         # Process commands
         if add_match:
@@ -715,6 +723,55 @@ async def on_task_command(
                     BLUE_ACCENT,
                     "This message will delete in 60 seconds"
                 )
+
+            await send_auto_delete_response(bot, event.channel_id, components)
+
+        elif view_match:
+            tasks = await get_user_tasks(mongo, event.author_id)
+            task_content = format_task_list(tasks)
+            completed_count = sum(1 for t in tasks if t['completed'])
+
+            components = [
+                Container(
+                    accent_color=MAGENTA_ACCENT,
+                    components=[
+                        Text(content=f"# Your Tasks"),
+                        Separator(divider=True),
+                        Text(content=task_content),
+                        Separator(divider=True),
+                        Text(content=f"-# {len(tasks)} total • {completed_count} completed"),
+                        Text(content=f"-# This message will delete in {AUTO_DELETE_DELAY} seconds"),
+                        Media(items=[MediaItem(media="assets/Purple_Footer.png")]),
+                    ]
+                )
+            ]
+
+            await send_auto_delete_response(bot, event.channel_id, components)
+
+        elif help_match:
+            help_text = (
+                "**Available Task Commands:**\n\n"
+                "`add task [description]` - Add a new task to your list\n"
+                "`view tasks` - View your current tasks (auto-deletes after 60s)\n"
+                "`complete task #[id]` - Mark a task as complete\n"
+                "`edit task #[id]` - Edit a task's description\n"
+                "`del task #[id]` - Delete a specific task\n"
+                "`del all tasks` - Delete all your tasks\n"
+                "`remind task #[id] [time]` - Set a reminder for a task\n"
+                "`help tasks` - Show this help message\n\n"
+                "**Time Examples for Reminders:**\n"
+                "• `5m`, `1h`, `2d` - Relative times\n"
+                "• `3:30pm`, `tomorrow at 2pm` - Absolute times\n"
+                "• `Dec 25 at 9am` - Specific dates\n\n"
+                "**Your tasks automatically sync to the task channel.**"
+            )
+
+            components = create_task_embed(
+                "📋 Task Commands Help",
+                help_text,
+                BLUE_ACCENT,
+                "This message will delete in 60 seconds"
+            )
 
             await send_auto_delete_response(bot, event.channel_id, components)
 
