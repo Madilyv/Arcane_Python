@@ -37,7 +37,17 @@ class Welcome(
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
-        clan_data = await mongo.clans.find().to_list(length=None)
+        
+        # Get user's clans where they have leader role
+        user_roles = ctx.interaction.member.role_ids
+        clan_data = await mongo.clans.find({
+            "leader_role_id": {"$in": user_roles}
+        }).to_list(length=None)
+        
+        if not clan_data:
+            await ctx.respond("You must have a clan leader role to send welcome messages.", ephemeral=True)
+            return
+            
         clans = [Clan(data=d) for d in clan_data]
 
         options = []
@@ -61,8 +71,9 @@ class Welcome(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content=(
-                        "## **Pick Your Clan**\n"
+                        "## **Pick Your Clan to Welcome From**\n"
                         "Use the dropdown below to select which clan's welcome message to send.\n"
+                        f"Only clans where you have a leader role are shown.\n"
                         f"This will be sent to {self.user.mention}."
                     )),
                     ActionRow(
