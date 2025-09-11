@@ -49,7 +49,7 @@ AGE_BRACKET_RESPONSES = {
         "gif": "https://c.tenor.com/twdtlMLE8UIAAAAC/tenor.gif"
     },
     "over_25": {
-        "title": "🏅 **Age Locked In**",
+        "title": "🏅 **Over 25 Confirmed**",
         "content": (
             "Awesome! Experience meets strategy!\n\n"
             "Welcome to the veteran league of Clashers! 💪\n\n"

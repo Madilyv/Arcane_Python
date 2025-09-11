@@ -376,7 +376,7 @@ async def on_age_button(
         )
     elif bracket == "over_25":
         components = [
-            Text(content=f"🏅 **Age Locked In** · {user.mention}"),
+            Text(content=f"🏅 **Over 25 Confirmed** · {user.mention}"),
 
             Container(
                 accent_color=RED_ACCENT,
