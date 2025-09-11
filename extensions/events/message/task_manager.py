@@ -78,7 +78,7 @@ def format_task_list(tasks: List[Dict[str, Any]]) -> str:
         task_id = task['task_id']
 
         if task['completed']:
-            formatted_tasks.append(f"`{task_id}` • ~~{task_text}~~")
+            formatted_tasks.append(f"`{task_id}` • ✅ ~~{task_text}~~")
         else:
             formatted_tasks.append(f"`{task_id}` • {task_text}")
 
