@@ -28,13 +28,12 @@ bot_instance: Optional[hikari.GatewayBot] = None
 
 # Self-contained completion message data
 LEADERS_MESSAGE = {
-    "title": "## 👑 **Leaders Checking You Out**",
+    "title": "## 🔍 **Application Under Review**",
     "content": (
-        "Heads up! Our clan leaders will be reviewing your profile:\n\n"
-        "• **In-game profile** – Town Hall, hero levels, war stars\n"
-        "• **Discord activity** – How you communicate and engage\n"
-        "• **Application responses** – The info you've shared with us\n\n"
-        "*Make sure your profile reflects your best! Leaders appreciate active, engaged members.*"
+        "Thank you for completing your application! 🎉\n\n"
+        "**⏰ Leaders have 15 minutes to review your ticket.**\n"
+        "**Please allow us 20 minutes and we'll be with you shortly!**\n\n"
+        "We appreciate your patience and can't wait to welcome you aboard!"
     ),
     "footer": "You've completed the questionnaire! A recruiter will be with you shortly."
 }

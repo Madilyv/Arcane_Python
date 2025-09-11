@@ -263,9 +263,9 @@ async def primary_questions(
                     Text(
                         content=(
                             "Thank you for completing your application! 🎉\n\n"
-                            "Our leadership team is now reviewing your responses to find the perfect clan match. "
-                            "Please sit tight, we’ll be with you shortly! ⏳\n\n"
-                            "We truly appreciate your interest in the Kings Alliance and can’t wait to welcome you aboard!"
+                            "**⏰ Leaders have 15 minutes to review your ticket.**\n"
+                            "**Please allow us 20 minutes and we'll be with you shortly!**\n\n"
+                            "We appreciate your patience and can't wait to welcome you aboard!"
                         )
                     ),
                     Media(
