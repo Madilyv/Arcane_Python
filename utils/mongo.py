@@ -19,3 +19,4 @@ class MongoClient(AsyncMongoClient):
         self.ticket_automation_state = self.__settings.get_collection("ticket_automation_state")
         self.counting_channels = self.__settings.get_collection("counting_channels")
         self.discord_polls = self.__settings.get_collection("discord_polls")
+        self.lazy_cwl_snapshots = self.__settings.get_collection("lazy_cwl_snapshots")
