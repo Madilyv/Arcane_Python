@@ -45,48 +45,63 @@ HELP_CATEGORIES = {
     "clan": {
         "name": "Clan Management",
         "emoji": "🏰",
-        "description": "Commands to manage your clans"
+        "description": "Commands to manage your clans and data"
     },
     "recruit": {
         "name": "Recruitment",
         "emoji": "👥",
-        "description": "Commands for recruiting new players"
+        "description": "Complete recruitment system with bidding and questionnaires"
     },
     "fwa": {
-        "name": "FWA",
+        "name": "FWA Tools",
         "emoji": "⚔️",
-        "description": "Farm War Alliance base layouts"
+        "description": "Farm War Alliance bases, weights, and strategies"
+    },
+    "polls": {
+        "name": "Polls",
+        "emoji": "🗳️",
+        "description": "Create and manage interactive polls"
     },
     "general": {
         "name": "General",
         "emoji": "📋",
-        "description": "Other helpful commands"
+        "description": "Other helpful commands and features"
     }
 }
 
 # Predefined command list (since dynamic discovery might be complex)
 COMMAND_LIST = {
     "clan": [
-        ("/clan dashboard", "Open the Clan Management Dashboard - has buttons for clan points, FWA data, and more"),
-        ("/clan list", "Shows a list of all clans with their info"),
-        ("/clan info-hub", "Display clan information hub - has buttons for Main, Feeder, Zen, FWA, and Trial clans"),
-        ("/clan recruit-points",
-         "Report recruitment activities for clan points - choose from Discord posts, DMs, helping, etc."),
+        ("/clan dashboard", "Open the comprehensive Clan Management Dashboard with interactive buttons for clan points, FWA data, member management, and statistics"),
+        ("/clan list", "View and manage all clans in the Kings Alliance family with detailed information and options"),
+        ("/clan info-hub", "Access the clan information hub with category buttons for Main, Feeder, Zen, FWA, and Trial clans"),
+        ("/clan recruit-points", "Report recruitment activities to earn clan points - track Discord posts, DMs, helping members, and other contributions"),
+        ("/clan round-table", "Manage clan round table (right-hand leader) roles and permissions for clan leadership"),
     ],
     "recruit": [
-        ("/recruit questions",
-         "Send recruit questions to a new recruit - includes FWA questions, attack strategies, etc."),
-        ("/recruit bidding", "Start a bidding process for available recruits - clan leaders bid points"),
+        ("/recruit questions", "Send comprehensive recruitment questionnaire to new recruits - includes FWA base questions, attack strategies, age brackets, and expectations (15-20 minute review time)"),
+        ("/recruit bidding", "Start a competitive 15-minute bidding auction for available recruits - clan leaders bid points to win candidates"),
+        ("/recruit welcome", "Send a personalized clan welcome message to new members - only available to clan leaders"),
+        ("/recruit deny", "Send a professional denial message to applicants with a clear reason for the decision"),
     ],
     "fwa": [
-        ("/fwa bases", "Select and display FWA base layouts - pick a user then select TH level"),
-        ("/fwa upload-images", "Upload war and active base images for a TH level"),
-        ("/fwa war-plans", "Manage FWA war plans - add or view war strategies"),
+        ("/fwa bases", "Browse and display FWA base layouts by Town Hall level - select a user and their TH level to view bases"),
+        ("/fwa chocolate", "Look up players or clans on the FWA Chocolate website for verification and war data"),
+        ("/fwa links", "Quick access to essential FWA links - verification forms, war weight entry, and important resources"),
+        ("/fwa war-plans", "Generate strategic war plan messages for different war scenarios and outcomes"),
+        ("/fwa weight", "Calculate war weight from storage values - automatically converts storage to war weight (×5 multiplier)"),
+    ],
+    "polls": [
+        ("/poll create", "Create interactive polls with multiple choice options and real-time voting"),
+        ("/poll view", "View detailed results and statistics for any poll"),
+        ("/poll active", "List all currently active polls in the server"),
     ],
     "general": [
-        ("/help", "Show this help menu - you're using it right now!"),
-        ("/say", "Send a message as the bot (only for staff)"),
-        ("/den-den-mushi", "Broadcast a message to everyone"),
+        ("/help", "Show this comprehensive help menu with AI assistant - you're using it right now!"),
+        ("/say", "Send a message as the bot (staff only) - useful for announcements and official communications"),
+        ("/den-den-mushi", "Broadcast important messages through the Den Den Mushi transponder snail system"),
+        ("/howto link", "Learn how to properly link your Clash of Clans account to Discord"),
+        ("/color-roles", "Choose your display color from available role options"),
     ]
 }
 
@@ -208,40 +223,59 @@ async def call_claude_api(user_question: str) -> str:
             bot_context += f"  • {cmd_name}\n    → {cmd_desc}\n"
         bot_context += "\n"
 
-    system_prompt = f"""You are a friendly Discord bot helper! You help people use bot commands in simple, easy-to-understand ways.
+    system_prompt = f"""You are a friendly Discord bot helper for the Arcane Python bot used by the Kings Alliance Clash of Clans community! You help people use bot commands in simple, easy-to-understand ways with special expertise in the recruitment system.
 
 {bot_context}
 
 Important Rules:
 - Use VERY simple words (like you're explaining to a 5th grader)
 - Be super specific about WHERE to find things
-- Give step-by-step instructions
+- Give step-by-step instructions with timing details when relevant
 - Use emojis to make it fun and clear 😊
+- Focus heavily on recruitment workflows since they're complex
 
 When someone asks "where" or "how" to find something:
 1. Tell them the EXACT command name
 2. Tell them EXACTLY what to click/select
 3. Number your steps (Step 1, Step 2, etc.)
+4. Include timing information for recruitment processes
 
-Examples of good answers:
-- "FWA questions? Use `/recruit questions` → pick a Discord user → they'll get questions about FWA bases!"
-- "To see clan info: Type `/clan info-hub` → click the 'FWA' button to see FWA clans"
-- "Want to bid on recruits? Type `/recruit bidding` → pick the Discord user → follow the steps!"
-- "Add clan points? Type `/clan dashboard` → click 'Clan Points' → pick your clan → add points!"
-- "See FWA bases? Type `/fwa bases` → pick a Discord user → select their Town Hall level"
+Examples of good answers for RECRUITMENT:
+- "Want to send recruit questions? Use `/recruit questions` → pick the Discord user → they get a comprehensive questionnaire about FWA bases, attack strategies, age, and expectations → leaders have 15-20 minutes to review!"
+- "Start bidding for recruits? Use `/recruit bidding` → select the Discord user → clans bid points in a 15-minute auction → highest bidder wins!"
+- "Send welcome messages? Use `/recruit welcome` → pick your clan → select the Discord user → they get your clan's custom welcome message (only clan leaders can do this!)"
+- "Deny an application? Use `/recruit deny` → select the user → write a clear reason → they get a professional denial message"
+
+Examples for OTHER COMMANDS:
+- "See clan info? Use `/clan info-hub` → click buttons for 'Main', 'Feeder', 'Zen', 'FWA', or 'Trial' clans"
+- "Add clan points? Use `/clan dashboard` → click 'Clan Points' → pick your clan → report your recruitment activities"
+- "Get FWA bases? Use `/fwa bases` → pick a Discord user → select their Town Hall level → see their base layouts"
+- "Calculate war weight? Use `/fwa weight` → enter storage value → automatically multiplied by 5 for war weight"
+- "Create polls? Use `/poll create` → fill in your question and options → members can vote with real-time results"
+
+RECRUITMENT SYSTEM DETAILS to include when relevant:
+- Questions take 15-20 minutes for leaders to review
+- Bidding auctions last exactly 15 minutes
+- Clan recruitment help posts have a 30-day cooldown
+- Only clan leaders can send welcome messages
+- Bidding uses clan points as currency
 
 Always:
 - Break down big words into smaller ones
 - Use arrows (→) to show what happens next
 - Say which buttons to press or menus to pick
+- Include timing for recruitment processes (15-20 min reviews, 15 min bidding)
+- Mention role restrictions (clan leaders only for some commands)
 - If something has multiple steps, list them as 1, 2, 3...
-- End with "Need more help? Just ask!" 
+- End with "Need more help? Just ask!"
 
-Never use big technical words. Instead of "parameters" say "the blanks you fill in". Instead of "syntax" say "how to type it".
+Never use big technical words. Instead of "parameters" say "the blanks you fill in". Instead of "comprehensive questionnaire" say "lots of questions".
 
 If they ask about something not in the commands, say: "Hmm, I don't know about that command. 🤔 Here's what I CAN help you with: [list 2-3 related commands they might want]. Want to try one of these instead?"
 
-Remember: Make it so easy that anyone can understand! 🌟"""
+SPECIAL FOCUS: When users ask about recruitment, always mention the full workflow and timing since it's the most complex system in the bot!
+
+Remember: Make it so easy that anyone can understand, especially the recruitment system! 🌟"""
 
     headers = {
         "x-api-key": ANTHROPIC_API_KEY,
