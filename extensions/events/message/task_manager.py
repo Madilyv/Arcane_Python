@@ -21,6 +21,7 @@ from hikari.impl import (
 
 from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, MAGENTA_ACCENT
+from extensions.components import register_action
 
 loader = lightbulb.Loader()
 
@@ -843,6 +844,209 @@ async def on_task_command(
 
     except Exception:
         pass
+
+
+@register_action("complete_from_reminder", no_return=True)
+@lightbulb.di.with_di
+async def handle_complete_from_reminder(
+        ctx,
+        action_id: str,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+) -> None:
+    """Handle complete task button from reminder DM."""
+    try:
+        # Parse action_id: user_id_task_id
+        parts = action_id.split("_")
+        if len(parts) != 2:
+            return
+
+        user_id = int(parts[0])
+        task_id = int(parts[1])
+
+        # Verify this is the correct user
+        if ctx.user.id != user_id:
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="❌ This reminder is not for you!")
+                        ]
+                    )
+                ],
+                edit=True
+            )
+            return
+
+        # Mark task as complete
+        success = await complete_task(mongo, user_id, task_id)
+
+        if success:
+            # Update task list message
+            tasks = await get_user_tasks(mongo, user_id)
+            await update_task_list_message(bot, mongo, user_id, tasks)
+
+            # Update the reminder message
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=GREEN_ACCENT,
+                        components=[
+                            Text(content="## ✅ Task Completed!"),
+                            Separator(divider=True),
+                            Text(content=f"Task #{task_id} has been marked as complete."),
+                            Text(content="Great job! 🎉")
+                        ]
+                    )
+                ],
+                edit=True
+            )
+        else:
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ Task Not Found"),
+                            Text(content="This task may have already been completed or deleted.")
+                        ]
+                    )
+                ],
+                edit=True
+            )
+
+    except Exception as e:
+        try:
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="❌ An error occurred processing your request.")
+                        ]
+                    )
+                ],
+                edit=True
+            )
+        except:
+            pass
+
+
+@register_action("snooze_reminder", no_return=True)
+@lightbulb.di.with_di
+async def handle_snooze_reminder(
+        ctx,
+        action_id: str,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+) -> None:
+    """Handle snooze reminder button from reminder DM."""
+    try:
+        # Parse action_id: user_id_task_id_duration
+        parts = action_id.split("_")
+        if len(parts) != 3:
+            return
+
+        user_id = int(parts[0])
+        task_id = int(parts[1])
+        duration = parts[2]  # e.g., "1h"
+
+        # Verify this is the correct user
+        if ctx.user.id != user_id:
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="❌ This reminder is not for you!")
+                        ]
+                    )
+                ],
+                edit=True
+            )
+            return
+
+        # Parse snooze duration and create new reminder
+        snooze_time = parse_reminder_time(duration)
+        if not snooze_time:
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="❌ Invalid snooze duration")
+                        ]
+                    )
+                ],
+                edit=True
+            )
+            return
+
+        # Create new reminder
+        success = await create_reminder(
+            mongo, bot, user_id, task_id,
+            snooze_time, DEFAULT_TIMEZONE
+        )
+
+        if success:
+            # Format snooze time for display
+            now = pendulum.now(DEFAULT_TIMEZONE)
+            if snooze_time.date() == now.date():
+                formatted_time = snooze_time.format("h:mm A")
+                time_desc = f"today at {formatted_time}"
+            elif snooze_time.date() == now.add(days=1).date():
+                formatted_time = snooze_time.format("h:mm A")
+                time_desc = f"tomorrow at {formatted_time}"
+            else:
+                time_desc = snooze_time.format("MMM D [at] h:mm A")
+
+            # Update the reminder message
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=BLUE_ACCENT,
+                        components=[
+                            Text(content="## ⏰ Reminder Snoozed"),
+                            Separator(divider=True),
+                            Text(content=f"I'll remind you about task #{task_id} {time_desc}."),
+                            Text(content="💤 Sleep tight!")
+                        ]
+                    )
+                ],
+                edit=True
+            )
+        else:
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ Snooze Failed"),
+                            Text(content="Could not create new reminder. The task may no longer exist.")
+                        ]
+                    )
+                ],
+                edit=True
+            )
+
+    except Exception as e:
+        try:
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="❌ An error occurred processing your request.")
+                        ]
+                    )
+                ],
+                edit=True
+            )
+        except:
+            pass
 
 
 @loader.listener(hikari.StoppingEvent)
