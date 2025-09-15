@@ -30,6 +30,11 @@ from utils.classes import Clan
 from utils.constants import GREEN_ACCENT, RED_ACCENT
 from utils.emoji import emojis
 
+# Permission constants - same as clan dashboard
+CLAN_MANAGEMENT_ROLE_ID = 1060318031575793694
+ADDITIONAL_MANAGEMENT_ROLE_ID = 1371470242076954706
+ALLOWED_MANAGEMENT_ROLES = [CLAN_MANAGEMENT_ROLE_ID, ADDITIONAL_MANAGEMENT_ROLE_ID]
+
 
 class CloneLogger:
     """Collects log messages during cloning process"""
@@ -451,8 +456,7 @@ async def clone_forum_threads(
 class CloneCategory(
     lightbulb.SlashCommand,
     name="clone-category",
-    description="Clone a category with all channels for a specific clan",
-    default_member_permissions=hikari.Permissions.MANAGE_CHANNELS | hikari.Permissions.MANAGE_ROLES
+    description="Clone a category with all channels for a specific clan"
 ):
     category = lightbulb.channel(
         "category",
@@ -468,7 +472,42 @@ class CloneCategory(
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
-        
+
+        # Check if user has the required role
+        member = ctx.member
+        if not member:
+            await ctx.respond(
+                "❌ Unable to verify permissions. Please try again.",
+                flags=hikari.MessageFlag.EPHEMERAL
+            )
+            return
+
+        # Check if the user has any of the allowed management roles
+        user_role_ids = [role.id for role in member.get_roles()]
+        if not any(role_id in user_role_ids for role_id in ALLOWED_MANAGEMENT_ROLES):
+            # User doesn't have permission - show access denied message
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ Access Denied"),
+                        Separator(divider=True),
+                        Text(content=(
+                            "You do not have permission to use the Clone Category command.\n\n"
+                            "This feature is restricted to users with Clan Management roles.\n"
+                            "If you believe you should have access, please contact an administrator."
+                        )),
+                        Media(
+                            items=[
+                                MediaItem(media="assets/Red_Footer.png")
+                            ]
+                        ),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, flags=hikari.MessageFlag.EPHEMERAL)
+            return
+
         # Verify the selected channel is a category
         category_id = self.category.id
         try:

@@ -57,6 +57,11 @@ HELP_CATEGORIES = {
         "emoji": "⚔️",
         "description": "Farm War Alliance bases, weights, and strategies"
     },
+    "new_clan": {
+        "name": "Adding a New Clan",
+        "emoji": "🆕",
+        "description": "Step-by-step guide to add a new clan to the family"
+    },
     "polls": {
         "name": "Polls",
         "emoji": "🗳️",
@@ -91,6 +96,19 @@ COMMAND_LIST = {
         ("/fwa links", "Quick access to essential FWA links - verification forms, war weight entry, and important resources"),
         ("/fwa war-plans", "Generate strategic war plan messages for different war scenarios and outcomes"),
         ("/fwa weight", "Calculate war weight from storage values - automatically converts storage to war weight (×5 multiplier)"),
+    ],
+    "new_clan": [
+        ("📺 Video Tutorials", "Watch these YouTube tutorials for visual guidance:\n• Clan Dashboard Tutorial: https://youtu.be/ULh7TX008wE\n• Setup ClashKing Logs: https://youtu.be/6p8ILBh07yc"),
+
+        ("Step 1: Create Roles with Dyno", "Use Dyno's </addrole:1006671690094366760> command to create:\n• A clan role (e.g., 'Clan-NewClanName')\n• A clan leader role (e.g., 'NewClanName-Leadership')"),
+
+        ("Step 2: Add Clan to Dashboard", "Use Clan Dashboard in <#1345587617223151758> → Click 'Update Clan Information' → 'Add a Clan'\n• Enter the clan tag\n• Link the roles you created with Dyno\n• Set up basic clan information"),
+
+        ("Step 3: Clone Category Structure", "Use `/utilities clone-category` command:\n• Select an existing clan category (e.g., Silent Hill)\n• Choose your new clan from the dropdown\n• This copies all channels with proper permissions"),
+
+        ("Step 4: Complete Setup", "Return to Clan Dashboard in <#1345587617223151758> → 'Update Clan Information' → 'Edit a Clan':\n• Update channel IDs with the newly cloned channels\n• Set announcement, chat, and leadership channels\n• Configure any clan-specific settings"),
+
+        ("⚠️ Important Notes", "• Ensure roles are created BEFORE adding to dashboard\n• Clone from a similar clan type (FWA, Trial, etc.)\n• Double-check all channel assignments after cloning\n• Test permissions and functionality before going live"),
     ],
     "polls": [
         ("/poll create", "Create interactive polls with multiple choice options and real-time voting"),
@@ -255,12 +273,23 @@ Examples for OTHER COMMANDS:
 - "Calculate war weight? Use `/fwa weight` → enter storage value → automatically multiplied by 5 for war weight"
 - "Create polls? Use `/poll create` → fill in your question and options → members can vote with real-time results"
 
+Examples for ADDING NEW CLANS:
+- "Adding a new clan? First watch the YouTube tutorials → Use Dyno's </addrole:1006671690094366760> command to make roles → Add clan with Clan Dashboard in <#1345587617223151758> → Clone channels with `/utilities clone-category` → Finish setup in dashboard"
+- "Need help with new clan setup? Check the 'Adding a New Clan' help section → Has video tutorials, step-by-step guide, and all the commands you need → Make roles first, then add to dashboard, then clone channels!"
+
 RECRUITMENT SYSTEM DETAILS to include when relevant:
 - Questions take 15-20 minutes for leaders to review
 - Bidding auctions last exactly 15 minutes
 - Clan recruitment help posts have a 30-day cooldown
 - Only clan leaders can send welcome messages
 - Bidding uses clan points as currency
+
+NEW CLAN ADDITION PROCESS:
+- Must create roles with Dyno FIRST using </addrole:1006671690094366760> command
+- Add clan to dashboard SECOND with the new roles (in <#1345587617223151758>)
+- Clone category structure THIRD using `/utilities clone-category` from existing clan
+- Complete setup LAST by updating channel IDs in dashboard
+- Video tutorials available: https://youtu.be/ULh7TX008wE and https://youtu.be/6p8ILBh07yc
 
 Always:
 - Break down big words into smaller ones
@@ -276,6 +305,8 @@ Never use big technical words. Instead of "parameters" say "the blanks you fill 
 If they ask about something not in the commands, say: "Hmm, I don't know about that command. 🤔 Here's what I CAN help you with: [list 2-3 related commands they might want]. Want to try one of these instead?"
 
 SPECIAL FOCUS: When users ask about recruitment, always mention the full workflow and timing since it's the most complex system in the bot! For detailed recruitment help, always direct them to the comprehensive guide at the top of <#1356702174096261271> which has command tutorials, staff hierarchy, blind bidding guide, and essential recruitment details.
+
+SPECIAL FOCUS: When users ask about adding new clans, setting up clans, creating clans, or expanding the family, always mention the proper workflow order and direct them to the 'Adding a New Clan' help section for complete step-by-step instructions and video tutorials!
 
 Remember: Make it so easy that anyone can understand, especially the recruitment system! 🌟"""
 

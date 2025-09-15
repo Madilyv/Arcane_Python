@@ -36,54 +36,18 @@ from extensions.commands.clan.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
 
 CLAN_MANAGEMENT_ROLE_ID = 1060318031575793694
+ADDITIONAL_MANAGEMENT_ROLE_ID = 1371470242076954706
 CLAN_DELETION_USER_ID = 505227988229554179
+
+# List of all roles that can add/edit clans
+ALLOWED_MANAGEMENT_ROLES = [CLAN_MANAGEMENT_ROLE_ID, ADDITIONAL_MANAGEMENT_ROLE_ID]
 
 IMG_RE = re.compile(r"^https?://\S+\.(?:png|jpe?g|gif|webp)$", re.IGNORECASE)
 
 
-@register_action("update_clan_information", group="clan_database")
-@lightbulb.di.with_di
-async def update_clan_information(
-        ctx: lightbulb.components.MenuContext,
-        **kwargs
-):
-    # Check if user has the required role
-    member = ctx.member
-    if not member:
-        await ctx.respond(
-            "❌ Unable to verify permissions. Please try again.",
-            ephemeral=True
-        )
-        return
-
-    # Check if the user has the required role
-    user_role_ids = [role.id for role in member.get_roles()]
-    if CLAN_MANAGEMENT_ROLE_ID not in user_role_ids:
-        # User doesn't have permission - show access denied message
-        components = [
-            Container(
-                accent_color=RED_ACCENT,
-                components=[
-                    Text(content="## ❌ Access Denied"),
-                    Separator(divider=True),
-                    Text(content=(
-                        "You do not have permission to access Clan Management.\n\n"
-                        "This feature is restricted to users with the Clan Management role.\n"
-                        "If you believe you should have access, please contact an administrator."
-                    )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Red_Footer.png")
-                        ]
-                    ),
-                ]
-            )
-        ]
-        await ctx.respond(components=components, ephemeral=True)
-        return await dashboard_page(ctx=ctx)
-
-    # If we get here, user has permission - show your normal menu
-    components = [
+async def clan_management_menu():
+    """Return the clan management menu components"""
+    return [
         Container(
             accent_color=RED_ACCENT,
             components=[
@@ -147,6 +111,51 @@ async def update_clan_information(
             ]
         )
     ]
+
+
+@register_action("update_clan_information", group="clan_database")
+@lightbulb.di.with_di
+async def update_clan_information(
+        ctx: lightbulb.components.MenuContext,
+        **kwargs
+):
+    # Check if user has the required role
+    member = ctx.member
+    if not member:
+        await ctx.respond(
+            "❌ Unable to verify permissions. Please try again.",
+            ephemeral=True
+        )
+        return
+
+    # Check if the user has any of the allowed management roles
+    user_role_ids = [role.id for role in member.get_roles()]
+    if not any(role_id in user_role_ids for role_id in ALLOWED_MANAGEMENT_ROLES):
+        # User doesn't have permission - show access denied message
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Access Denied"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "You do not have permission to access Clan Management.\n\n"
+                        "This feature is restricted to users with the Clan Management role.\n"
+                        "If you believe you should have access, please contact an administrator."
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Red_Footer.png")
+                        ]
+                    ),
+                ]
+            )
+        ]
+        await ctx.respond(components=components, ephemeral=True)
+        return await dashboard_page(ctx=ctx)
+
+    # If we get here, user has permission - show clan management menu
+    components = await clan_management_menu()
     await ctx.respond(components=components, ephemeral=True)
 
     return await dashboard_page(ctx=ctx)
@@ -361,7 +370,7 @@ async def clan_remove_menu(
     return components
 
 
-@register_action("remove_clan", ephemeral=True)
+@register_action("remove_clan", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def on_remove_clan_field(
         ctx: lightbulb.components.MenuContext,
@@ -399,19 +408,33 @@ async def on_remove_clan_field(
         # Delete clan from database
         await mongo.clans.delete_one({"tag": tag})
 
-        return [
+        # Show deletion confirmation
+        # Build components list conditionally to avoid empty Text components
+        container_components = [
+            Text(content=f"Welp, `{db_clan.name}` has been deleted! <:SadTrash:1387846121094774854>\n"
+                         "Hopefully you didn't make an oopsie...")
+        ]
+
+        # Only add emoji confirmation if there was an emoji
+        if db_clan.emoji:
+            container_components.append(
+                Text(content="✅ Associated emoji has been removed from the bot.")
+            )
+
+        # Always add footer
+        container_components.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
+
+        deletion_components = [
             Container(
                 accent_color=RED_ACCENT,
-                components=[
-                    Text(content=f"Welp, `{db_clan.name}` has been deleted! <:SadTrash:1387846121094774854>\n"
-                                 "Hopefully you didn't make an oopsie..."),
-                    Text(content=f"✅ Associated emoji has been removed from the bot." if db_clan.emoji else ""),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                ]
+                components=container_components
             )
         ]
+        await ctx.interaction.edit_initial_response(components=deletion_components)
     else:
-        return await dashboard_page(ctx=ctx, mongo=mongo)
+        # Show clan management menu for cancel
+        management_components = await clan_management_menu()
+        await ctx.interaction.edit_initial_response(components=management_components)
 
 
 # EDIT CLAN STUFF
