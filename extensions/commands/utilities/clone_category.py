@@ -117,59 +117,117 @@ def log_message(message: str, logger: Optional[CloneLogger] = None, level: str =
         print(f"[{level.upper()}] {message}")
 
 
-def clone_permission_overwrites(
+async def clone_permission_overwrites(
     overwrites: Dict[hikari.Snowflake, hikari.PermissionOverwrite],
-    old_role_id: hikari.Snowflake,
-    new_role_id: hikari.Snowflake
+    new_clan_role_id: Optional[hikari.Snowflake],
+    new_leader_role_id: Optional[hikari.Snowflake],
+    mongo: MongoClient
 ) -> Dict[hikari.Snowflake, hikari.PermissionOverwrite]:
-    """Clone permission overwrites, replacing old role ID with new role ID"""
+    """
+    Clone permission overwrites, removing ALL clan roles and adding new ones with preserved permissions
+    """
+    # Find what clan roles exist and get their permissions
+    sample_clan_overwrite, sample_leader_overwrite, all_found_clan_roles = await find_clan_roles_in_overwrites(overwrites, mongo)
+
+    # Get complete list of clan role IDs to remove
+    all_clan_role_ids, all_leader_role_ids = await get_all_clan_role_ids(mongo)
+
+    # Start with clean overwrites, removing all clan-related roles
     new_overwrites = {}
-    
+
     for target_id, overwrite in overwrites.items():
-        if target_id == old_role_id:
-            # Replace with new role ID
-            new_overwrites[new_role_id] = hikari.PermissionOverwrite(
-                id=new_role_id,
-                type=overwrite.type,
-                allow=overwrite.allow,
-                deny=overwrite.deny
+        # Skip all clan roles and leader roles - we'll add new ones
+        if target_id not in all_clan_role_ids and target_id not in all_leader_role_ids:
+            new_overwrites[target_id] = overwrite
+
+    # Add new clan role with preserved permissions (or defaults)
+    if new_clan_role_id:
+        if sample_clan_overwrite:
+            # Use the same permissions as the old clan role
+            new_overwrites[new_clan_role_id] = hikari.PermissionOverwrite(
+                id=new_clan_role_id,
+                type=hikari.PermissionOverwriteType.ROLE,
+                allow=sample_clan_overwrite.allow,
+                deny=sample_clan_overwrite.deny
             )
         else:
-            # Keep as is
-            new_overwrites[target_id] = overwrite
-    
+            # No existing clan role found, use default permissions
+            new_overwrites[new_clan_role_id] = hikari.PermissionOverwrite(
+                id=new_clan_role_id,
+                type=hikari.PermissionOverwriteType.ROLE,
+                allow=hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES | hikari.Permissions.READ_MESSAGE_HISTORY,
+                deny=hikari.Permissions.NONE
+            )
+
+    # Add new leader role with preserved permissions (or defaults)
+    if new_leader_role_id:
+        if sample_leader_overwrite:
+            # Use the same permissions as the old leader role
+            new_overwrites[new_leader_role_id] = hikari.PermissionOverwrite(
+                id=new_leader_role_id,
+                type=hikari.PermissionOverwriteType.ROLE,
+                allow=sample_leader_overwrite.allow,
+                deny=sample_leader_overwrite.deny
+            )
+        else:
+            # No existing leader role found, use default elevated permissions
+            new_overwrites[new_leader_role_id] = hikari.PermissionOverwrite(
+                id=new_leader_role_id,
+                type=hikari.PermissionOverwriteType.ROLE,
+                allow=hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES | hikari.Permissions.READ_MESSAGE_HISTORY | hikari.Permissions.MANAGE_MESSAGES,
+                deny=hikari.Permissions.NONE
+            )
+
     return new_overwrites
+
+
+async def get_all_clan_role_ids(mongo: MongoClient) -> Tuple[List[hikari.Snowflake], List[hikari.Snowflake]]:
+    """
+    Get all clan role IDs and leader role IDs from the database
+    Returns: (clan_role_ids, leader_role_ids)
+    """
+    clan_data = await mongo.clans.find(
+        {"$or": [{"role_id": {"$exists": True, "$ne": None}}, {"leader_role_id": {"$exists": True, "$ne": None}}]}
+    ).to_list(length=None)
+
+    clan_role_ids = []
+    leader_role_ids = []
+
+    for clan in clan_data:
+        if clan.get("role_id"):
+            clan_role_ids.append(hikari.Snowflake(clan["role_id"]))
+        if clan.get("leader_role_id"):
+            leader_role_ids.append(hikari.Snowflake(clan["leader_role_id"]))
+
+    return clan_role_ids, leader_role_ids
 
 
 async def find_clan_roles_in_overwrites(
     overwrites: Dict[hikari.Snowflake, hikari.PermissionOverwrite],
-    guild: hikari.Guild,
-    bot: hikari.GatewayBot
-) -> Tuple[Optional[hikari.Snowflake], Optional[hikari.Snowflake]]:
+    mongo: MongoClient
+) -> Tuple[Optional[hikari.PermissionOverwrite], Optional[hikari.PermissionOverwrite], List[hikari.Snowflake]]:
     """
-    Find which roles in the overwrites are likely clan and leadership roles
-    Returns: (clan_role_id, leadership_role_id)
+    Find clan roles in overwrites using database lookup
+    Returns: (sample_clan_overwrite, sample_leader_overwrite, all_clan_role_ids_found)
     """
-    clan_role_id = None
-    leadership_role_id = None
-    
-    # Get all roles in the guild
-    roles = await bot.rest.fetch_roles(guild.id)
-    role_dict = {role.id: role for role in roles}
-    
-    for role_id in overwrites.keys():
-        if role_id in role_dict:
-            role = role_dict[role_id]
-            role_name_lower = role.name.lower()
-            
-            # Check if it's a leadership role
-            if 'leadership' in role_name_lower:
-                leadership_role_id = role_id
-            # Check if it's a clan role (but not leadership)
-            elif 'clan' in role_name_lower and 'leadership' not in role_name_lower:
-                clan_role_id = role_id
-    
-    return clan_role_id, leadership_role_id
+    # Get all clan role IDs from database
+    all_clan_role_ids, all_leader_role_ids = await get_all_clan_role_ids(mongo)
+
+    sample_clan_overwrite = None
+    sample_leader_overwrite = None
+    found_clan_role_ids = []
+
+    # Check each overwrite to see if it's a clan role
+    for role_id, overwrite in overwrites.items():
+        if role_id in all_clan_role_ids:
+            found_clan_role_ids.append(role_id)
+            if sample_clan_overwrite is None:
+                sample_clan_overwrite = overwrite  # Save the first one as a template
+        elif role_id in all_leader_role_ids:
+            if sample_leader_overwrite is None:
+                sample_leader_overwrite = overwrite  # Save the first one as a template
+
+    return sample_clan_overwrite, sample_leader_overwrite, found_clan_role_ids
 
 
 async def clone_forum_threads(
@@ -569,31 +627,14 @@ async def handle_clan_selection(
     await ctx.respond(components=progress_components, edit=True)
     
     try:
-        # Find old clan roles in the source category permissions
-        guild = await bot.rest.fetch_guild(ctx.guild_id)
-        old_clan_role_id, old_leadership_role_id = await find_clan_roles_in_overwrites(
+        # Create new category with updated permissions
+        logger.info(f"Updating category permissions for {clan.name}")
+        new_category_perms = await clone_permission_overwrites(
             source_category.permission_overwrites,
-            guild,
-            bot
+            clan.role_id,
+            clan.leader_role_id,
+            mongo
         )
-        
-        # Create new category
-        new_category_perms = source_category.permission_overwrites.copy()
-        
-        # Update permissions if roles were found
-        if old_clan_role_id and clan.role_id:
-            new_category_perms = clone_permission_overwrites(
-                new_category_perms,
-                old_clan_role_id,
-                clan.role_id
-            )
-        
-        if old_leadership_role_id and clan.leader_role_id:
-            new_category_perms = clone_permission_overwrites(
-                new_category_perms,
-                old_leadership_role_id,
-                clan.leader_role_id
-            )
         
         # Create the new category
         logger.info(f"Creating new category: {clan.name}")
@@ -623,21 +664,13 @@ async def handle_clan_selection(
         for channel in source_channels:
             try:
                 # Update permissions for this channel
-                channel_perms = channel.permission_overwrites.copy()
-                
-                if old_clan_role_id and clan.role_id:
-                    channel_perms = clone_permission_overwrites(
-                        channel_perms,
-                        old_clan_role_id,
-                        clan.role_id
-                    )
-                
-                if old_leadership_role_id and clan.leader_role_id:
-                    channel_perms = clone_permission_overwrites(
-                        channel_perms,
-                        old_leadership_role_id,
-                        clan.leader_role_id
-                    )
+                logger.info(f"Updating permissions for channel: {channel.name}")
+                channel_perms = await clone_permission_overwrites(
+                    channel.permission_overwrites,
+                    clan.role_id,
+                    clan.leader_role_id,
+                    mongo
+                )
                 
                 # Create channel name with suffix (replacing any existing suffix)
                 base_channel_name = remove_existing_suffix(channel.name)
