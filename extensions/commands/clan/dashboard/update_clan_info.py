@@ -36,6 +36,7 @@ from extensions.commands.clan.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
 
 CLAN_MANAGEMENT_ROLE_ID = 1060318031575793694
+CLAN_DELETION_USER_ID = 505227988229554179
 
 IMG_RE = re.compile(r"^https?://\S+\.(?:png|jpe?g|gif|webp)$", re.IGNORECASE)
 
@@ -257,6 +258,29 @@ async def remove_clan_select(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
+    # Check if user is authorized to delete clans
+    if ctx.user.id != CLAN_DELETION_USER_ID:
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Access Denied"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "You do not have permission to delete clans.\n\n"
+                        f"Please have <@{CLAN_DELETION_USER_ID}> remove the clan if needed."
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Red_Footer.png")
+                        ]
+                    ),
+                ]
+            )
+        ]
+        await ctx.respond(components=components, ephemeral=True)
+        return
+
     clans = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=data) for data in clans]
     options = []
