@@ -1292,7 +1292,8 @@ async def on_edit_clan_field(
     else:
         # Default: return to main edit menu
         return await clan_edit_menu(
-            ctx=ctx,
+            ctx,
+            tag,  # action_id parameter
             mongo=mongo,
             tag=tag
         )
@@ -1368,7 +1369,8 @@ async def on_edit_thread_field(
 
     # 5) Rebuild the edit menu
     return await clan_edit_menu(
-        ctx=ctx,
+        ctx,
+        tag,  # action_id parameter
         mongo=mongo,
         tag=tag
     )
