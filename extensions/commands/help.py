@@ -100,15 +100,13 @@ COMMAND_LIST = {
     "new_clan": [
         ("📺 Video Tutorials", "Watch these YouTube tutorials for visual guidance:\n• Clan Dashboard Tutorial: https://youtu.be/ULh7TX008wE\n• Setup ClashKing Logs: https://youtu.be/6p8ILBh07yc"),
 
-        ("Step 1: Create Roles with Dyno", "Use Dyno's </addrole:1006671690094366760> command to create:\n• A clan role (e.g., 'Clan-NewClanName')\n• A clan leader role (e.g., 'NewClanName-Leadership')"),
+        ("Step 1: Add Clan to Dashboard", "Use Clan Dashboard in <#1345587617223151758> → Click 'Update Clan Information' → 'Add a Clan'\n• Enter the clan tag from Clash of Clans\n• Choose your role setup option:\n  - ✅ **Auto-create roles**: Bot creates clan role + leadership role automatically\n  - 📋 **Select existing**: Choose from Discord's existing roles\n  - ⏭️ **Skip for now**: Set up roles later in the edit menu"),
 
-        ("Step 2: Add Clan to Dashboard", "Use Clan Dashboard in <#1345587617223151758> → Click 'Update Clan Information' → 'Add a Clan'\n• Enter the clan tag\n• Link the roles you created with Dyno\n• Set up basic clan information"),
+        ("Step 2: Clone Category Structure", "Use `/utilities clone-category` command:\n• Select an existing clan category (e.g., Silent Hill)\n• Choose your new clan from the dropdown\n• This copies all channels with proper permissions"),
 
-        ("Step 3: Clone Category Structure", "Use `/utilities clone-category` command:\n• Select an existing clan category (e.g., Silent Hill)\n• Choose your new clan from the dropdown\n• This copies all channels with proper permissions"),
+        ("Step 3: Complete Setup", "Return to Clan Dashboard in <#1345587617223151758> → 'Update Clan Information' → 'Edit a Clan':\n• Update channel IDs with the newly cloned channels\n• Set announcement, chat, and leadership channels\n• Configure any clan-specific settings like logo and profile"),
 
-        ("Step 4: Complete Setup", "Return to Clan Dashboard in <#1345587617223151758> → 'Update Clan Information' → 'Edit a Clan':\n• Update channel IDs with the newly cloned channels\n• Set announcement, chat, and leadership channels\n• Configure any clan-specific settings"),
-
-        ("⚠️ Important Notes", "• Ensure roles are created BEFORE adding to dashboard\n• Clone from a similar clan type (FWA, Trial, etc.)\n• Double-check all channel assignments after cloning\n• Test permissions and functionality before going live"),
+        ("⚠️ Important Notes", "• The bot handles role creation automatically if you choose auto-create\n• Clone from a similar clan type (FWA, Trial, etc.)\n• Double-check all channel assignments after cloning\n• Test permissions and functionality before going live"),
     ],
     "polls": [
         ("/poll create", "Create interactive polls with multiple choice options and real-time voting"),
@@ -230,6 +228,10 @@ async def create_category_view(category: str) -> list:
 async def call_claude_api(user_question: str) -> str:
     """Call Claude API for help with bot commands."""
 
+    # Special response for Fayez
+    if "fayez" in user_question.lower():
+        return "https://c.tenor.com/-lFxNI2gjGwAAAAd/tenor.gif"
+
     if not ANTHROPIC_API_KEY:
         return "❌ Oops! The AI helper isn't set up yet. Please ask a staff member for help!"
 
@@ -274,8 +276,8 @@ Examples for OTHER COMMANDS:
 - "Create polls? Use `/poll create` → fill in your question and options → members can vote with real-time results"
 
 Examples for ADDING NEW CLANS:
-- "Adding a new clan? First watch the YouTube tutorials → Use Dyno's </addrole:1006671690094366760> command to make roles → Add clan with Clan Dashboard in <#1345587617223151758> → Clone channels with `/utilities clone-category` → Finish setup in dashboard"
-- "Need help with new clan setup? Check the 'Adding a New Clan' help section → Has video tutorials, step-by-step guide, and all the commands you need → Make roles first, then add to dashboard, then clone channels!"
+- "Adding a new clan? First watch the YouTube tutorials → Use Clan Dashboard in <#1345587617223151758> → Click 'Add a Clan' → Choose auto-create roles or select existing → Clone channels with `/utilities clone-category` → Finish setup in dashboard"
+- "Need help with new clan setup? Check the 'Adding a New Clan' help section → Has video tutorials, step-by-step guide, and all the commands you need → Dashboard handles role creation automatically!"
 
 RECRUITMENT SYSTEM DETAILS to include when relevant:
 - Questions take 15-20 minutes for leaders to review
@@ -285,10 +287,10 @@ RECRUITMENT SYSTEM DETAILS to include when relevant:
 - Bidding uses clan points as currency
 
 NEW CLAN ADDITION PROCESS:
-- Must create roles with Dyno FIRST using </addrole:1006671690094366760> command
-- Add clan to dashboard SECOND with the new roles (in <#1345587617223151758>)
-- Clone category structure THIRD using `/utilities clone-category` from existing clan
-- Complete setup LAST by updating channel IDs in dashboard
+- Add clan to dashboard FIRST in <#1345587617223151758> → Choose role creation option (auto-create, select existing, or skip)
+- Clone category structure SECOND using `/utilities clone-category` from existing clan
+- Complete setup THIRD by updating channel IDs and settings in dashboard
+- Three role options: ✅ Auto-create (bot makes roles), 📋 Select existing (choose from Discord), ⏭️ Skip (set up later)
 - Video tutorials available: https://youtu.be/ULh7TX008wE and https://youtu.be/6p8ILBh07yc
 
 Always:
@@ -429,38 +431,74 @@ async def handle_ai_modal_submit(ctx: lightbulb.components.ModalContext, action_
     # Get AI response
     ai_response = await call_claude_api(question)
 
+    # Check if response is the Fayez GIF
+    is_fayez_gif = ai_response == "https://c.tenor.com/-lFxNI2gjGwAAAAd/tenor.gif"
+
     # Create response components
-    components = [
-        Container(
-            accent_color=GREEN_ACCENT,
-            components=[
-                Text(content="## 🤖 AI Helper Response"),
-                Separator(),
-                Text(content=f"**You asked:**\n{question}"),
-                Separator(),
-                Text(content=f"**Here's my answer:**\n{ai_response}"),
-                Separator(),
-                Text(content="💡 **Still confused?** Try asking in a different way!"),
-                Separator(),
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.PRIMARY,
-                            custom_id="help_ai_assistant:response",
-                            label="Ask Something Else",
-                            emoji="💭"
-                        ),
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            custom_id="help_ai_back_to_menu:response",
-                            label="Back to Help Menu",
-                            emoji="📚"
-                        ),
-                    ]
-                )
-            ]
-        )
-    ]
+    if is_fayez_gif:
+        # Special handling for Fayez GIF - display as image
+        components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content="## 🤖 AI Helper Response"),
+                    Separator(),
+                    Text(content=f"**You asked:**\n{question}"),
+                    Separator(),
+                    Media(items=[MediaItem(media=ai_response)]),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.PRIMARY,
+                                custom_id="help_ai_assistant:response",
+                                label="Ask Something Else",
+                                emoji="💭"
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id="help_ai_back_to_menu:response",
+                                label="Back to Help Menu",
+                                emoji="📚"
+                            ),
+                        ]
+                    )
+                ]
+            )
+        ]
+    else:
+        # Normal text response
+        components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content="## 🤖 AI Helper Response"),
+                    Separator(),
+                    Text(content=f"**You asked:**\n{question}"),
+                    Separator(),
+                    Text(content=f"**Here's my answer:**\n{ai_response}"),
+                    Separator(),
+                    Text(content="💡 **Still confused?** Try asking in a different way!"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.PRIMARY,
+                                custom_id="help_ai_assistant:response",
+                                label="Ask Something Else",
+                                emoji="💭"
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id="help_ai_back_to_menu:response",
+                                label="Back to Help Menu",
+                                emoji="📚"
+                            ),
+                        ]
+                    )
+                ]
+            )
+        ]
 
     await ctx.interaction.edit_initial_response(
         content="",

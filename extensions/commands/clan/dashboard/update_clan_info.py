@@ -28,7 +28,7 @@ from extensions.components import register_action
 from io import BytesIO
 from PIL import Image
 
-from utils.constants import RED_ACCENT
+from utils.constants import RED_ACCENT, GREEN_ACCENT
 from utils.classes import Clan
 from utils.emoji import emojis
 from utils.mongo import MongoClient
@@ -43,6 +43,632 @@ CLAN_DELETION_USER_ID = 505227988229554179
 ALLOWED_MANAGEMENT_ROLES = [CLAN_MANAGEMENT_ROLE_ID, ADDITIONAL_MANAGEMENT_ROLE_ID]
 
 IMG_RE = re.compile(r"^https?://\S+\.(?:png|jpe?g|gif|webp)$", re.IGNORECASE)
+
+
+async def create_role_setup_dialog(clan, bot: hikari.GatewayBot, guild_id: hikari.Snowflake):
+    """Create role setup dialog for new clan"""
+
+    # Get all guild roles to check for existing ones
+    roles = await bot.rest.fetch_roles(guild_id)
+    role_dict = {role.name.lower(): role for role in roles}
+
+    # Check for existing roles
+    clan_role_name = clan.name
+    leadership_role_name = f"{clan.name} Leadership"
+
+    existing_clan_role = role_dict.get(clan_role_name.lower())
+    existing_leadership_role = role_dict.get(leadership_role_name.lower())
+
+    # Build the dialog
+    components = [
+        Text(content=f"## ⚙️ Role Setup for {clan.name}"),
+        Text(content=f"**Clan Tag:** {clan.tag}"),
+        Separator(),
+        Text(content="Choose how to set up Discord roles for this clan:"),
+        Separator(),
+    ]
+
+    # Auto-create option
+    auto_create_text = f"**✅ Auto-create roles:**\n"
+    auto_create_text += f"• Clan Role: \"{clan_role_name}\"\n"
+    auto_create_text += f"• Leadership Role: \"{leadership_role_name}\""
+
+    if existing_clan_role or existing_leadership_role:
+        auto_create_text += f"\n\n⚠️ **Note:** "
+        if existing_clan_role:
+            auto_create_text += f"Role \"{clan_role_name}\" already exists. "
+        if existing_leadership_role:
+            auto_create_text += f"Role \"{leadership_role_name}\" already exists. "
+        auto_create_text += "Auto-create will use existing roles where possible."
+
+    components.extend([
+        Section(
+            components=[Text(content=auto_create_text)],
+            accessory=Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                label="Auto-create Roles",
+                emoji="✅",
+                custom_id=f"role_autocreate:{clan.tag}"
+            )
+        ),
+
+        # Select existing roles option
+        Section(
+            components=[Text(content="**📋 Select existing roles:**\nChoose from existing Discord roles")],
+            accessory=Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                label="Select Existing",
+                emoji="📋",
+                custom_id=f"role_select_existing:{clan.tag}"
+            )
+        ),
+
+        # Skip option
+        Section(
+            components=[Text(content="**⏭️ Skip for now:**\nSet up roles manually later in the edit menu")],
+            accessory=Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                label="Skip Role Setup",
+                emoji="⏭️",
+                custom_id=f"role_skip:{clan.tag}"
+            )
+        ),
+
+        Media(items=[MediaItem(media="assets/Red_Footer.png")])
+    ])
+
+    return [Container(accent_color=RED_ACCENT, components=components)]
+
+
+@register_action("role_autocreate", no_return=True)
+@lightbulb.di.with_di
+async def handle_role_autocreate(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        coc_client: coc.Client = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle auto-creating roles for new clan"""
+    clan_tag = action_id  # action_id contains the clan tag
+
+    try:
+        # Get clan info from CoC API
+        clan = await coc_client.get_clan(tag=clan_tag)
+
+        # Get all guild roles
+        roles = await bot.rest.fetch_roles(ctx.guild_id)
+        role_dict = {role.name.lower(): role for role in roles}
+
+        # Define role names
+        clan_role_name = clan.name
+        leadership_role_name = f"{clan.name} Leadership"
+
+        # Check for existing roles
+        existing_clan_role = role_dict.get(clan_role_name.lower())
+        existing_leadership_role = role_dict.get(leadership_role_name.lower())
+
+        clan_role_id = 0
+        leadership_role_id = 0
+
+        # Create or use existing clan role
+        if existing_clan_role:
+            clan_role_id = existing_clan_role.id
+        else:
+            try:
+                # Create clan role with blue color (typical clan color)
+                new_clan_role = await bot.rest.create_role(
+                    guild=ctx.guild_id,
+                    name=clan_role_name,
+                    color=hikari.Color(0x3498db),  # Blue color
+                    mentionable=True,
+                    reason=f"Auto-created for clan {clan.name} ({clan.tag})"
+                )
+                clan_role_id = new_clan_role.id
+            except hikari.ForbiddenError:
+                await ctx.interaction.edit_initial_response(
+                    components=[
+                        Container(
+                            accent_color=RED_ACCENT,
+                            components=[
+                                Text(content="## ❌ Permission Error"),
+                                Text(content="I don't have permission to create roles. Please check bot permissions."),
+                                Button(
+                                    style=hikari.ButtonStyle.SECONDARY,
+                                    custom_id=f"role_select_existing:{clan_tag}",
+                                    label="Select Existing Roles Instead"
+                                )
+                            ]
+                        )
+                    ]
+                )
+                return
+
+        # Create or use existing leadership role
+        if existing_leadership_role:
+            leadership_role_id = existing_leadership_role.id
+        else:
+            try:
+                # Create leadership role with gold color
+                new_leadership_role = await bot.rest.create_role(
+                    guild=ctx.guild_id,
+                    name=leadership_role_name,
+                    color=hikari.Color(0xf1c40f),  # Gold color
+                    mentionable=True,
+                    reason=f"Auto-created leadership role for clan {clan.name} ({clan.tag})"
+                )
+                leadership_role_id = new_leadership_role.id
+            except hikari.ForbiddenError:
+                await ctx.interaction.edit_initial_response(
+                    components=[
+                        Container(
+                            accent_color=RED_ACCENT,
+                            components=[
+                                Text(content="## ❌ Permission Error"),
+                                Text(content="I don't have permission to create roles. Please check bot permissions."),
+                                Button(
+                                    style=hikari.ButtonStyle.SECONDARY,
+                                    custom_id=f"role_select_existing:{clan_tag}",
+                                    label="Select Existing Roles Instead"
+                                )
+                            ]
+                        )
+                    ]
+                )
+                return
+
+        # Create clan in database with role IDs
+        await mongo.clans.insert_one({
+            "announcement_id": 0,
+            "chat_channel_id": 0,
+            "emoji": "",
+            "tag": clan.tag,
+            "leader_id": 0,
+            "leader_role_id": leadership_role_id,
+            "leadership_channel_id": 0,
+            "logo": "",
+            "banner": "",
+            "name": clan.name,
+            "profile": "",
+            "role_id": clan_role_id,
+            "rules_channel_id": 0,
+            "status": "",
+            "th_attribute": "",
+            "th_requirements": 0,
+            "thread_id": 0,
+            "thread_message_id": 0,
+            "type": "",
+            "points": 0.0,
+            "recruit_count": 0
+        })
+
+        # Show success message and go to edit menu
+        success_components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content=f"## ✅ Clan {clan.name} Added Successfully!"),
+                    Text(content=f"**Roles Created:**\n• Clan Role: <@&{clan_role_id}>\n• Leadership Role: <@&{leadership_role_id}>"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.PRIMARY,
+                                custom_id=f"clan_edit_menu:{clan.tag}",
+                                label="Configure Clan Settings",
+                                emoji="⚙️"
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=success_components)
+
+    except Exception as e:
+        await ctx.interaction.edit_initial_response(
+            components=[
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ Error Creating Clan"),
+                        Text(content=f"An error occurred: {str(e)}"),
+                        Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                    ]
+                )
+            ]
+        )
+
+
+@register_action("role_skip", no_return=True)
+@lightbulb.di.with_di
+async def handle_role_skip(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        coc_client: coc.Client = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle skipping role setup for new clan"""
+    clan_tag = action_id  # action_id contains the clan tag
+
+    try:
+        # Get clan info from CoC API
+        clan = await coc_client.get_clan(tag=clan_tag)
+
+        # Create clan in database with empty role IDs (original behavior)
+        await mongo.clans.insert_one({
+            "announcement_id": 0,
+            "chat_channel_id": 0,
+            "emoji": "",
+            "tag": clan.tag,
+            "leader_id": 0,
+            "leader_role_id": 0,
+            "leadership_channel_id": 0,
+            "logo": "",
+            "banner": "",
+            "name": clan.name,
+            "profile": "",
+            "role_id": 0,
+            "rules_channel_id": 0,
+            "status": "",
+            "th_attribute": "",
+            "th_requirements": 0,
+            "thread_id": 0,
+            "thread_message_id": 0,
+            "type": "",
+            "points": 0.0,
+            "recruit_count": 0
+        })
+
+        # Go directly to edit menu
+        new_components = await clan_edit_menu(ctx, action_id=clan.tag, mongo=mongo, tag=clan.tag)
+        await ctx.interaction.edit_initial_response(components=new_components)
+
+    except Exception as e:
+        await ctx.interaction.edit_initial_response(
+            components=[
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ Error Creating Clan"),
+                        Text(content=f"An error occurred: {str(e)}"),
+                        Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                    ]
+                )
+            ]
+        )
+
+
+@register_action("role_select_existing", no_return=True)
+@lightbulb.di.with_di
+async def handle_role_select_existing(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        coc_client: coc.Client = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle selecting existing roles for new clan"""
+    clan_tag = action_id  # action_id contains the clan tag
+
+    try:
+        # Get clan info from CoC API
+        clan = await coc_client.get_clan(tag=clan_tag)
+
+        components = [
+            Text(content=f"## 📋 Select Roles for {clan.name}"),
+            Text(content=f"**Clan Tag:** {clan.tag}"),
+            Separator(),
+            Text(content="Choose existing Discord roles for this clan:"),
+            Separator(),
+
+            # Clan role selector
+            Text(content="**Clan Role:**\nRole given to all clan members"),
+            ActionRow(
+                components=[
+                    SelectMenu(
+                        type=hikari.ComponentType.ROLE_SELECT_MENU,
+                        custom_id=f"select_clan_role:{clan_tag}",
+                        placeholder="Select clan role...",
+                    )
+                ]
+            ),
+            Separator(),
+
+            # Leadership role selector
+            Text(content="**Leadership Role:**\nRole given to clan leaders"),
+            ActionRow(
+                components=[
+                    SelectMenu(
+                        type=hikari.ComponentType.ROLE_SELECT_MENU,
+                        custom_id=f"select_leadership_role:{clan_tag}",
+                        placeholder="Select leadership role...",
+                    )
+                ]
+            ),
+            Separator(),
+
+            # Action buttons
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        custom_id=f"confirm_role_selection:{clan_tag}",
+                        label="Create Clan with Selected Roles",
+                        emoji="✅"
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"role_skip:{clan_tag}",
+                        label="Skip Role Setup",
+                        emoji="⏭️"
+                    )
+                ]
+            ),
+
+            Media(items=[MediaItem(media="assets/Red_Footer.png")])
+        ]
+
+        await ctx.interaction.edit_initial_response(
+            components=[Container(accent_color=RED_ACCENT, components=components)]
+        )
+
+    except Exception as e:
+        await ctx.interaction.edit_initial_response(
+            components=[
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ Error Loading Roles"),
+                        Text(content=f"An error occurred: {str(e)}"),
+                        Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                    ]
+                )
+            ]
+        )
+
+
+# Role selection state storage (temporary, in-memory)
+role_selection_state = {}
+
+
+@register_action("select_clan_role", no_return=True)
+@lightbulb.di.with_di
+async def handle_select_clan_role(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        **kwargs
+):
+    """Handle clan role selection"""
+    clan_tag = action_id
+    selected_role_id = ctx.interaction.resolved.roles[ctx.interaction.values[0]].id
+
+    # Store the selection in temporary state
+    if clan_tag not in role_selection_state:
+        role_selection_state[clan_tag] = {}
+    role_selection_state[clan_tag]['clan_role_id'] = selected_role_id
+
+    # Show success feedback
+    await show_role_selection_feedback(ctx, clan_tag)
+
+
+@register_action("select_leadership_role", no_return=True)
+@lightbulb.di.with_di
+async def handle_select_leadership_role(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        **kwargs
+):
+    """Handle leadership role selection"""
+    clan_tag = action_id
+    selected_role_id = ctx.interaction.resolved.roles[ctx.interaction.values[0]].id
+
+    # Store the selection in temporary state
+    if clan_tag not in role_selection_state:
+        role_selection_state[clan_tag] = {}
+    role_selection_state[clan_tag]['leadership_role_id'] = selected_role_id
+
+    # Show success feedback
+    await show_role_selection_feedback(ctx, clan_tag)
+
+
+async def show_role_selection_feedback(ctx: lightbulb.components.MenuContext, clan_tag: str):
+    """Show feedback with current role selections"""
+    try:
+        # Get clan info from CoC API
+        import coc
+        coc_client = lightbulb.di.get_dependency(coc.Client)
+        clan = await coc_client.get_clan(tag=clan_tag)
+
+        # Get current selections
+        selections = role_selection_state.get(clan_tag, {})
+        clan_role_id = selections.get('clan_role_id', 0)
+        leadership_role_id = selections.get('leadership_role_id', 0)
+
+        # Build selection display text
+        clan_role_text = f"<@&{clan_role_id}>" if clan_role_id != 0 else "❌ None selected"
+        leadership_role_text = f"<@&{leadership_role_id}>" if leadership_role_id != 0 else "❌ None selected"
+
+        components = [
+            Text(content=f"## 📋 Select Roles for {clan.name}"),
+            Text(content=f"**Clan Tag:** {clan.tag}"),
+            Separator(),
+            Text(content="Choose existing Discord roles for this clan:"),
+            Separator(),
+
+            # Current selections display
+            Text(content=f"**Current Selections:**\n• Clan Role: {clan_role_text}\n• Leadership Role: {leadership_role_text}"),
+            Separator(),
+
+            # Clan role selector
+            Text(content="**Clan Role:**\nRole given to all clan members"),
+            ActionRow(
+                components=[
+                    SelectMenu(
+                        type=hikari.ComponentType.ROLE_SELECT_MENU,
+                        custom_id=f"select_clan_role:{clan_tag}",
+                        placeholder="Select clan role...",
+                    )
+                ]
+            ),
+            Separator(),
+
+            # Leadership role selector
+            Text(content="**Leadership Role:**\nRole given to clan leaders"),
+            ActionRow(
+                components=[
+                    SelectMenu(
+                        type=hikari.ComponentType.ROLE_SELECT_MENU,
+                        custom_id=f"select_leadership_role:{clan_tag}",
+                        placeholder="Select leadership role...",
+                    )
+                ]
+            ),
+            Separator(),
+
+            # Action buttons
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        custom_id=f"confirm_role_selection:{clan_tag}",
+                        label="Create Clan with Selected Roles",
+                        emoji="✅"
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"role_skip:{clan_tag}",
+                        label="Skip Role Setup",
+                        emoji="⏭️"
+                    )
+                ]
+            ),
+
+            Media(items=[MediaItem(media="assets/Red_Footer.png")])
+        ]
+
+        await ctx.interaction.edit_initial_response(
+            components=[Container(accent_color=RED_ACCENT, components=components)]
+        )
+
+    except Exception as e:
+        await ctx.interaction.edit_initial_response(
+            components=[
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ Error Updating UI"),
+                        Text(content=f"An error occurred: {str(e)}"),
+                        Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                    ]
+                )
+            ]
+        )
+
+
+@register_action("confirm_role_selection", no_return=True)
+@lightbulb.di.with_di
+async def handle_confirm_role_selection(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        coc_client: coc.Client = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle confirming role selection and creating the clan"""
+    clan_tag = action_id
+
+    try:
+        # Get clan info from CoC API
+        clan = await coc_client.get_clan(tag=clan_tag)
+
+        # Get selected roles from state
+        selections = role_selection_state.get(clan_tag, {})
+        clan_role_id = selections.get('clan_role_id', 0)
+        leadership_role_id = selections.get('leadership_role_id', 0)
+
+        # Create clan in database with selected role IDs
+        await mongo.clans.insert_one({
+            "announcement_id": 0,
+            "chat_channel_id": 0,
+            "emoji": "",
+            "tag": clan.tag,
+            "leader_id": 0,
+            "leader_role_id": leadership_role_id,
+            "leadership_channel_id": 0,
+            "logo": "",
+            "banner": "",
+            "name": clan.name,
+            "profile": "",
+            "role_id": clan_role_id,
+            "rules_channel_id": 0,
+            "status": "",
+            "th_attribute": "",
+            "th_requirements": 0,
+            "thread_id": 0,
+            "thread_message_id": 0,
+            "type": "",
+            "points": 0.0,
+            "recruit_count": 0
+        })
+
+        # Clean up temporary state
+        if clan_tag in role_selection_state:
+            del role_selection_state[clan_tag]
+
+        # Build success message
+        role_assignments = []
+        if clan_role_id != 0:
+            role_assignments.append(f"• Clan Role: <@&{clan_role_id}>")
+        if leadership_role_id != 0:
+            role_assignments.append(f"• Leadership Role: <@&{leadership_role_id}>")
+
+        roles_text = "\n".join(role_assignments) if role_assignments else "• No roles assigned (can be set later)"
+
+        # Show success message and go to edit menu
+        success_components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content=f"## ✅ Clan {clan.name} Added Successfully!"),
+                    Text(content=f"**Role Assignments:**\n{roles_text}"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.PRIMARY,
+                                custom_id=f"clan_edit_menu:{clan.tag}",
+                                label="Configure Clan Settings",
+                                emoji="⚙️"
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=success_components)
+
+    except Exception as e:
+        # Clean up state on error
+        if clan_tag in role_selection_state:
+            del role_selection_state[clan_tag]
+
+        await ctx.interaction.edit_initial_response(
+            components=[
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ Error Creating Clan"),
+                        Text(content=f"An error occurred: {str(e)}"),
+                        Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                    ]
+                )
+            ]
+        )
 
 
 async def clan_management_menu():
@@ -217,6 +843,7 @@ async def add_clan_modal(
         ctx: lightbulb.components.ModalContext,
         coc_client: coc.Client = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ):
     def get_modal_item(ctx: lightbulb.components.ModalContext, custom_id: str):
@@ -229,34 +856,21 @@ async def add_clan_modal(
     if not clan_tag:
         return await ctx.respond("⚠️ You must enter a clan tag!", ephemeral=True)
 
-    clan = await coc_client.get_clan(tag=clan_tag)
-    await mongo.clans.insert_one({
-        "announcement_id": 0,
-        "chat_channel_id": 0,
-        "emoji": "",
-        "tag": clan.tag,
-        "leader_id": 0,
-        "leader_role_id": 0,
-        "leadership_channel_id": 0,
-        "logo": "",
-        "banner": "",
-        "name": clan.name,
-        "profile": "",
-        "role_id": 0,
-        "rules_channel_id": 0,
-        "status": "",
-        "th_attribute": "",
-        "th_requirements": 0,
-        "thread_id": 0,
-        "thread_message_id": 0,
-        "type": "",
-        "points": 0.0,
-        "recruit_count": 0
-    })
+    try:
+        clan = await coc_client.get_clan(tag=clan_tag)
+    except Exception as e:
+        return await ctx.respond(f"❌ Could not find clan with tag {clan_tag}: {str(e)}", ephemeral=True)
+
+    # Check if clan already exists
+    existing_clan = await mongo.clans.find_one({"tag": clan.tag})
+    if existing_clan:
+        return await ctx.respond(f"⚠️ Clan {clan.name} ({clan.tag}) already exists in the database!", ephemeral=True)
 
     await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
-    new_components = await clan_edit_menu(ctx, action_id=clan.tag, mongo=mongo, tag=clan.tag)
-    await ctx.interaction.edit_initial_response(components=new_components)
+
+    # Show role setup options
+    role_options_components = await create_role_setup_dialog(clan, bot, ctx.guild_id)
+    await ctx.interaction.edit_initial_response(components=role_options_components)
 
 
 # REMOVE CLAN STUFF
@@ -484,10 +1098,11 @@ async def choose_clan_select(
 @lightbulb.di.with_di
 async def clan_edit_menu(
         ctx: lightbulb.components.MenuContext,
+        action_id: str,
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    tag = kwargs.get("tag") or ctx.interaction.values[0]
+    tag = kwargs.get("tag") or action_id
 
     raw = await mongo.clans.find_one({"tag": tag})
     db_clan = Clan(data=raw)
@@ -1044,6 +1659,7 @@ async def back_to_clan_edit(
     # Call clan_edit_menu to rebuild the menu
     components = await clan_edit_menu(
         ctx,
+        action_id,
         mongo=mongo,
         tag=action_id,
     )
