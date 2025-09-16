@@ -267,16 +267,75 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
     except Exception as e:
         print(f"[DEBUG] Error fetching threads: {e}")
 
-    # Make API call to get ticket information with retry logic
+    # Check MongoDB first for existing ticket data (e.g., from manual creation)
     api_data = None
     player_data = None
     stored_in_db = False
+
+    # First, check if we already have ticket automation state for this channel
+    existing_state = None
+    if mongo_client:
+        try:
+            existing_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
+            if existing_state:
+                print(f"[INFO] Found existing ticket automation state for channel {channel_id} - using stored data")
+                # Create api_data from existing MongoDB document
+                ticket_info = existing_state.get("ticket_info", {})
+                player_info = existing_state.get("player_info", {})
+
+                api_data = {
+                    "user": ticket_info.get("user_id"),
+                    "channel": str(channel_id),
+                    "thread": ticket_info.get("thread_id", ""),
+                    "apply_account": ticket_info.get("user_tag") or player_info.get("player_tag"),
+                    "number": ticket_info.get("ticket_number", "Unknown"),
+                    "from_mongodb": True  # Flag to indicate this came from MongoDB
+                }
+
+                # Get player data if we have a player tag
+                player_tag = api_data.get("apply_account")
+                if player_tag and coc_client:
+                    try:
+                        player_data = await coc_client.get_player(player_tag)
+                        print(f"[DEBUG] Retrieved player data from CoC API: {player_data.name} (TH{player_data.town_hall})")
+                    except Exception as e:
+                        print(f"[DEBUG] Could not fetch fresh player data, using stored: {e}")
+                        # Use stored player data if API fails
+                        if player_info:
+                            class MockPlayer:
+                                def __init__(self, name, town_hall, tag, clan_tag=None, clan_name=None):
+                                    self.name = name
+                                    self.town_hall = town_hall
+                                    self.tag = tag
+                                    self.clan = None
+                                    if clan_tag and clan_name:
+                                        class MockClan:
+                                            def __init__(self, tag, name):
+                                                self.tag = tag
+                                                self.name = name
+                                        self.clan = MockClan(clan_tag, clan_name)
+
+                            player_data = MockPlayer(
+                                name=player_info.get("player_name"),
+                                town_hall=player_info.get("town_hall"),
+                                tag=player_info.get("player_tag"),
+                                clan_tag=player_info.get("clan_tag"),
+                                clan_name=player_info.get("clan_name")
+                            )
+
+                stored_in_db = True
+                print(f"[SUCCESS] Using existing MongoDB data for manual ticket")
+        except Exception as e:
+            print(f"[ERROR] Failed to check MongoDB for existing state: {e}")
+
+    # Only make API call if we don't have data from MongoDB
+    if not api_data:
+        print(f"[INFO] No existing MongoDB data found, proceeding with API call")
+        max_api_retries = 3
+        api_retry_count = 0
+        retry_delays = [3, 15, 30]  # Custom delays in seconds for each retry
     
-    max_api_retries = 3
-    api_retry_count = 0
-    retry_delays = [3, 15, 30]  # Custom delays in seconds for each retry
-    
-    while api_retry_count < max_api_retries:
+    while not api_data and api_retry_count < max_api_retries:
         try:
             async with aiohttp.ClientSession() as session:
                 api_url = f"https://api.clashk.ing/ticketing/open/json/{channel_id}"
@@ -386,8 +445,8 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                 else:
                     print(f"[ERROR] Max retries reached for player fetch")
 
-    # Store in MongoDB if we have API data and player info
-    if api_data and api_data.get('apply_account') and mongo_client:
+    # Store in MongoDB if we have API data and player info (but not if data came from MongoDB already)
+    if api_data and api_data.get('apply_account') and mongo_client and not api_data.get('from_mongodb'):
         try:
             # Create new recruit entry
             from datetime import datetime, timedelta, timezone
@@ -503,7 +562,9 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
             print(f"[ERROR] Failed to store in MongoDB: {e}")
             stored_in_db = False
     else:
-        stored_in_db = False
+        # Only set to False if we're not using existing MongoDB data
+        if not api_data or not api_data.get('from_mongodb'):
+            stored_in_db = False
 
     # Prepare the message components
     # Check if we have API data (either from API or fallback)
