@@ -25,6 +25,147 @@ from extensions.components import register_action
 
 loader = lightbulb.Loader()
 
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def restore_reminders_on_startup(
+    event: hikari.StartedEvent,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+) -> None:
+    """Restore all pending reminders from MongoDB on bot startup"""
+    try:
+        print("[Task Manager] Restoring reminders from MongoDB...")
+
+        # Get current time for comparison
+        now = pendulum.now(DEFAULT_TIMEZONE)
+        restored_count = 0
+        expired_count = 0
+
+        # Find all users with reminders
+        users_with_reminders = mongo.user_tasks.find(
+            {"reminders": {"$exists": True, "$ne": []}}
+        )
+
+        async for user_data in users_with_reminders:
+            user_id = int(user_data["user_id"])
+            reminders = user_data.get("reminders", [])
+
+            # Track which reminders to keep (not expired)
+            valid_reminders = []
+
+            for reminder in reminders:
+                try:
+                    reminder_time = pendulum.parse(reminder["reminder_time"])
+                    reminder_id = reminder["reminder_id"]
+                    task_id = reminder["task_id"]
+
+                    if reminder_time > now:
+                        # Reminder is still in the future - restore it
+
+                        # Find the task details
+                        task = next(
+                            (t for t in user_data.get("tasks", []) if t["task_id"] == task_id),
+                            None
+                        )
+
+                        if task and not task.get("completed", False):
+                            # Create the reminder function
+                            async def send_reminder_closure(user_id=user_id, task_id=task_id, reminder_id=reminder_id):
+                                try:
+                                    user = await bot.rest.fetch_user(user_id)
+                                    dm_channel = await bot.rest.create_dm_channel(user_id)
+
+                                    current_data = await mongo.user_tasks.find_one({"user_id": str(user_id)})
+                                    if current_data:
+                                        current_task = next((t for t in current_data.get("tasks", []) if t["task_id"] == task_id), None)
+                                        if current_task and not current_task.get("completed", False):
+                                            components = [
+                                                Container(
+                                                    accent_color=BLUE_ACCENT,
+                                                    components=[
+                                                        Text(content="## 🔔 Task Reminder"),
+                                                        Separator(divider=True),
+                                                        Text(content=f"**Task #{task_id}:** {current_task['description']}"),
+                                                        Text(content=f"\nThis task is still pending completion!"),
+                                                        Separator(divider=True),
+                                                        ActionRow(
+                                                            components=[
+                                                                Button(
+                                                                    style=hikari.ButtonStyle.SUCCESS,
+                                                                    label="Mark Complete",
+                                                                    custom_id=f"complete_from_reminder:{user_id}_{task_id}",
+                                                                    emoji="✅"
+                                                                ),
+                                                                Button(
+                                                                    style=hikari.ButtonStyle.SECONDARY,
+                                                                    label="Snooze 1h",
+                                                                    custom_id=f"snooze_reminder:{user_id}_{task_id}_1h",
+                                                                    emoji="⏰"
+                                                                )
+                                                            ]
+                                                        ),
+                                                        Text(content=f"-# You set this reminder • Task created {current_task['created_at'][:10]}"),
+                                                        Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                                                    ]
+                                                )
+                                            ]
+
+                                            await bot.rest.create_message(
+                                                channel=dm_channel.id,
+                                                components=components,
+                                                user_mentions=True
+                                            )
+
+                                    # Remove reminder from active list
+                                    if reminder_id in active_reminders:
+                                        del active_reminders[reminder_id]
+
+                                except Exception as e:
+                                    print(f"[Task Manager] Failed to send restored reminder: {e}")
+
+                            # Schedule the reminder
+                            reminder_datetime = reminder_time.in_tz(DEFAULT_TIMEZONE).naive()
+                            scheduler.add_job(
+                                send_reminder_closure,
+                                trigger=DateTrigger(run_date=reminder_datetime, timezone=DEFAULT_TIMEZONE),
+                                id=reminder_id,
+                                replace_existing=True
+                            )
+
+                            # Add to active reminders
+                            active_reminders[reminder_id] = {
+                                "user_id": user_id,
+                                "task_id": task_id,
+                                "reminder_time": reminder["reminder_time"],
+                                "description": task["description"]
+                            }
+
+                            valid_reminders.append(reminder)
+                            restored_count += 1
+                            print(f"[Task Manager] Restored reminder for user {user_id}, task {task_id}")
+                        else:
+                            # Task completed or not found - remove reminder
+                            expired_count += 1
+                    else:
+                        # Reminder is in the past - remove it
+                        expired_count += 1
+
+                except Exception as e:
+                    print(f"[Task Manager] Error processing reminder: {e}")
+                    expired_count += 1
+
+            # Update user's reminders to remove expired ones
+            if len(valid_reminders) != len(reminders):
+                await mongo.user_tasks.update_one(
+                    {"user_id": str(user_id)},
+                    {"$set": {"reminders": valid_reminders}}
+                )
+
+        print(f"[Task Manager] Reminder restoration complete: {restored_count} restored, {expired_count} expired/cleaned")
+
+    except Exception as e:
+        print(f"[Task Manager] Error during reminder restoration: {e}")
+
 # Configuration
 REQUIRED_ROLE_ID = 1060318031575793694
 TASK_CHANNEL_ID = 1349392747336958102
@@ -114,21 +255,70 @@ def parse_reminder_time(time_str: str, user_timezone: str = DEFAULT_TIMEZONE) ->
             return now.add(days=1).replace(hour=9, minute=0)
         elif time_str.startswith("tomorrow at "):
             time_part = time_str.replace("tomorrow at ", "")
-            parsed_time = pendulum.parse(f"{now.add(days=1).date()} {time_part}", tz=user_timezone)
-            return parsed_time
+            # Add space before am/pm if not present
+            time_part_formatted = re.sub(r'(\d)([ap]m)', r'\1 \2', time_part)
+            try:
+                # Manual parsing for tomorrow times
+                time_match = re.match(r'^(\d{1,2}):(\d{2})\s*(am|pm)?$', time_part_formatted.lower())
+                if time_match:
+                    hour = int(time_match.group(1))
+                    minute = int(time_match.group(2))
+                    period = time_match.group(3)
+
+                    # Convert to 24-hour format
+                    if period == 'pm' and hour != 12:
+                        hour += 12
+                    elif period == 'am' and hour == 12:
+                        hour = 0
+
+                    # Create pendulum datetime for tomorrow
+                    parsed_time = now.add(days=1).set(hour=hour, minute=minute, second=0, microsecond=0)
+                    return parsed_time
+                else:
+                    print(f"[DEBUG] Tomorrow time format didn't match: '{time_part_formatted}'")
+            except Exception as e:
+                print(f"[DEBUG] Failed to parse tomorrow time '{time_part_formatted}': {e}")
 
         # Try parsing as absolute time today
         if re.match(r'^\d{1,2}:\d{2}\s*(am|pm)?$', time_str) or re.match(r'^\d{1,2}\s*(am|pm)$', time_str):
-            parsed_time = pendulum.parse(f"{now.date()} {time_str}", tz=user_timezone)
-            if parsed_time < now:
-                parsed_time = parsed_time.add(days=1)
-            return parsed_time
+            # Add space before am/pm if not present
+            time_str_formatted = re.sub(r'(\d)([ap]m)', r'\1 \2', time_str)
+            try:
+                # Manual parsing for better reliability
+                time_match = re.match(r'^(\d{1,2}):(\d{2})\s*(am|pm)?$', time_str_formatted.lower())
+                if time_match:
+                    hour = int(time_match.group(1))
+                    minute = int(time_match.group(2))
+                    period = time_match.group(3)
+
+                    # Convert to 24-hour format
+                    if period == 'pm' and hour != 12:
+                        hour += 12
+                    elif period == 'am' and hour == 12:
+                        hour = 0
+
+                    # Create pendulum datetime for today
+                    parsed_time = now.set(hour=hour, minute=minute, second=0, microsecond=0)
+
+                    # If time has already passed today, schedule for tomorrow
+                    if parsed_time < now:
+                        parsed_time = parsed_time.add(days=1)
+
+                    return parsed_time
+                else:
+                    print(f"[DEBUG] Time format didn't match expected pattern: '{time_str_formatted}'")
+            except Exception as e:
+                print(f"[DEBUG] Failed to parse time '{time_str_formatted}': {e}")
 
         # Try direct parsing
-        parsed = pendulum.parse(time_str, tz=user_timezone)
-        return parsed
+        try:
+            parsed = pendulum.parse(time_str, tz=user_timezone)
+            return parsed
+        except Exception as e:
+            print(f"[DEBUG] Failed to parse time directly '{time_str}': {e}")
 
-    except:
+    except Exception as e:
+        print(f"[DEBUG] Unexpected error in parse_reminder_time: {e}")
         return None
 
 
