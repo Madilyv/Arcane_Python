@@ -324,7 +324,7 @@ async def handle_role_skip(
         })
 
         # Go directly to edit menu
-        new_components = await clan_edit_menu(ctx, action_id=clan.tag, mongo=mongo, tag=clan.tag)
+        new_components = await clan_edit_menu(ctx, clan.tag, mongo=mongo, tag=clan.tag)
         await ctx.interaction.edit_initial_response(components=new_components)
 
     except Exception as e:
@@ -1103,6 +1103,9 @@ async def clan_edit_menu(
         **kwargs
 ):
     tag = kwargs.get("tag") or action_id
+    # If action_id is empty (from select menu), get the selected value
+    if not tag and hasattr(ctx.interaction, 'values') and ctx.interaction.values:
+        tag = ctx.interaction.values[0]
 
     raw = await mongo.clans.find_one({"tag": tag})
     db_clan = Clan(data=raw)
@@ -1610,7 +1613,7 @@ async def update_logo_modal(
         )
 
         # Return to the clan edit menu
-        new_components = await clan_edit_menu(ctx, action_id=tag, mongo=mongo, tag=tag)
+        new_components = await clan_edit_menu(ctx, tag, mongo=mongo, tag=tag)
         await ctx.interaction.edit_initial_response(components=new_components)
 
     except Exception as e:
