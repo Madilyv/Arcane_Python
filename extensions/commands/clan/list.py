@@ -63,7 +63,7 @@ class ListCommand(
                     Text(content=(
                         "## **Pick Your Clan**\n"
                         "Use the dropdown below to select your clan.\n"
-                        "If your clan isn’t listed, notify Ruggie."
+                        "If your clan isn't listed, notify Ruggie."
                     )),
                     ActionRow(
                         components=[

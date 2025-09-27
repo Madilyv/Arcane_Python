@@ -78,13 +78,13 @@ HELP_CATEGORIES = {
 COMMAND_LIST = {
     "clan": [
         ("/clan dashboard", "Open the comprehensive Clan Management Dashboard with interactive buttons for clan points, FWA data, member management, and statistics"),
-        ("/clan list", "View and manage all clans in the Kings Alliance family with detailed information and options"),
         ("/clan info-hub", "Access the clan information hub with category buttons for Main, Feeder, Zen, FWA, and Trial clans"),
         ("/clan recruit-points", "Report recruitment activities to earn clan points - track Discord posts, DMs, helping members, and other contributions"),
         ("/clan round-table", "Manage clan round table (right-hand leader) roles and permissions for clan leadership"),
     ],
     "recruit": [
         ("📖 Recruitment Guide", "Complete recruitment documentation located at the top of <#1356702174096261271> - includes command tutorials, staff hierarchy, blind bidding guide, and essential recruitment details"),
+        ("/clan list", "Send clan assignment to a new recruit with welcome message and clan details - select a recruit and assign them to a clan"),
         ("/recruit questions", "Send comprehensive recruitment questionnaire to new recruits - includes FWA base questions, attack strategies, age brackets, and expectations (15-20 minute review time)"),
         ("/recruit bidding", "Start a competitive 15-minute bidding auction for available recruits - clan leaders bid points to win candidates"),
         ("/recruit welcome", "Send a personalized clan welcome message to new members - only available to clan leaders"),
