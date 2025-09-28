@@ -2,10 +2,10 @@
 APScheduler
 
 # Main Discord API wrapper for bots
-hikari
+hikari==2.4.1
 
 # Command framework for hikari (handles slash and prefix commands)
-hikari-lightbulb
+hikari-lightbulb==3.2.1
 
 # Loads .env file contents into environment variables
 python-dotenv
