@@ -51,8 +51,17 @@ class Welcome(
         clans = [Clan(data=d) for d in clan_data]
 
         options = []
+        seen_tags = {}
         for c in clans:
-            kwargs = {"label": c.name, "value": c.tag, "description": c.tag}
+            # Handle duplicate clan tags by making values unique
+            if c.tag in seen_tags:
+                seen_tags[c.tag] += 1
+                unique_value = f"{c.tag}_{seen_tags[c.tag]}"
+            else:
+                seen_tags[c.tag] = 0
+                unique_value = c.tag
+
+            kwargs = {"label": c.name, "value": unique_value, "description": c.tag}
             if getattr(c, "partial_emoji", None):
                 kwargs["emoji"] = c.partial_emoji
             options.append(SelectOption(**kwargs))
@@ -112,7 +121,11 @@ async def on_clan_welcome_chosen(
     selected_user_id = store_data["selected_user_id"]
     user = await bot.rest.fetch_member(ctx.guild_id, selected_user_id)
 
-    tag = ctx.interaction.values[0]
+    selected_value = ctx.interaction.values[0]
+
+    # Extract original tag from potentially modified value (remove _1, _2 etc.)
+    tag = selected_value.split("_")[0] if "_" in selected_value else selected_value
+
     raw = await mongo.clans.find_one({"tag": tag})
     if not raw:
         components = [

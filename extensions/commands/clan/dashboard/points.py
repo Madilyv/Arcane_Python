@@ -211,7 +211,7 @@ async def clan_points_main(
     return await dashboard_page(ctx=ctx, mongo=mongo)
 
 
-@register_action("points_quick_select", ephemeral=True)
+@register_action("points_quick_select")
 @lightbulb.di.with_di
 async def points_quick_select(
         ctx: lightbulb.components.MenuContext,
@@ -220,6 +220,22 @@ async def points_quick_select(
 ):
     """Quick clan selector with inline point display"""
 
+    # Check if user has permission to manage points
+    POINTS_MANAGER_ROLE = 1344514130228285450
+    if POINTS_MANAGER_ROLE not in ctx.interaction.member.role_ids:
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ **Permission Denied**"),
+                    Text(content="You do not have permission to edit clan points."),
+                    Text(content="Only users with the Points Manager role can modify clan points."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        return components
+
     clan_data = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=data) for data in clan_data]
 
@@ -227,12 +243,21 @@ async def points_quick_select(
     sorted_clans = sorted(clans, key=lambda c: c.points, reverse=True)
 
     options = []
+    seen_tags = {}
     for clan in sorted_clans[:25]:  # Discord limit
         description = f"💎 {clan.points:.1f} pts • 👥 {clan.recruit_count} recruits"
 
+        # Handle duplicate clan tags by making values unique
+        if clan.tag in seen_tags:
+            seen_tags[clan.tag] += 1
+            unique_value = f"{clan.tag}_{seen_tags[clan.tag]}"
+        else:
+            seen_tags[clan.tag] = 0
+            unique_value = clan.tag
+
         kwargs = {
             "label": clan.name,
-            "value": clan.tag,
+            "value": unique_value,
             "description": description
         }
         if clan.partial_emoji:
@@ -277,7 +302,7 @@ async def points_quick_select(
     return components
 
 
-@register_action("quick_clan_select", ephemeral=True)
+@register_action("quick_clan_select")
 @lightbulb.di.with_di
 async def quick_clan_select(
         ctx: lightbulb.components.MenuContext,
@@ -286,7 +311,26 @@ async def quick_clan_select(
 ):
     """Streamlined points management for selected clan"""
 
-    tag = ctx.interaction.values[0]
+    # Check if user has permission to manage points
+    POINTS_MANAGER_ROLE = 1344514130228285450
+    if POINTS_MANAGER_ROLE not in ctx.interaction.member.role_ids:
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ **Permission Denied**"),
+                    Text(content="You do not have permission to edit clan points."),
+                    Text(content="Only users with the Points Manager role can modify clan points."),
+                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                ]
+            )
+        ]
+        return components
+
+    selected_value = ctx.interaction.values[0]
+
+    # Extract original tag from potentially modified value (remove _1, _2 etc.)
+    tag = selected_value.split("_")[0] if "_" in selected_value else selected_value
 
     raw = await mongo.clans.find_one({"tag": tag})
     if not raw:
@@ -383,6 +427,25 @@ async def quick_add(
         **kwargs
 ):
     """Quick add points - opens modal for note"""
+
+    # Check if user has permission to manage points
+    POINTS_MANAGER_ROLE = 1344514130228285450
+    if POINTS_MANAGER_ROLE not in ctx.interaction.member.role_ids:
+        # For modal handlers, we need to respond with a modal anyway
+        error_input = ModalActionRow().add_text_input(
+            "error",
+            "Permission Denied",
+            value="You do not have permission to edit clan points.",
+            required=False,
+            max_length=100
+        )
+        await ctx.respond_with_modal(
+            title="Access Denied",
+            custom_id="permission_denied:",
+            components=[error_input]
+        )
+        return
+
     amount, tag = action_id.split("_", 1)
 
     note_input = ModalActionRow().add_text_input(
@@ -563,6 +626,25 @@ async def quick_sub(
         **kwargs
 ):
     """Quick subtract points - opens modal for note"""
+
+    # Check if user has permission to manage points
+    POINTS_MANAGER_ROLE = 1344514130228285450
+    if POINTS_MANAGER_ROLE not in ctx.interaction.member.role_ids:
+        # For modal handlers, we need to respond with a modal anyway
+        error_input = ModalActionRow().add_text_input(
+            "error",
+            "Permission Denied",
+            value="You do not have permission to edit clan points.",
+            required=False,
+            max_length=100
+        )
+        await ctx.respond_with_modal(
+            title="Access Denied",
+            custom_id="permission_denied:",
+            components=[error_input]
+        )
+        return
+
     amount, tag = action_id.split("_", 1)
 
     note_input = ModalActionRow().add_text_input(
@@ -753,6 +835,25 @@ async def custom_points_modal(
         **kwargs
 ):
     """Modern modal for custom points"""
+
+    # Check if user has permission to manage points
+    POINTS_MANAGER_ROLE = 1344514130228285450
+    if POINTS_MANAGER_ROLE not in ctx.interaction.member.role_ids:
+        # For modal handlers, we need to respond with a modal anyway
+        error_input = ModalActionRow().add_text_input(
+            "error",
+            "Permission Denied",
+            value="You do not have permission to edit clan points.",
+            required=False,
+            max_length=100
+        )
+        await ctx.respond_with_modal(
+            title="Access Denied",
+            custom_id="permission_denied:",
+            components=[error_input]
+        )
+        return
+
     tag = action_id
 
     amount_input = ModalActionRow().add_text_input(
@@ -1032,6 +1133,25 @@ async def add_recruit_quick(
         **kwargs
 ):
     """Quick add recruit - opens modal for note"""
+
+    # Check if user has permission to manage points
+    POINTS_MANAGER_ROLE = 1344514130228285450
+    if POINTS_MANAGER_ROLE not in ctx.interaction.member.role_ids:
+        # For modal handlers, we need to respond with a modal anyway
+        error_input = ModalActionRow().add_text_input(
+            "error",
+            "Permission Denied",
+            value="You do not have permission to edit clan points.",
+            required=False,
+            max_length=100
+        )
+        await ctx.respond_with_modal(
+            title="Access Denied",
+            custom_id="permission_denied:",
+            components=[error_input]
+        )
+        return
+
     tag = action_id
 
     note_input = ModalActionRow().add_text_input(
@@ -1187,7 +1307,7 @@ async def add_recruit_submit(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("recruitment_overview", ephemeral=True)
+@register_action("recruitment_overview")
 @lightbulb.di.with_di
 async def recruitment_overview(
         ctx: lightbulb.components.MenuContext,
@@ -1350,7 +1470,7 @@ async def confirm_month_reset(
     return components
 
 
-@register_action("back_to_points_main", ephemeral=True)
+@register_action("back_to_points_main")
 @lightbulb.di.with_di
 async def back_to_points_main(
         ctx: lightbulb.components.MenuContext,

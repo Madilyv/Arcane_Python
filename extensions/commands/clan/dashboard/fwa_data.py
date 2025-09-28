@@ -794,7 +794,7 @@ async def fwa_th_select_return(
     return await fwa_th_select(ctx=ctx, mongo=mongo, cloudinary=cloudinary, **kwargs)
 
 
-@register_action("back_to_fwa_main", ephemeral=True)
+@register_action("back_to_fwa_main")
 @lightbulb.di.with_di
 async def back_to_fwa_main(
         ctx: lightbulb.components.MenuContext,

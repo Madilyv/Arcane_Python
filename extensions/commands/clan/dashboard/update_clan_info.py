@@ -907,14 +907,23 @@ async def remove_clan_select(
     clans = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=data) for data in clans]
     options = []
+    seen_tags = {}
 
     for c in clans:
+        # Handle duplicate clan tags by making values unique
+        if c.tag in seen_tags:
+            seen_tags[c.tag] += 1
+            unique_value = f"{c.tag}_{seen_tags[c.tag]}"
+        else:
+            seen_tags[c.tag] = 0
+            unique_value = c.tag
+
         # Create option with emoji if it exists, otherwise without
         if c.partial_emoji:
             # Use the partial_emoji property which properly parses the emoji format
-            option = SelectOption(label=c.name, value=c.tag, description=c.tag, emoji=c.partial_emoji)
+            option = SelectOption(label=c.name, value=unique_value, description=c.tag, emoji=c.partial_emoji)
         else:
-            option = SelectOption(label=c.name, value=c.tag, description=c.tag)
+            option = SelectOption(label=c.name, value=unique_value, description=c.tag)
         options.append(option)
 
     components = [
@@ -945,7 +954,10 @@ async def clan_remove_menu(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    tag = kwargs.get("tag") or ctx.interaction.values[0]
+    selected_value = kwargs.get("tag") or ctx.interaction.values[0]
+
+    # Extract original tag from potentially modified value (remove _1, _2 etc.)
+    tag = selected_value.split("_")[0] if "_" in selected_value else selected_value
 
     raw = await mongo.clans.find_one({"tag": tag})
     db_clan = Clan(data=raw)
@@ -1062,14 +1074,23 @@ async def choose_clan_select(
     clans = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=data) for data in clans]
     options = []
+    seen_tags = {}
 
     for c in clans:
+        # Handle duplicate clan tags by making values unique
+        if c.tag in seen_tags:
+            seen_tags[c.tag] += 1
+            unique_value = f"{c.tag}_{seen_tags[c.tag]}"
+        else:
+            seen_tags[c.tag] = 0
+            unique_value = c.tag
+
         # Create option with emoji if it exists, otherwise without
         if c.partial_emoji:
             # Use the partial_emoji property which properly parses the emoji format
-            option = SelectOption(label=c.name, value=c.tag, description=c.tag, emoji=c.partial_emoji)
+            option = SelectOption(label=c.name, value=unique_value, description=c.tag, emoji=c.partial_emoji)
         else:
-            option = SelectOption(label=c.name, value=c.tag, description=c.tag)
+            option = SelectOption(label=c.name, value=unique_value, description=c.tag)
         options.append(option)
 
     components = [
@@ -1102,10 +1123,13 @@ async def clan_edit_menu(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    tag = kwargs.get("tag") or action_id
+    selected_value = kwargs.get("tag") or action_id
     # If action_id is empty (from select menu), get the selected value
-    if not tag and hasattr(ctx.interaction, 'values') and ctx.interaction.values:
-        tag = ctx.interaction.values[0]
+    if not selected_value and hasattr(ctx.interaction, 'values') and ctx.interaction.values:
+        selected_value = ctx.interaction.values[0]
+
+    # Extract original tag from potentially modified value (remove _1, _2 etc.)
+    tag = selected_value.split("_")[0] if "_" in selected_value else selected_value
 
     raw = await mongo.clans.find_one({"tag": tag})
     db_clan = Clan(data=raw)
@@ -1653,7 +1677,7 @@ async def update_logo_modal(
         await ctx.interaction.edit_initial_response(components=error_components)
 
 
-@register_action("back_to_clan_edit", ephemeral=True)
+@register_action("back_to_clan_edit")
 @lightbulb.di.with_di
 async def back_to_clan_edit(
         ctx: lightbulb.components.MenuContext,

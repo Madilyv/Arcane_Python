@@ -97,7 +97,10 @@ async def dp_handle_clan_selection(
         **kwargs
 ):
     user_id = action_id
-    selected_clan = ctx.interaction.values[0]
+    selected_value = ctx.interaction.values[0]
+
+    # Extract original tag from potentially modified value (remove _1, _2 etc.)
+    selected_clan = selected_value.split("_")[0] if "_" in selected_value else selected_value
 
     link_input = ModalActionRow().add_text_input(
         "discord_link",

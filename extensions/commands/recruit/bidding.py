@@ -591,13 +591,22 @@ async def handle_place_bid(
 
     # Create select menu options
     options = []
+    seen_tags = {}
     for clan_data in clans[:25]:
         clan = Clan(data=clan_data)
         available_points = clan.points - clan.placeholder_points
 
+        # Handle duplicate clan tags by making values unique
+        if clan.tag in seen_tags:
+            seen_tags[clan.tag] += 1
+            unique_value = f"{clan.tag}_{seen_tags[clan.tag]}"
+        else:
+            seen_tags[clan.tag] = 0
+            unique_value = clan.tag
+
         option_kwargs = {
             "label": clan.name,
-            "value": clan.tag,
+            "value": unique_value,
             "description": f"{available_points:.1f} pts available"
         }
         if clan.partial_emoji:
@@ -651,7 +660,10 @@ async def handle_clan_selection(
     # Remove the manual deferral - opens_modal=True handles this
 
     session_id = action_id
-    selected_clan = ctx.interaction.values[0]
+    selected_value = ctx.interaction.values[0]
+
+    # Extract original tag from potentially modified value (remove _1, _2 etc.)
+    selected_clan = selected_value.split("_")[0] if "_" in selected_value else selected_value
 
     # Get session data
     session = await mongo.button_store.find_one({"_id": session_id})
@@ -891,13 +903,23 @@ async def handle_remove_bid(
 
     # Create select options for clans with bids
     options = []
+    seen_tags = {}
     for bid in user_bids:
         clan_data = next((c for c in clans if c["tag"] == bid["clan_tag"]), None)
         if clan_data:
             clan = Clan(data=clan_data)
+
+            # Handle duplicate clan tags by making values unique
+            if clan.tag in seen_tags:
+                seen_tags[clan.tag] += 1
+                unique_value = f"{clan.tag}_{seen_tags[clan.tag]}"
+            else:
+                seen_tags[clan.tag] = 0
+                unique_value = clan.tag
+
             option_kwargs = {
                 "label": clan.name,
-                "value": clan.tag,
+                "value": unique_value,
                 "description": "Has active bid"
             }
             if clan.partial_emoji:
@@ -950,7 +972,10 @@ async def handle_remove_clan_selection(
     # Remove manual deferral - opens_modal=True handles this
 
     session_id = action_id
-    selected_clan = ctx.interaction.values[0]
+    selected_value = ctx.interaction.values[0]
+
+    # Extract original tag from potentially modified value (remove _1, _2 etc.)
+    selected_clan = selected_value.split("_")[0] if "_" in selected_value else selected_value
 
     # Get session data
     session = await mongo.button_store.find_one({"_id": session_id})
@@ -1037,13 +1062,23 @@ async def confirm_bid_removal(
 
             # Recreate options
             options = []
+            seen_tags = {}
             for bid in user_bids:
                 clan_data = next((c for c in clans if c["tag"] == bid["clan_tag"]), None)
                 if clan_data:
                     clan = Clan(data=clan_data)
+
+                    # Handle duplicate clan tags by making values unique
+                    if clan.tag in seen_tags:
+                        seen_tags[clan.tag] += 1
+                        unique_value = f"{clan.tag}_{seen_tags[clan.tag]}"
+                    else:
+                        seen_tags[clan.tag] = 0
+                        unique_value = clan.tag
+
                     option_kwargs = {
                         "label": clan.name,
-                        "value": clan.tag,
+                        "value": unique_value,
                         "description": "Has active bid"
                     }
                     if clan.partial_emoji:

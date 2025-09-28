@@ -85,10 +85,19 @@ async def get_clan_options(mongo: MongoClient) -> List[SelectOption]:
 
     # Use clans directly without sorting
     options = []
+    seen_tags = {}
     for clan in clans[:25]:  # Discord limit
+        # Handle duplicate clan tags by making values unique
+        if clan.tag in seen_tags:
+            seen_tags[clan.tag] += 1
+            unique_value = f"{clan.tag}_{seen_tags[clan.tag]}"
+        else:
+            seen_tags[clan.tag] = 0
+            unique_value = clan.tag
+
         kwargs = {
             "label": clan.name,
-            "value": clan.tag,
+            "value": unique_value,
             "description": f"Points: {clan.points:.1f}"
         }
         if clan.partial_emoji:

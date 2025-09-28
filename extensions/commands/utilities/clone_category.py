@@ -543,20 +543,29 @@ class CloneCategory(
         
         # Create select menu options
         options = []
+        seen_tags = {}
         for clan in clans[:25]:  # Discord limit is 25 options
+            # Handle duplicate clan tags by making values unique
+            if clan.tag in seen_tags:
+                seen_tags[clan.tag] += 1
+                unique_value = f"{clan.tag}_{seen_tags[clan.tag]}"
+            else:
+                seen_tags[clan.tag] = 0
+                unique_value = clan.tag
+
             # Create option with emoji if it exists, otherwise without
             if clan.partial_emoji:
                 # Use the partial_emoji property which properly parses the emoji format
                 option = SelectOption(
                     label=clan.name,
-                    value=clan.tag,
+                    value=unique_value,
                     description=f"{clan.type} - TH{clan.th_requirements}+",
                     emoji=clan.partial_emoji
                 )
             else:
                 option = SelectOption(
                     label=clan.name,
-                    value=clan.tag,
+                    value=unique_value,
                     description=f"{clan.type} - TH{clan.th_requirements}+"
                 )
             options.append(option)
@@ -623,7 +632,11 @@ async def handle_clan_selection(
         return await ctx.respond("❌ Only the command user can select a clan!")
     
     # Get selected clan
-    selected_clan_tag = ctx.interaction.values[0]
+    selected_value = ctx.interaction.values[0]
+
+    # Extract original tag from potentially modified value (remove _1, _2 etc.)
+    selected_clan_tag = selected_value.split("_")[0] if "_" in selected_value else selected_value
+
     clan_data = await mongo.clans.find_one({"tag": selected_clan_tag})
     
     if not clan_data:
