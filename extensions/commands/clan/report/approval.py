@@ -77,6 +77,10 @@ async def approve_points(
         submission_type = "dm_recruit"
         clan_tag = parts[2]
         user_id = parts[3]
+    elif parts[0] == "disboard" and parts[1] == "review":
+        submission_type = "disboard_review"
+        clan_tag = parts[2]
+        user_id = parts[3]
     else:
         submission_type = parts[0]
         clan_tag = parts[1]
@@ -116,6 +120,7 @@ async def approve_points(
     submission_display = {
         "discord_post": "Discord Server Posts",
         "dm_recruit": "Discord DM Recruiting",
+        "disboard_review": "Disboard 5-Star Review",
         "member_left": "Member Left"
     }.get(submission_type, submission_type)
 
@@ -229,6 +234,10 @@ async def deny_points(
         submission_type = "dm_recruit"
         clan_tag = parts[2]
         user_id = parts[3]
+    elif parts[0] == "disboard" and parts[1] == "review":
+        submission_type = "disboard_review"
+        clan_tag = parts[2]
+        user_id = parts[3]
     else:
         submission_type = parts[0]
         clan_tag = parts[1]
@@ -298,6 +307,10 @@ async def confirm_denial(
         user_id = parts[3]
     elif parts[0] == "dm" and parts[1] == "recruit":
         submission_type = "dm_recruit"
+        clan_tag = parts[2]
+        user_id = parts[3]
+    elif parts[0] == "disboard" and parts[1] == "review":
+        submission_type = "disboard_review"
         clan_tag = parts[2]
         user_id = parts[3]
     else:

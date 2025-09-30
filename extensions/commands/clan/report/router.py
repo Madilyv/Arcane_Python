@@ -50,6 +50,12 @@ async def create_home_dashboard(member: hikari.Member) -> list:
                             label="DM Recruitment",
                             emoji="📩",
                             custom_id=f"report_type:dm_recruit_{member.id}"
+                        ),
+                        Button(
+                            style=hikari.ButtonStyle.SUCCESS,
+                            label="Disboard Review",
+                            emoji="⭐",
+                            custom_id=f"report_type:disboard_review_{member.id}"
                         )
                     ]
                 ),
@@ -79,6 +85,7 @@ async def create_home_dashboard(member: hikari.Member) -> list:
                     "**📌 Quick Guide:**\n"
                     "• **Discord Post** - You recruited via a public Discord message\n"
                     "• **DM Recruitment** - You recruited someone through DMs\n"
+                    "• **Disboard Review** - Submit a 5-star Disboard review for +1 point\n"
                     "• **Member Left** - Process refunds for members who left early\n"
                     "• **Recruitment Help** - Post what members your clan is looking for"
                 )),
@@ -118,6 +125,9 @@ async def report_type_selected(
     elif report_type == "dm_recruit":
         from .dm_recruitment import show_dm_recruitment_flow
         await show_dm_recruitment_flow(ctx, user_id, mongo)
+    elif report_type == "disboard_review":
+        from .disboard_review import show_disboard_review_flow
+        await show_disboard_review_flow(ctx, user_id, mongo)
     elif report_type == "member_left":
         from .member_left import show_member_left_flow
         # Call the handler directly with proper context

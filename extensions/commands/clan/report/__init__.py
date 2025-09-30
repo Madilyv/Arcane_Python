@@ -24,6 +24,7 @@ from . import helpers
 # Import all report modules to register their actions
 from . import discord_post
 from . import dm_recruitment
+from . import disboard_review
 from . import member_left
 from . import approval
 from . import router
