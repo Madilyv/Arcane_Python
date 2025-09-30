@@ -346,17 +346,25 @@ async def dm_submit_details(
                 Text(content=create_progress_header(3.5, 4, ["Select Clan", "Select User", "Enter Details", "Review"])),
                 Separator(),
 
-                Text(content="## 📸 **Show Your Proof of Recruitment!**"),
+                Text(content="## 📸 **UPLOAD YOUR SCREENSHOT NOW**"),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+                Text(content="### 🎯 **DO THIS RIGHT NOW:**"),
                 Text(content=(
-                    "**What to do:**\n"
-                    "1. Take a screenshot of your DM where you talked to the recruit.\n"
-                    "2. Send the screenshot in this chat as your **next message**.\n"
-                    "3. That's it! The bot will see it and handle the rest."
+                    "1. Click the **[+]** button or **📎 paperclip** at the bottom of **THIS chat**\n"
+                    "2. Select your screenshot file from your computer\n"
+                    "3. Press **Enter** to send it **RIGHT HERE**"
+                )),
+                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+                Text(content="### ⚠️ **IMPORTANT:**"),
+                Text(content=(
+                    "• Upload it **in THIS channel** (not a DM, not another channel)\n"
+                    "• Send it as your **very next message**\n"
+                    "• Don't type anything - just send the image file\n"
+                    "• The bot is watching and will automatically detect it"
                 )),
                 Separator(divider=True, spacing=hikari.SpacingType.SMALL),
                 Text(content=(
-                    "⏳ **You have 2 minutes!**\n"
-                    "🧼 Don't worry, the bot will clean up your message after."
+                    "⏱️ **You have 2 minutes** - Bot will clean up your message after"
                 )),
                 Separator(divider=True, spacing=hikari.SpacingType.SMALL),
                 ActionRow(
@@ -370,7 +378,7 @@ async def dm_submit_details(
                     ]
                 ),
 
-                Text(content="-# The bot is now waiting for your screenshot upload"),
+                Text(content="-# 🟢 Bot is actively monitoring this channel for your upload..."),
                 Media(items=[MediaItem(media="assets/Blue_Footer.png")])
             ]
         )
