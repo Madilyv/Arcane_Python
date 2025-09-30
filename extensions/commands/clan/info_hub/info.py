@@ -59,10 +59,10 @@ class Info(
                         "a competitive experience.\n\n"
                     )),
                     Separator(divider=False, spacing=hikari.SpacingType.SMALL),
-                    # Feeder Clans Button
+                    # Casual Clans Button
                     Text(content=(
-                        f"## __<a:Chill:1393193145927340073> **Feeder**__\n"
-                        "Main Clans full? Try one of our Feeder Clans. King's feeder clans "
+                        f"## __<a:Chill:1393193145927340073> **Casual**__\n"
+                        "Main Clans full? Try one of our Casual Clans. King's casual clans "
                         "encapsulate the same attitude of our Main Clan system whilst you "
                         "wait."
                     )),
@@ -112,7 +112,7 @@ class Info(
                         Button(
                             style=hikari.ButtonStyle.SECONDARY,
                             custom_id="show_casual:",
-                            label="Feeder",
+                            label="Casual",
                             emoji=1393193145927340073
                         ),
                         Button(

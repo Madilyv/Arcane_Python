@@ -40,7 +40,7 @@ LEAGUE_ORDER = [
 
 BANNERS = {
     "Competitive": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/main_clans.png",
-    "Casual": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/feeder_clans.png",
+    "Casual": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752237075/server_banners/casual_clans.png",
     "Zen": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752234005/server_banners/zen_clans.png",
     "FWA": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/fwa_clans.png",
     "Trial": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/trial_clans.png"
@@ -191,7 +191,7 @@ async def show_competitive_clans(
     await ctx.respond(components=components, ephemeral=True)
 
 
-# Handler for Casual/Feeder clans
+# Handler for Casual clans
 @register_action("show_casual", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def show_casual_clans(
