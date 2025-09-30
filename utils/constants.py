@@ -6,6 +6,12 @@ BLUE_ACCENT = hikari.Color.from_hex_code("0066FF")
 GREEN_ACCENT = hikari.Color.from_hex_code("00B237")
 MAGENTA_ACCENT = hikari.Color.from_hex_code("FF00FF")
 
+# Disboard Configuration
+DISBOARD_BOT_ID = 302050872383242240
+BUMP_CHANNEL_ID = 1022499462070943865
+BUMP_ROLE_ID = 999402011034402947
+DISBOARD_REVIEW_URL = "https://disboard.org/review/create/640280017770774549"
+
 # Clan Information
 CLAN_TYPES = ["Competitive", "Casual", "FWA", "Zen"]
 CLAN_STATUS = ["Main", "Zen", "FWA", "Trial"]
