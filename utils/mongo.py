@@ -11,6 +11,7 @@ class MongoClient(AsyncMongoClient):
         self.fwa = self.__settings.get_collection("fwa_data")
         self.fwa_band_data = self.__settings.get_collection("fwa_band_data")
         self.user_tasks = self.__settings.get_collection("user_tasks")
+        self.user_profiles = self.__settings.get_collection("user_profiles")
         self.bot_config = self.__settings.get_collection("bot_config")
         self.reddit_monitor = self.__settings.get_collection("reddit_monitor")
         self.reddit_notifications = self.__settings.get_collection("reddit_notifications")
