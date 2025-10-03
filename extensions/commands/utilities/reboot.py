@@ -7,6 +7,7 @@ import os
 import hikari
 import lightbulb
 import uuid
+from datetime import datetime, timezone
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -149,6 +150,17 @@ async def handle_reboot_confirm(
 
     # Clean up stored data
     await mongo.button_store.delete_one({"_id": action_id})
+
+    # Store reboot flag for startup notification
+    await mongo.bot_config.update_one(
+        {"_id": "reboot_status"},
+        {"$set": {
+            "reboot_pending": True,
+            "user_id": ctx.user.id,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }},
+        upsert=True
+    )
 
     # Close bot gracefully (triggers StoppingEvent)
     await bot.close()
