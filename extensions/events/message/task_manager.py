@@ -300,6 +300,40 @@ async def get_user_timezone(
     return profile.get("timezone", DEFAULT_TIMEZONE)
 
 
+def parse_time_component(time_str: str) -> Optional[tuple[int, int]]:
+    """
+    Parse a time string into (hour, minute) tuple in 24-hour format.
+    Handles: "9pm", "9:20pm", "9:45am", "21:00", etc.
+    Returns None if parsing fails.
+    """
+    time_str = time_str.strip().lower()
+    # Add space before am/pm if not present
+    time_str = re.sub(r'(\d)([ap]m)', r'\1 \2', time_str)
+
+    # Pattern: optional hour:minute, optional am/pm
+    # Makes colon+minutes OPTIONAL: (?::(\d{2}))?
+    time_match = re.match(r'^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$', time_str)
+
+    if not time_match:
+        return None
+
+    hour = int(time_match.group(1))
+    minute = int(time_match.group(2)) if time_match.group(2) else 0
+    period = time_match.group(3)
+
+    # Convert to 24-hour format
+    if period == 'pm' and hour != 12:
+        hour += 12
+    elif period == 'am' and hour == 12:
+        hour = 0
+
+    # Validate
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return None
+
+    return (hour, minute)
+
+
 def parse_reminder_time(time_str: str, user_timezone: str = DEFAULT_TIMEZONE) -> Optional[pendulum.DateTime]:
     """Parse various time formats into a datetime object."""
     time_str = time_str.strip().lower()
@@ -322,77 +356,98 @@ def parse_reminder_time(time_str: str, user_timezone: str = DEFAULT_TIMEZONE) ->
         elif unit == 'd':
             return now.add(days=amount)
 
-    # Try parsing with pendulum for natural language
-    try:
-        if time_str == "tomorrow":
-            return now.add(days=1).replace(hour=9, minute=0)
-        elif time_str.startswith("tomorrow at "):
-            time_part = time_str.replace("tomorrow at ", "")
-            # Add space before am/pm if not present
-            time_part_formatted = re.sub(r'(\d)([ap]m)', r'\1 \2', time_part)
-            try:
-                # Manual parsing for tomorrow times
-                time_match = re.match(r'^(\d{1,2}):(\d{2})\s*(am|pm)?$', time_part_formatted.lower())
-                if time_match:
-                    hour = int(time_match.group(1))
-                    minute = int(time_match.group(2))
-                    period = time_match.group(3)
+    # Handle "tomorrow" alone
+    if time_str == "tomorrow":
+        return now.add(days=1).replace(hour=9, minute=0, second=0, microsecond=0)
 
-                    # Convert to 24-hour format
-                    if period == 'pm' and hour != 12:
-                        hour += 12
-                    elif period == 'am' and hour == 12:
-                        hour = 0
+    # Handle "today at [time]"
+    if time_str.startswith("today at "):
+        time_part = time_str.replace("today at ", "")
+        parsed = parse_time_component(time_part)
+        if parsed:
+            hour, minute = parsed
+            result = now.set(hour=hour, minute=minute, second=0, microsecond=0)
+            # If time has passed, schedule for tomorrow
+            if result < now:
+                result = result.add(days=1)
+            return result
 
-                    # Create pendulum datetime for tomorrow
-                    parsed_time = now.add(days=1).set(hour=hour, minute=minute, second=0, microsecond=0)
-                    return parsed_time
-                else:
-                    print(f"[DEBUG] Tomorrow time format didn't match: '{time_part_formatted}'")
-            except Exception as e:
-                print(f"[DEBUG] Failed to parse tomorrow time '{time_part_formatted}': {e}")
+    # Handle "tomorrow at [time]"
+    if time_str.startswith("tomorrow at "):
+        time_part = time_str.replace("tomorrow at ", "")
+        parsed = parse_time_component(time_part)
+        if parsed:
+            hour, minute = parsed
+            return now.add(days=1).set(hour=hour, minute=minute, second=0, microsecond=0)
 
-        # Try parsing as absolute time today
-        if re.match(r'^\d{1,2}:\d{2}\s*(am|pm)?$', time_str) or re.match(r'^\d{1,2}\s*(am|pm)$', time_str):
-            # Add space before am/pm if not present
-            time_str_formatted = re.sub(r'(\d)([ap]m)', r'\1 \2', time_str)
-            try:
-                # Manual parsing for better reliability
-                time_match = re.match(r'^(\d{1,2}):(\d{2})\s*(am|pm)?$', time_str_formatted.lower())
-                if time_match:
-                    hour = int(time_match.group(1))
-                    minute = int(time_match.group(2))
-                    period = time_match.group(3)
+    # Handle date patterns: "dec 25th at 4pm", "december 25 at 6:15pm", "jan 1st at 9pm"
+    # Strip ordinal suffixes (st, nd, rd, th)
+    date_pattern = r'^(\w+)\s+(\d{1,2})(?:st|nd|rd|th)?\s+at\s+(.+)$'
+    date_match = re.match(date_pattern, time_str)
 
-                    # Convert to 24-hour format
-                    if period == 'pm' and hour != 12:
-                        hour += 12
-                    elif period == 'am' and hour == 12:
-                        hour = 0
+    if date_match:
+        month_str, day_str, time_part = date_match.groups()
 
-                    # Create pendulum datetime for today
-                    parsed_time = now.set(hour=hour, minute=minute, second=0, microsecond=0)
+        # Parse the time component
+        parsed_time = parse_time_component(time_part)
+        if not parsed_time:
+            return None
 
-                    # If time has already passed today, schedule for tomorrow
-                    if parsed_time < now:
-                        parsed_time = parsed_time.add(days=1)
+        hour, minute = parsed_time
+        day = int(day_str)
 
-                    return parsed_time
-                else:
-                    print(f"[DEBUG] Time format didn't match expected pattern: '{time_str_formatted}'")
-            except Exception as e:
-                print(f"[DEBUG] Failed to parse time '{time_str_formatted}': {e}")
-
-        # Try direct parsing
+        # Try to parse month
         try:
-            parsed = pendulum.parse(time_str, tz=user_timezone)
-            return parsed
-        except Exception as e:
-            print(f"[DEBUG] Failed to parse time directly '{time_str}': {e}")
+            # pendulum can parse month names
+            month_map = {
+                'jan': 1, 'january': 1,
+                'feb': 2, 'february': 2,
+                'mar': 3, 'march': 3,
+                'apr': 4, 'april': 4,
+                'may': 5,
+                'jun': 6, 'june': 6,
+                'jul': 7, 'july': 7,
+                'aug': 8, 'august': 8,
+                'sep': 9, 'sept': 9, 'september': 9,
+                'oct': 10, 'october': 10,
+                'nov': 11, 'november': 11,
+                'dec': 12, 'december': 12,
+            }
 
-    except Exception as e:
-        print(f"[DEBUG] Unexpected error in parse_reminder_time: {e}")
-        return None
+            month = month_map.get(month_str.lower())
+            if not month:
+                return None
+
+            # Create date for current or next year
+            target_date = now.set(month=month, day=day, hour=hour, minute=minute, second=0, microsecond=0)
+
+            # If the date is in the past, use next year
+            if target_date < now:
+                target_date = target_date.add(years=1)
+
+            return target_date
+        except Exception:
+            return None
+
+    # Try parsing as absolute time (no prefix)
+    # This handles: "9pm", "9:20pm", "21:00"
+    parsed = parse_time_component(time_str)
+    if parsed:
+        hour, minute = parsed
+        result = now.set(hour=hour, minute=minute, second=0, microsecond=0)
+        # If time has already passed today, schedule for tomorrow
+        if result < now:
+            result = result.add(days=1)
+        return result
+
+    # Final fallback: try pendulum's natural language parser
+    try:
+        parsed = pendulum.parse(time_str, tz=user_timezone)
+        return parsed
+    except Exception:
+        pass
+
+    return None
 
 
 async def schedule_message_deletion(
@@ -1039,6 +1094,17 @@ async def create_reminder(
                         components=components
                     )
 
+                    # Also ping user in task channel
+                    try:
+                        await bot.rest.create_message(
+                            channel=TASK_CHANNEL_ID,
+                            content=f"{user.mention}",
+                            components=components,
+                            user_mentions=True
+                        )
+                    except Exception:
+                        pass
+
             if reminder_id in active_reminders:
                 del active_reminders[reminder_id]
 
@@ -1354,25 +1420,95 @@ async def on_task_command(
         elif view_match:
             tasks = await get_user_tasks(mongo, event.author_id)
             display_name = await get_user_display_name(mongo, bot, event.author_id, event.guild_id)
-            task_content = format_task_list(tasks)
-            completed_count = sum(1 for t in tasks if t['completed'])
 
-            components = [
-                Container(
-                    accent_color=MAGENTA_ACCENT,
-                    components=[
-                        Text(content=f"# {display_name}'s Tasks"),
-                        Separator(divider=True),
-                        Text(content=task_content),
-                        Separator(divider=True),
-                        Text(content=f"-# {len(tasks)} total • {completed_count} completed"),
-                        Text(content=f"-# This message will delete in {AUTO_DELETE_DELAY} seconds"),
-                        Media(items=[MediaItem(media="assets/Purple_Footer.png")]),
-                    ]
+            # Get tasks assigned TO this user
+            assigned_to_me = await get_assigned_tasks(mongo, event.author_id)
+
+            all_components = []
+
+            # SECTION 1: My Tasks (owned tasks)
+            if tasks:
+                # Build assignment info for owned tasks that are assigned
+                assignment_info = {}
+                for task in tasks:
+                    if task.get("assigned_to"):
+                        assignee_id = int(task["assigned_to"])
+                        assignee_name = await get_user_display_name(mongo, bot, assignee_id, event.guild_id)
+                        assignment_info[task["task_id"]] = f"→ `{assignee_name}`"
+
+                task_content = format_task_list(tasks, assignment_info)
+                completed_count = sum(1 for t in tasks if t['completed'])
+
+                all_components.append(
+                    Container(
+                        accent_color=MAGENTA_ACCENT,
+                        components=[
+                            Text(content=f"# {display_name}'s Tasks"),
+                            Text(content="## 📝 My Tasks"),
+                            Separator(divider=True),
+                            Text(content=task_content),
+                            Separator(divider=True),
+                            Text(content=f"-# {len(tasks)} total • {completed_count} completed"),
+                        ]
+                    )
                 )
-            ]
 
-            await send_auto_delete_response(bot, event.channel_id, components)
+            # SECTION 2: Assigned to Me
+            if assigned_to_me:
+                # Build assignment info showing who assigned each task
+                assignment_info = {}
+                for task in assigned_to_me:
+                    assigner_id = int(task.get("assigned_by", task.get("owner_id")))
+                    assigner_name = await get_user_display_name(mongo, bot, assigner_id, event.guild_id)
+                    assignment_info[task["task_id"]] = f"← `{assigner_name}`"
+
+                assigned_content = format_task_list(assigned_to_me, assignment_info)
+                assigned_completed = sum(1 for t in assigned_to_me if t['completed'])
+
+                # If no owned tasks, add user name header
+                section_components = []
+                if not tasks:
+                    section_components.append(Text(content=f"# {display_name}'s Tasks"))
+
+                section_components.extend([
+                    Text(content="## 📥 Assigned to Me"),
+                    Separator(divider=True),
+                    Text(content=assigned_content),
+                    Separator(divider=True),
+                    Text(content=f"-# {len(assigned_to_me)} total • {assigned_completed} completed"),
+                ])
+
+                all_components.append(
+                    Container(
+                        accent_color=BLUE_ACCENT,
+                        components=section_components
+                    )
+                )
+
+            # Add footer and auto-delete notice
+            if all_components:
+                all_components[-1].components.append(
+                    Text(content=f"-# This message will delete in {AUTO_DELETE_DELAY} seconds")
+                )
+                all_components[-1].components.append(
+                    Media(items=[MediaItem(media="assets/Purple_Footer.png")])
+                )
+            else:
+                # No tasks at all
+                all_components = [
+                    Container(
+                        accent_color=MAGENTA_ACCENT,
+                        components=[
+                            Text(content=f"# {display_name}'s Tasks"),
+                            Separator(divider=True),
+                            Text(content="_No tasks in your list._"),
+                            Text(content=f"-# This message will delete in {AUTO_DELETE_DELAY} seconds"),
+                            Media(items=[MediaItem(media="assets/Purple_Footer.png")]),
+                        ]
+                    )
+                ]
+
+            await send_auto_delete_response(bot, event.channel_id, all_components)
 
         elif help_match:
             help_text = (
