@@ -344,6 +344,38 @@ async def handle_manual_ticket_modal(
             except Exception as e:
                 print(f"[DEBUG] Could not delete thread creation message: {e}")
 
+            # Send notification in private thread pinging recruitment staff
+            try:
+                notification_components = [
+                    Container(
+                        accent_color=GOLD_ACCENT,
+                        components=[
+                            Text(content="## 🎫 New Ticket Created"),
+                            Separator(divider=True),
+                            Text(content=(
+                                f"<@&{RECRUITMENT_STAFF_ROLE}>\n\n"
+                                f"**Ticket Type:** {ticket_type}\n"
+                                f"**Recruit:** {target_user.mention}\n"
+                                f"**Player Tag:** `{player_tag}`\n"
+                                f"**Player Name:** {player_data.name if player_data else 'Unknown'}\n"
+                                f"**Town Hall:** {player_data.town_hall if player_data else 'Unknown'}\n\n"
+                                f"Use this thread for staff-only discussions about this recruitment."
+                            )),
+                            Text(content=f"-# Created by {ctx.user.mention}"),
+                            Media(items=[MediaItem(media="assets/Gold_Footer.png")])
+                        ]
+                    )
+                ]
+
+                await bot.rest.create_message(
+                    channel=private_thread.id,
+                    components=notification_components,
+                    role_mentions=True
+                )
+                print(f"[DEBUG] Sent recruitment staff notification in private thread")
+            except Exception as e:
+                print(f"[ERROR] Failed to send private thread notification: {e}")
+
         except Exception as e:
             print(f"[ERROR] Failed to create private thread: {e}")
             thread_id = None
