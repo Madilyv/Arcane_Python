@@ -814,6 +814,33 @@ async def delete_all_tasks(
     return task_count
 
 
+async def delete_completed_tasks(
+        mongo: MongoClient,
+        user_id: int
+) -> tuple[int, List[Dict[str, Any]]]:
+    """
+    Delete all completed tasks for a user.
+    Returns (count_deleted, remaining_tasks) tuple.
+    """
+    user_data = await mongo.user_tasks.find_one({"user_id": str(user_id)})
+    if not user_data:
+        return 0, []
+
+    tasks = user_data.get("tasks", [])
+
+    # Separate completed from non-completed tasks
+    completed_tasks = [t for t in tasks if t.get("completed", False)]
+    remaining_tasks = [t for t in tasks if not t.get("completed", False)]
+
+    count_deleted = len(completed_tasks)
+
+    if count_deleted > 0:
+        # Renumber remaining tasks
+        remaining_tasks = await renumber_tasks(mongo, user_id, remaining_tasks)
+
+    return count_deleted, remaining_tasks
+
+
 async def edit_task(
         mongo: MongoClient,
         user_id: int,
@@ -1303,6 +1330,7 @@ async def on_task_command(
         complete_match = re.match(r'^complete task\s+#?(\d+)$', content, re.IGNORECASE)
         edit_match = re.match(r'^edit task\s+#?(\d+)$', content, re.IGNORECASE)
         del_all_match = re.match(r'^del all tasks$', content, re.IGNORECASE)
+        del_completed_match = re.match(r'^del completed tasks$', content, re.IGNORECASE)
         remind_match = re.match(r'^remind(?:er)?\s+(?:task\s+)?#?(\d+)\s+(.+)$', content, re.IGNORECASE)
         view_match = re.match(r'^view tasks?$', content, re.IGNORECASE)
         help_match = re.match(r'^(?:help tasks?|tasks? help)$', content, re.IGNORECASE)
@@ -1315,7 +1343,7 @@ async def on_task_command(
         unassign_match = re.match(r'^unassign\s+task\s+#?(\d+)$', content, re.IGNORECASE)
         view_assigned_match = re.match(r'^view\s+assigned(?:\s+tasks)?$', content, re.IGNORECASE)
 
-        if not any([add_match, del_match, complete_match, edit_match, del_all_match, remind_match, view_match, help_match, set_name_match, set_timezone_match, profile_match, sync_name_match, assign_match, unassign_match, view_assigned_match]):
+        if not any([add_match, del_match, complete_match, edit_match, del_all_match, del_completed_match, remind_match, view_match, help_match, set_name_match, set_timezone_match, profile_match, sync_name_match, assign_match, unassign_match, view_assigned_match]):
             return
 
         # Check role permission (only in guilds)
@@ -1542,6 +1570,30 @@ async def on_task_command(
 
             await send_auto_delete_response(bot, event.channel_id, components)
 
+        elif del_completed_match:
+            count, remaining_tasks = await delete_completed_tasks(mongo, event.author_id)
+
+            if count > 0:
+                # Update task list with remaining tasks
+                await update_task_list_message(bot, mongo, event.author_id, remaining_tasks, event.guild_id)
+
+                components = create_task_embed(
+                    "✅ Completed Tasks Deleted",
+                    f"Deleted {count} completed task{'s' if count != 1 else ''}.\n"
+                    f"{len(remaining_tasks)} pending task{'s' if len(remaining_tasks) != 1 else ''} remaining.",
+                    GREEN_ACCENT,
+                    "This message will delete in 60 seconds"
+                )
+            else:
+                components = create_task_embed(
+                    "ℹ️ No Completed Tasks",
+                    "You don't have any completed tasks to delete.",
+                    BLUE_ACCENT,
+                    "This message will delete in 60 seconds"
+                )
+
+            await send_auto_delete_response(bot, event.channel_id, components)
+
         elif view_match:
             tasks = await get_user_tasks(mongo, event.author_id)
             display_name = await get_user_display_name(mongo, bot, event.author_id, event.guild_id)
@@ -1644,6 +1696,7 @@ async def on_task_command(
                 "`edit task #[id]` - Edit a task's description\n"
                 "`del task #[id]` - Delete a specific task\n"
                 "`del all tasks` - Delete all your tasks\n"
+                "`del completed tasks` - Delete all completed tasks\n"
                 "`remind task #[id] [time]` - Set a reminder for a task\n"
                 "`help tasks` - Show this help message\n\n"
                 "**Task Assignment:**\n"
