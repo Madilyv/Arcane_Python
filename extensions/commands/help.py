@@ -96,6 +96,11 @@ COMMAND_LIST = {
         ("/fwa links", "Quick access to essential FWA links - verification forms, war weight entry, and important resources"),
         ("/fwa war-plans", "Generate strategic war plan messages for different war scenarios and outcomes"),
         ("/fwa weight", "Calculate war weight from storage values - automatically converts storage to war weight (×5 multiplier)"),
+        ("/lazycwl-snapshot", "Take a snapshot of FWA clan players during CWL to track who needs to return for sync wars - captures current roster for monitoring"),
+        ("/lazycwl-ping", "Ping missing players to return to their FWA home clans for sync wars - automated reminders with Discord mentions (Train⇨Join⇨Attack⇨Return 15-30min)"),
+        ("/lazycwl-status", "View all active LazyCWL snapshots with player counts, Discord coverage, and creation dates - see what clans are being tracked"),
+        ("/lazycwl-roster", "Display complete player roster from any active snapshot - shows all players with TH levels, tags, and Discord link status"),
+        ("/lazycwl-reset", "Deactivate all active LazyCWL snapshots after wars complete - clears all tracking for the next CWL season"),
     ],
     "new_clan": [
         ("📺 Video Tutorials", "Watch these YouTube tutorials for visual guidance:\n• Clan Dashboard Tutorial: https://youtu.be/ULh7TX008wE\n• Setup ClashKing Logs: https://youtu.be/6p8ILBh07yc"),
@@ -275,6 +280,14 @@ Examples for OTHER COMMANDS:
 - "Calculate war weight? Use `/fwa weight` → enter storage value → automatically multiplied by 5 for war weight"
 - "Create polls? Use `/poll create` → fill in your question and options → members can vote with real-time results"
 
+Examples for LAZYCWL TRACKING SYSTEM:
+- "Track players during CWL? Use `/lazycwl-snapshot` → pick your FWA clan → bot saves who's in the clan right now → helps track who leaves for CWL wars"
+- "Ping missing players? Use `/lazycwl-ping` → pick which clan snapshot → bot checks who's missing → sends reminders to return (Train⇨Join⇨Attack⇨Return 15-30min max!)"
+- "See all tracked clans? Use `/lazycwl-status` → shows all active snapshots → see player counts and Discord coverage for each clan"
+- "View full roster? Use `/lazycwl-roster` → pick a clan snapshot → see every player with TH level, tag, and Discord link status"
+- "Finish CWL tracking? Use `/lazycwl-reset` → clears all snapshots → use this after wars end to start fresh next month"
+- "LazyCWL Workflow: Snapshot clans FIRST → Players leave for CWL wars → Ping missing players → Check roster to see who's linked → Reset after CWL ends"
+
 Examples for ADDING NEW CLANS:
 - "Adding a new clan? First watch the YouTube tutorials → Use Clan Dashboard in <#1345587617223151758> → Click 'Add a Clan' → Choose auto-create roles or select existing → Clone channels with `/utilities clone-category` → Finish setup in dashboard"
 - "Need help with new clan setup? Check the 'Adding a New Clan' help section → Has video tutorials, step-by-step guide, and all the commands you need → Dashboard handles role creation automatically!"
@@ -309,6 +322,8 @@ If they ask about something not in the commands, say: "Hmm, I don't know about t
 SPECIAL FOCUS: When users ask about recruitment, always mention the full workflow and timing since it's the most complex system in the bot! For detailed recruitment help, always direct them to the comprehensive guide at the top of <#1356702174096261271> which has command tutorials, staff hierarchy, blind bidding guide, and essential recruitment details.
 
 SPECIAL FOCUS: When users ask about adding new clans, setting up clans, creating clans, or expanding the family, always mention the proper workflow order and direct them to the 'Adding a New Clan' help section for complete step-by-step instructions and video tutorials!
+
+SPECIAL FOCUS: When users ask about LazyCWL, CWL tracking, or tracking players during CWL wars, explain the complete workflow: Take snapshot FIRST → Players leave for CWL → Ping missing players when sync wars start → Check roster to see Discord links → Reset after CWL ends. The 15-30 minute window (Train⇨Join⇨Attack⇨Return) is critical!
 
 Remember: Make it so easy that anyone can understand, especially the recruitment system! 🌟"""
 
