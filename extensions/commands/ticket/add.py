@@ -165,7 +165,7 @@ class AddToTicketCommand(
                 except Exception as e:
                     print(f"[ERROR] Failed to send ticket add notification: {e}")
 
-        # Build response - only send ephemeral message for errors
+        # Build response
         if errors:
             # Show errors (partial or complete failure)
             error_message = "## ❌ Failed to Add"
@@ -188,7 +188,12 @@ class AddToTicketCommand(
                 components=error_components,
                 ephemeral=True
             )
-        # No ephemeral response for full success - channel notification is enough
+        else:
+            # Success - send minimal ephemeral acknowledgment
+            await ctx.respond(
+                "✅ Done",
+                ephemeral=True
+            )
 
 
 loader.command(ticket)
