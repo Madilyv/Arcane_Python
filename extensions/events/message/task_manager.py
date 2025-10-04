@@ -1142,8 +1142,10 @@ async def create_reminder(
             if reminder_id in active_reminders:
                 del active_reminders[reminder_id]
 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Task Manager] Reminder failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     scheduler.add_job(
         send_reminder,
