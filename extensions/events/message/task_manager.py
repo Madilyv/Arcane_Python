@@ -130,16 +130,10 @@ async def restore_reminders_on_startup(
                                                         ActionRow(
                                                             components=[
                                                                 Button(
-                                                                    style=hikari.ButtonStyle.SUCCESS,
-                                                                    label="Mark Complete",
-                                                                    custom_id=f"complete_from_reminder:{user_id}_{task_id}",
-                                                                    emoji="✅"
-                                                                ),
-                                                                Button(
                                                                     style=hikari.ButtonStyle.SECONDARY,
-                                                                    label="Snooze 1h",
-                                                                    custom_id=f"snooze_reminder:{user_id}_{task_id}_1h",
-                                                                    emoji="⏰"
+                                                                    label="Dismiss",
+                                                                    custom_id="dismiss_channel_reminder",
+                                                                    emoji="✖️"
                                                                 )
                                                             ]
                                                         ),
@@ -1176,16 +1170,10 @@ async def create_reminder(
                                 ActionRow(
                                     components=[
                                         Button(
-                                            style=hikari.ButtonStyle.SUCCESS,
-                                            label="Mark Complete",
-                                            custom_id=f"complete_from_reminder:{user_id}_{task_id}",
-                                            emoji="✅"
-                                        ),
-                                        Button(
                                             style=hikari.ButtonStyle.SECONDARY,
-                                            label="Snooze 1h",
-                                            custom_id=f"snooze_reminder:{user_id}_{task_id}_1h",
-                                            emoji="⏰"
+                                            label="Dismiss",
+                                            custom_id="dismiss_channel_reminder",
+                                            emoji="✖️"
                                         )
                                     ]
                                 ),
@@ -2217,6 +2205,20 @@ async def handle_snooze_reminder(
             )
         except:
             pass
+
+
+@register_action("dismiss_channel_reminder", no_return=True)
+@lightbulb.di.with_di
+async def handle_dismiss_channel_reminder(
+        ctx,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+) -> None:
+    """Handle dismiss button - delete the channel reminder message."""
+    try:
+        await bot.rest.delete_message(ctx.channel_id, ctx.message.id)
+    except:
+        pass
 
 
 @loader.listener(hikari.StoppingEvent)
