@@ -322,6 +322,32 @@ async def handle_manual_ticket_modal(
 
         print(f"[DEBUG] Created ticket channel: {ticket_channel.id}")
 
+        # Create private thread for staff discussions
+        try:
+            private_thread = await bot.rest.create_thread(
+                ticket_channel.id,
+                hikari.ChannelType.GUILD_PRIVATE_THREAD,
+                "Private",
+                auto_archive_duration=10080  # 7 days
+            )
+            thread_id = str(private_thread.id)
+            print(f"[DEBUG] Created private thread: {thread_id}")
+
+            # Delete the "started a thread" system message
+            try:
+                await asyncio.sleep(0.5)  # Small delay to ensure message exists
+                messages = await bot.rest.fetch_messages(ticket_channel.id).limit(5)
+                for message in messages:
+                    if message.type == hikari.MessageType.THREAD_CREATED:
+                        await bot.rest.delete_message(ticket_channel.id, message.id)
+                        break
+            except Exception as e:
+                print(f"[DEBUG] Could not delete thread creation message: {e}")
+
+        except Exception as e:
+            print(f"[ERROR] Failed to create private thread: {e}")
+            thread_id = None
+
         # Create MongoDB documents
         now = datetime.now(timezone.utc)
 
@@ -332,7 +358,7 @@ async def handle_manual_ticket_modal(
             "player_th_level": player_data.town_hall if player_data else None,
             "discord_user_id": str(user_id),
             "ticket_channel_id": str(ticket_channel.id),
-            "ticket_thread_id": None,
+            "ticket_thread_id": thread_id,
             "created_at": now,
             "expires_at": now + timedelta(days=12),
             "recruitment_history": [],
@@ -353,7 +379,7 @@ async def handle_manual_ticket_modal(
             "_id": str(ticket_channel.id),
             "ticket_info": {
                 "channel_id": str(ticket_channel.id),
-                "thread_id": "",
+                "thread_id": thread_id or "",
                 "user_id": str(user_id),
                 "user_tag": player_tag,
                 "ticket_type": ticket_type,
