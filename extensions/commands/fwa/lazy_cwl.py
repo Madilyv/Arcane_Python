@@ -10,8 +10,10 @@ import aiohttp
 import hikari
 import lightbulb
 import coc
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 from extensions.commands.fwa import loader, fwa
 from extensions.components import register_action
@@ -30,6 +32,12 @@ from hikari.impl import (
     SeparatorComponentBuilder as Separator,
     LinkButtonBuilder as LinkButton,
 )
+
+# Global variables for auto-ping system
+scheduler: Optional[AsyncIOScheduler] = None
+bot_instance: Optional[hikari.GatewayBot] = None
+coc_client: Optional[coc.Client] = None
+mongo_client: Optional[MongoClient] = None
 
 
 async def get_discord_ids(player_tags: List[str]) -> Dict[str, Optional[str]]:
@@ -455,6 +463,89 @@ class LazyCwlReset(
         await ctx.respond(components=components, ephemeral=True)
 
 
+@fwa.register()
+class LazyCwlAutopingsStart(
+    lightbulb.SlashCommand,
+    name="lazycwl-autopings-start",
+    description="Start automated periodic pinging for missing players (runs for 7 days)"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx: lightbulb.Context,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+
+        # Get active snapshots without auto-ping enabled
+        snapshots = await mongo.lazy_cwl_snapshots.find({
+            "active": True,
+            "$or": [
+                {"auto_ping_enabled": {"$exists": False}},
+                {"auto_ping_enabled": False}
+            ]
+        }).sort("snapshot_date", -1).to_list(length=None)
+
+        if not snapshots:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No Available Snapshots"),
+                        Text(content="No active snapshots found without auto-ping enabled."),
+                        Text(content="Use `/lazycwl-snapshot` to create a snapshot first."),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, ephemeral=True)
+            return
+
+        action_id = str(uuid.uuid4())
+        data = {
+            "_id": action_id,
+            "command": "autopings_start",
+            "user_id": ctx.member.id
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build dropdown options
+        options = []
+        for snapshot in snapshots:
+            player_count = len(snapshot.get("players", []))
+            options.append(
+                SelectOption(
+                    label=snapshot["clan_name"],
+                    value=snapshot["_id"],
+                    description=f"{snapshot['clan_tag']} • {player_count} players • {snapshot['snapshot_date'].strftime('%m/%d/%Y')}",
+                    emoji=emojis.FWA.partial_emoji
+                )
+            )
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content="## 🔔 Start Auto-Ping"),
+                    Text(content="Select a snapshot to enable automated pinging:"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_autopings_select_snapshot:{action_id}",
+                                placeholder="Select a snapshot...",
+                                max_values=1,
+                                options=options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.respond(components=components, ephemeral=True)
+
+
 # ======================== COMPONENT HANDLERS ========================
 
 @register_action("lazycwl_snapshot_select", no_return=True)
@@ -705,6 +796,199 @@ async def process_single_snapshot_ping(
             'clan_name': snapshot.get('clan_name', 'Unknown'),
             'error': str(e)
         }
+
+
+async def auto_ping_job(snapshot_id: str):
+    """
+    Periodic job to check and ping missing players automatically.
+    Runs at configured interval until 7 days elapsed or snapshot reset.
+    """
+    global bot_instance, coc_client, mongo_client, scheduler
+
+    if not all([bot_instance, coc_client, mongo_client, scheduler]):
+        print(f"[LazyCWL AutoPing] ERROR: Missing required clients for job {snapshot_id}")
+        return
+
+    try:
+        # Fetch snapshot from MongoDB
+        snapshot = await mongo_client.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+
+        if not snapshot:
+            print(f"[LazyCWL AutoPing] Snapshot {snapshot_id} not found, cancelling job")
+            try:
+                scheduler.remove_job(f"autopings_{snapshot_id}")
+            except:
+                pass
+            return
+
+        # Check if still active and enabled
+        if not snapshot.get("active") or not snapshot.get("auto_ping_enabled"):
+            print(f"[LazyCWL AutoPing] Snapshot {snapshot_id} no longer active/enabled, cancelling job")
+            try:
+                scheduler.remove_job(f"autopings_{snapshot_id}")
+            except:
+                pass
+            return
+
+        # Check 7-day limit
+        started_at = snapshot.get("auto_ping_started_at")
+        if started_at:
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+
+            now = datetime.now(timezone.utc)
+            elapsed = now - started_at
+
+            if elapsed > timedelta(days=7):
+                print(f"[LazyCWL AutoPing] 7-day limit reached for {snapshot['clan_name']}, disabling")
+
+                # Disable auto-ping
+                await mongo_client.lazy_cwl_snapshots.update_one(
+                    {"_id": snapshot_id},
+                    {
+                        "$set": {
+                            "auto_ping_enabled": False,
+                        }
+                    }
+                )
+
+                # Cancel job
+                try:
+                    scheduler.remove_job(f"autopings_{snapshot_id}")
+                except:
+                    pass
+
+                # Send expiry notification to clan channel
+                try:
+                    clan_data = await mongo_client.clans.find_one({"tag": snapshot["clan_tag"]})
+                    if clan_data and clan_data.get("announcement_id"):
+                        ping_count = snapshot.get("auto_ping_count", 0)
+                        expiry_components = [
+                            Container(
+                                accent_color=RED_ACCENT,
+                                components=[
+                                    Text(content="## ⏰ Auto-Ping Expired"),
+                                    Separator(),
+                                    Text(content=(
+                                        f"The automated ping for **{snapshot['clan_name']}** has expired after 7 days.\n\n"
+                                        f"**Snapshot Date:** {snapshot['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')}\n"
+                                        f"**Total Pings Sent:** {ping_count}\n\n"
+                                        f"Use `/lazycwl-autopings start` to restart if needed."
+                                    ))
+                                ]
+                            )
+                        ]
+                        await bot_instance.rest.create_message(
+                            channel=clan_data["announcement_id"],
+                            components=expiry_components
+                        )
+                except Exception as e:
+                    print(f"[LazyCWL AutoPing] Failed to send expiry notification: {e}")
+
+                return
+
+        # Ping missing players
+        print(f"[LazyCWL AutoPing] Running auto-ping for {snapshot['clan_name']}")
+        result = await process_single_snapshot_ping(snapshot, bot_instance, coc_client, mongo_client)
+
+        if result['success']:
+            # Update last ping time and increment counter
+            await mongo_client.lazy_cwl_snapshots.update_one(
+                {"_id": snapshot_id},
+                {
+                    "$set": {
+                        "last_auto_ping_at": datetime.now(timezone.utc)
+                    },
+                    "$inc": {
+                        "auto_ping_count": 1
+                    }
+                }
+            )
+
+            if result.get('all_present'):
+                print(f"[LazyCWL AutoPing] All players present for {snapshot['clan_name']}")
+            else:
+                print(f"[LazyCWL AutoPing] Pinged {result['missing_count']}/{result['total_count']} missing players for {snapshot['clan_name']}")
+        else:
+            print(f"[LazyCWL AutoPing] Ping failed for {snapshot['clan_name']}: {result.get('error', 'Unknown error')}")
+
+    except Exception as e:
+        print(f"[LazyCWL AutoPing] Error in job {snapshot_id}: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def restore_autopings():
+    """Restore auto-ping jobs on bot restart."""
+    global mongo_client, scheduler
+
+    if not mongo_client or not scheduler:
+        print("[LazyCWL AutoPing] Cannot restore: missing clients")
+        return
+
+    try:
+        # Find all snapshots with auto-ping enabled
+        snapshots = await mongo_client.lazy_cwl_snapshots.find({
+            "auto_ping_enabled": True
+        }).to_list(length=None)
+
+        if not snapshots:
+            print("[LazyCWL AutoPing] No active auto-pings to restore")
+            return
+
+        now = datetime.now(timezone.utc)
+        restored = 0
+        expired = 0
+
+        for snapshot in snapshots:
+            snapshot_id = snapshot["_id"]
+            started_at = snapshot.get("auto_ping_started_at")
+
+            if not started_at:
+                continue
+
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+
+            elapsed = now - started_at
+
+            # Check if expired during downtime
+            if elapsed > timedelta(days=7):
+                print(f"[LazyCWL AutoPing] Snapshot {snapshot['clan_name']} expired during downtime, disabling")
+                await mongo_client.lazy_cwl_snapshots.update_one(
+                    {"_id": snapshot_id},
+                    {"$set": {"auto_ping_enabled": False}}
+                )
+                expired += 1
+                continue
+
+            # Restore job
+            interval_minutes = snapshot.get("auto_ping_interval_minutes", 60)
+
+            try:
+                scheduler.add_job(
+                    auto_ping_job,
+                    trigger=IntervalTrigger(minutes=interval_minutes),
+                    args=[snapshot_id],
+                    id=f"autopings_{snapshot_id}",
+                    replace_existing=True,
+                    max_instances=1
+                )
+
+                print(f"[LazyCWL AutoPing] Restored auto-ping for {snapshot['clan_name']} (interval: {interval_minutes}min)")
+                restored += 1
+            except Exception as e:
+                print(f"[LazyCWL AutoPing] Failed to restore job for {snapshot['clan_name']}: {e}")
+
+        if restored > 0:
+            print(f"[LazyCWL AutoPing] Restored {restored} auto-ping job(s)")
+        if expired > 0:
+            print(f"[LazyCWL AutoPing] Disabled {expired} expired auto-ping(s)")
+
+    except Exception as e:
+        print(f"[LazyCWL AutoPing] Error restoring auto-pings: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @register_action("lazycwl_ping_select", no_return=True)
