@@ -306,20 +306,24 @@ def parse_time_component(time_str: str) -> Optional[tuple[int, int]]:
     Handles: "9pm", "9:20pm", "9:45am", "21:00", etc.
     Returns None if parsing fails.
     """
+    print(f"[DEBUG] parse_time_component input: {repr(time_str)}")
     time_str = time_str.strip().lower()
     # Add space before am/pm if not present
     time_str = re.sub(r'(\d)([ap]m)', r'\1 \2', time_str)
+    print(f"[DEBUG] After re.sub transformation: {repr(time_str)}")
 
     # Pattern: optional hour:minute, optional am/pm
     # Makes colon+minutes OPTIONAL: (?::(\d{2}))?
     time_match = re.match(r'^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$', time_str)
 
     if not time_match:
+        print(f"[DEBUG] Regex did not match!")
         return None
 
     hour = int(time_match.group(1))
     minute = int(time_match.group(2)) if time_match.group(2) else 0
     period = time_match.group(3)
+    print(f"[DEBUG] Matched - hour={hour}, minute={minute}, period={period}")
 
     # Convert to 24-hour format
     if period == 'pm' and hour != 12:
@@ -329,23 +333,33 @@ def parse_time_component(time_str: str) -> Optional[tuple[int, int]]:
 
     # Validate
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        print(f"[DEBUG] Validation failed - hour={hour}, minute={minute}")
         return None
 
+    print(f"[DEBUG] parse_time_component returning: ({hour}, {minute})")
     return (hour, minute)
 
 
 def parse_reminder_time(time_str: str, user_timezone: str = DEFAULT_TIMEZONE) -> Optional[pendulum.DateTime]:
     """Parse various time formats into a datetime object."""
+    print(f"[DEBUG] parse_reminder_time input: {repr(time_str)}, timezone: {user_timezone}")
     time_str = time_str.strip().lower()
+    print(f"[DEBUG] After strip/lower: {repr(time_str)}")
 
     # Get current time in user's timezone
-    now = pendulum.now(user_timezone)
+    try:
+        now = pendulum.now(user_timezone)
+        print(f"[DEBUG] Current time: {now}")
+    except Exception as e:
+        print(f"[DEBUG] Error getting current time: {e}")
+        return None
 
     # Pattern for relative times (e.g., 5m, 1h, 2d)
     relative_pattern = r'^(\d+)\s*([mhd])$'
     match = re.match(relative_pattern, time_str)
 
     if match:
+        print(f"[DEBUG] Matched relative time pattern")
         amount = int(match.group(1))
         unit = match.group(2)
 
@@ -358,19 +372,35 @@ def parse_reminder_time(time_str: str, user_timezone: str = DEFAULT_TIMEZONE) ->
 
     # Handle "tomorrow" alone
     if time_str == "tomorrow":
+        print(f"[DEBUG] Matched 'tomorrow' alone")
         return now.add(days=1).replace(hour=9, minute=0, second=0, microsecond=0)
 
     # Handle "today at [time]"
     if time_str.startswith("today at "):
+        print(f"[DEBUG] Matched 'today at' prefix")
         time_part = time_str.replace("today at ", "")
+        print(f"[DEBUG] Extracted time part: {repr(time_part)}")
         parsed = parse_time_component(time_part)
+        print(f"[DEBUG] parse_time_component returned: {parsed}")
         if parsed:
             hour, minute = parsed
-            result = now.set(hour=hour, minute=minute, second=0, microsecond=0)
-            # If time has passed, schedule for tomorrow
-            if result < now:
-                result = result.add(days=1)
-            return result
+            try:
+                result = now.set(hour=hour, minute=minute, second=0, microsecond=0)
+                print(f"[DEBUG] Set time to: {result}")
+                # If time has passed, schedule for tomorrow
+                if result < now:
+                    result = result.add(days=1)
+                    print(f"[DEBUG] Time has passed, scheduled for tomorrow: {result}")
+                print(f"[DEBUG] parse_reminder_time returning: {result}")
+                return result
+            except Exception as e:
+                print(f"[DEBUG] Error in set/add operations: {e}")
+                import traceback
+                traceback.print_exc()
+                return None
+        else:
+            print(f"[DEBUG] parse_time_component returned None, continuing to next check")
+
 
     # Handle "tomorrow at [time]"
     if time_str.startswith("tomorrow at "):
@@ -442,11 +472,15 @@ def parse_reminder_time(time_str: str, user_timezone: str = DEFAULT_TIMEZONE) ->
 
     # Final fallback: try pendulum's natural language parser
     try:
+        print(f"[DEBUG] Trying pendulum.parse() as fallback")
         parsed = pendulum.parse(time_str, tz=user_timezone)
+        print(f"[DEBUG] pendulum.parse() succeeded: {parsed}")
         return parsed
-    except Exception:
+    except Exception as e:
+        print(f"[DEBUG] pendulum.parse() failed: {e}")
         pass
 
+    print(f"[DEBUG] parse_reminder_time returning None - no patterns matched")
     return None
 
 
@@ -1550,8 +1584,10 @@ async def on_task_command(
         elif remind_match:
             task_id = int(remind_match.group(1))
             time_str = remind_match.group(2).strip()
+            print(f"[DEBUG] Command matched - task_id={task_id}, time_str={repr(time_str)}")
 
             reminder_time = parse_reminder_time(time_str)
+            print(f"[DEBUG] parse_reminder_time result: {reminder_time}")
 
             if not reminder_time:
                 components = create_task_embed(
