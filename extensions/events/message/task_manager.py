@@ -1592,21 +1592,15 @@ async def on_task_command(
             )
 
             if success:
-                reminder_dt = reminder_time
-                now = pendulum.now(DEFAULT_TIMEZONE)
+                # Convert to Unix timestamp for Discord formatting
+                unix_timestamp = int(reminder_time.timestamp())
 
-                if reminder_dt.date() == now.date():
-                    formatted_time = reminder_dt.format("h:mm A")
-                    time_desc = f"today at {formatted_time}"
-                elif reminder_dt.date() == now.add(days=1).date():
-                    formatted_time = reminder_dt.format("h:mm A")
-                    time_desc = f"tomorrow at {formatted_time}"
-                else:
-                    time_desc = reminder_dt.format("MMM D [at] h:mm A")
-
+                # Discord timestamp formats:
+                # <t:TIMESTAMP:f> = Full date/time (displays in user's timezone)
+                # <t:TIMESTAMP:R> = Relative time (e.g., "in 2 hours")
                 components = create_task_embed(
                     "⏰ Reminder Set",
-                    f"I'll remind you about task #{task_id} {time_desc}!",
+                    f"I'll remind you about task #{task_id} <t:{unix_timestamp}:f> (<t:{unix_timestamp}:R>)!",
                     GREEN_ACCENT,
                     "This message will delete in 60 seconds"
                 )
