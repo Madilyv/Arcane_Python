@@ -976,6 +976,34 @@ async def get_tasks_assigned_by_user(
     return assigned_tasks
 
 
+async def find_task_owner(
+        mongo: MongoClient,
+        user_id: int,
+        task_id: int
+) -> Optional[tuple[int, Dict[str, Any]]]:
+    """
+    Find who owns a task (either user themselves or someone who assigned it to them).
+    Returns (owner_id, task) if found, None otherwise.
+
+    First checks user's own tasks, then checks tasks assigned to user.
+    """
+    # Check user's own tasks first
+    user_data = await mongo.user_tasks.find_one({"user_id": str(user_id)})
+    if user_data:
+        for task in user_data.get("tasks", []):
+            if task["task_id"] == task_id:
+                return (user_id, task)
+
+    # Check if it's a task assigned to this user (owned by someone else)
+    async for owner_data in mongo.user_tasks.find({}):
+        owner_id_str = owner_data.get("user_id")
+        for task in owner_data.get("tasks", []):
+            if task.get("assigned_to") == str(user_id) and task["task_id"] == task_id:
+                return (int(owner_id_str), task)
+
+    return None
+
+
 async def send_assignment_dm(
         bot: hikari.GatewayBot,
         mongo: MongoClient,
@@ -1172,6 +1200,7 @@ async def on_task_command(
             session = edit_sessions[event.author_id]
             if session["channel_id"] == event.channel_id:
                 task_id = session["task_id"]
+                owner_id = session["owner_id"]  # Get the stored owner_id
                 prompt_message_id = session.get("prompt_message_id")
                 del edit_sessions[event.author_id]
 
@@ -1191,18 +1220,19 @@ async def on_task_command(
                 except:
                     pass
 
-                success, edited_task = await edit_task(mongo, event.author_id, task_id, content)
+                success, edited_task = await edit_task(mongo, owner_id, task_id, content)
 
                 if success:
                     # Update owner's task list
-                    tasks = await get_user_tasks(mongo, event.author_id)
-                    await update_task_list_message(bot, mongo, event.author_id, tasks, event.guild_id)
+                    owner_tasks = await get_user_tasks(mongo, owner_id)
+                    await update_task_list_message(bot, mongo, owner_id, owner_tasks, event.guild_id)
 
-                    # If task was assigned to someone, update their task list too
+                    # If task was assigned and owner != current user, update current user's list too
                     if edited_task and edited_task.get("assigned_to"):
                         assignee_id = int(edited_task["assigned_to"])
-                        assignee_tasks = await get_user_tasks(mongo, assignee_id)
-                        await update_task_list_message(bot, mongo, assignee_id, assignee_tasks, event.guild_id)
+                        if assignee_id != owner_id:
+                            assignee_tasks = await get_user_tasks(mongo, assignee_id)
+                            await update_task_list_message(bot, mongo, assignee_id, assignee_tasks, event.guild_id)
 
                     components = create_task_embed(
                         "✅ Task Updated",
@@ -1298,26 +1328,11 @@ async def on_task_command(
 
         elif del_match:
             task_id = int(del_match.group(1))
-            success, deleted_task = await delete_task(mongo, event.author_id, task_id)
 
-            if success:
-                # Update owner's task list
-                tasks = await get_user_tasks(mongo, event.author_id)
-                await update_task_list_message(bot, mongo, event.author_id, tasks, event.guild_id)
+            # Find who owns this task (user or someone who assigned it to them)
+            owner_info = await find_task_owner(mongo, event.author_id, task_id)
 
-                # If task was assigned to someone, update their task list too
-                if deleted_task and deleted_task.get("assigned_to"):
-                    assignee_id = int(deleted_task["assigned_to"])
-                    assignee_tasks = await get_user_tasks(mongo, assignee_id)
-                    await update_task_list_message(bot, mongo, assignee_id, assignee_tasks, event.guild_id)
-
-                components = create_task_embed(
-                    "✅ Task Deleted",
-                    f"Task #{task_id} has been deleted.",
-                    GREEN_ACCENT,
-                    "This message will delete in 60 seconds"
-                )
-            else:
+            if not owner_info:
                 components = create_task_embed(
                     "❌ Task Not Found",
                     f"Could not find task #{task_id}.\n\n"
@@ -1327,31 +1342,48 @@ async def on_task_command(
                     RED_ACCENT,
                     "This message will delete in 60 seconds"
                 )
+            else:
+                owner_id, task = owner_info
+                success, deleted_task = await delete_task(mongo, owner_id, task_id)
+
+                if success:
+                    # Update owner's task list
+                    owner_tasks = await get_user_tasks(mongo, owner_id)
+                    await update_task_list_message(bot, mongo, owner_id, owner_tasks, event.guild_id)
+
+                    # If task was assigned and owner != current user, update current user's list too
+                    if deleted_task and deleted_task.get("assigned_to"):
+                        assignee_id = int(deleted_task["assigned_to"])
+                        if assignee_id != owner_id:
+                            assignee_tasks = await get_user_tasks(mongo, assignee_id)
+                            await update_task_list_message(bot, mongo, assignee_id, assignee_tasks, event.guild_id)
+
+                    components = create_task_embed(
+                        "✅ Task Deleted",
+                        f"Task #{task_id} has been deleted.",
+                        GREEN_ACCENT,
+                        "This message will delete in 60 seconds"
+                    )
+                else:
+                    components = create_task_embed(
+                        "❌ Task Not Found",
+                        f"Could not find task #{task_id}.\n\n"
+                        f"**Try this:**\n"
+                        f"• Use `view tasks` to see your task list\n"
+                        f"• Check the task number is correct",
+                        RED_ACCENT,
+                        "This message will delete in 60 seconds"
+                    )
 
             await send_auto_delete_response(bot, event.channel_id, components)
 
         elif complete_match:
             task_id = int(complete_match.group(1))
-            success, completed_task = await complete_task(mongo, event.author_id, task_id)
 
-            if success:
-                # Update owner's task list
-                tasks = await get_user_tasks(mongo, event.author_id)
-                await update_task_list_message(bot, mongo, event.author_id, tasks, event.guild_id)
+            # Find who owns this task (user or someone who assigned it to them)
+            owner_info = await find_task_owner(mongo, event.author_id, task_id)
 
-                # If task was assigned to someone, update their task list too
-                if completed_task and completed_task.get("assigned_to"):
-                    assignee_id = int(completed_task["assigned_to"])
-                    assignee_tasks = await get_user_tasks(mongo, assignee_id)
-                    await update_task_list_message(bot, mongo, assignee_id, assignee_tasks, event.guild_id)
-
-                components = create_task_embed(
-                    "✅ Task Completed",
-                    f"Task #{task_id} has been marked as complete!",
-                    GREEN_ACCENT,
-                    "This message will delete in 60 seconds"
-                )
-            else:
+            if not owner_info:
                 components = create_task_embed(
                     "❌ Task Not Found",
                     f"Could not find task #{task_id}. It may have been deleted.\n\n"
@@ -1361,16 +1393,50 @@ async def on_task_command(
                     RED_ACCENT,
                     "This message will delete in 60 seconds"
                 )
+            else:
+                owner_id, task = owner_info
+                success, completed_task = await complete_task(mongo, owner_id, task_id)
+
+                if success:
+                    # Update owner's task list
+                    owner_tasks = await get_user_tasks(mongo, owner_id)
+                    await update_task_list_message(bot, mongo, owner_id, owner_tasks, event.guild_id)
+
+                    # If task was assigned and owner != current user, update current user's list too
+                    if completed_task and completed_task.get("assigned_to"):
+                        assignee_id = int(completed_task["assigned_to"])
+                        if assignee_id != owner_id:
+                            assignee_tasks = await get_user_tasks(mongo, assignee_id)
+                            await update_task_list_message(bot, mongo, assignee_id, assignee_tasks, event.guild_id)
+
+                    components = create_task_embed(
+                        "✅ Task Completed",
+                        f"Task #{task_id} has been marked as complete!",
+                        GREEN_ACCENT,
+                        "This message will delete in 60 seconds"
+                    )
+                else:
+                    components = create_task_embed(
+                        "❌ Task Not Found",
+                        f"Could not find task #{task_id}. It may have been deleted.\n\n"
+                        f"**Try this:**\n"
+                        f"• Use `view tasks` to see active tasks\n"
+                        f"• Verify the task number is correct",
+                        RED_ACCENT,
+                        "This message will delete in 60 seconds"
+                    )
 
             await send_auto_delete_response(bot, event.channel_id, components)
 
         elif edit_match:
             task_id = int(edit_match.group(1))
 
-            tasks = await get_user_tasks(mongo, event.author_id)
-            task_exists = any(t["task_id"] == task_id for t in tasks)
+            # Find who owns this task (user or someone who assigned it to them)
+            owner_info = await find_task_owner(mongo, event.author_id, task_id)
 
-            if task_exists:
+            if owner_info:
+                owner_id, task = owner_info
+
                 components = create_task_embed(
                     "✏️ Edit Task",
                     f"Please type the new description for task #{task_id}:",
@@ -1382,6 +1448,7 @@ async def on_task_command(
 
                 edit_sessions[event.author_id] = {
                     "task_id": task_id,
+                    "owner_id": owner_id,  # Store owner_id for later use
                     "channel_id": event.channel_id,
                     "timestamp": datetime.utcnow(),
                     "prompt_message_id": prompt_message.id
