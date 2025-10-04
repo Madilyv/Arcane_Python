@@ -125,6 +125,46 @@ class AddToTicketCommand(
             except Exception as e:
                 errors.append(f"• Failed to add role {self.role.mention}: {str(e)[:100]}")
 
+        # Send notification message in the channel for successfully added users/roles
+        if added:
+            # Build mention list
+            mentions = []
+            if self.user and f"• User: {self.user.mention}" in added:
+                mentions.append(self.user.mention)
+            if self.role and f"• Role: {self.role.mention}" in added:
+                mentions.append(self.role.mention)
+
+            if mentions:
+                mention_text = " ".join(mentions)
+
+                # Send notification message in the ticket channel
+                notification_components = [
+                    Container(
+                        accent_color=0x5865F2,  # Blurple
+                        components=[
+                            Text(content=f"## 📋 Added to Ticket"),
+                            Separator(divider=True),
+                            Text(content=(
+                                f"{mention_text}\n\n"
+                                f"You have been added to this ticket channel.\n"
+                                f"Please review the ticket details and provide any necessary assistance."
+                            )),
+                            Text(content=f"-# Added by {ctx.user.mention}"),
+                            Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                        ]
+                    )
+                ]
+
+                try:
+                    await bot.rest.create_message(
+                        channel=ctx.channel_id,
+                        components=notification_components,
+                        user_mentions=True,
+                        role_mentions=True
+                    )
+                except Exception as e:
+                    print(f"[ERROR] Failed to send ticket add notification: {e}")
+
         # Build response
         if added and not errors:
             # Full success
