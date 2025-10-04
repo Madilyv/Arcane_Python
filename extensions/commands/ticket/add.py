@@ -165,63 +165,30 @@ class AddToTicketCommand(
                 except Exception as e:
                     print(f"[ERROR] Failed to send ticket add notification: {e}")
 
-        # Build response
-        if added and not errors:
-            # Full success
+        # Build response - only send ephemeral message for errors
+        if errors:
+            # Show errors (partial or complete failure)
+            error_message = "## ❌ Failed to Add"
+            if added:
+                error_message = "## ⚠️ Partially Added to Ticket"
+
+            error_components = [
+                Container(
+                    accent_color=RED_ACCENT if not added else 0xFFA500,  # Red for complete failure, Orange for partial
+                    components=[
+                        Text(content=error_message),
+                        Separator(divider=True),
+                        Text(content="**Errors:**\n" + "\n".join(errors)),
+                        Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                    ]
+                )
+            ]
+
             await ctx.respond(
-                components=[
-                    Container(
-                        accent_color=GREEN_ACCENT,
-                        components=[
-                            Text(content="## ✅ Added to Ticket"),
-                            Separator(divider=True),
-                            Text(content="**Successfully added:**\n" + "\n".join(added)),
-                            Text(content="\n**Permissions granted:**\n"
-                                       "• View Channel\n"
-                                       "• Send Messages\n"
-                                       "• Read Message History\n"
-                                       "• Attach Files\n"
-                                       "• Embed Links"),
-                            Media(items=[MediaItem(media="assets/Green_Footer.png")])
-                        ]
-                    )
-                ],
+                components=error_components,
                 ephemeral=True
             )
-        elif added and errors:
-            # Partial success
-            await ctx.respond(
-                components=[
-                    Container(
-                        accent_color=0xFFA500,  # Orange
-                        components=[
-                            Text(content="## ⚠️ Partially Added to Ticket"),
-                            Separator(divider=True),
-                            Text(content="**Successfully added:**\n" + "\n".join(added)),
-                            Separator(divider=True),
-                            Text(content="**Errors:**\n" + "\n".join(errors)),
-                            Media(items=[MediaItem(media="assets/Red_Footer.png")])
-                        ]
-                    )
-                ],
-                ephemeral=True
-            )
-        else:
-            # Complete failure
-            await ctx.respond(
-                components=[
-                    Container(
-                        accent_color=RED_ACCENT,
-                        components=[
-                            Text(content="## ❌ Failed to Add"),
-                            Separator(divider=True),
-                            Text(content="**Errors:**\n" + "\n".join(errors)),
-                            Media(items=[MediaItem(media="assets/Red_Footer.png")])
-                        ]
-                    )
-                ],
-                ephemeral=True
-            )
+        # No ephemeral response for full success - channel notification is enough
 
 
 loader.command(ticket)
