@@ -798,20 +798,24 @@ async def complete_task(
 async def delete_all_tasks(
         mongo: MongoClient,
         user_id: int
-) -> int:
-    """Delete all tasks for a user."""
+) -> tuple[int, List[Dict[str, Any]]]:
+    """
+    Delete all tasks for a user.
+    Returns (count_deleted, deleted_tasks) tuple.
+    """
     user_data = await mongo.user_tasks.find_one({"user_id": str(user_id)})
     if not user_data:
-        return 0
+        return 0, []
 
-    task_count = len(user_data.get("tasks", []))
+    tasks = user_data.get("tasks", [])
+    task_count = len(tasks)
 
     await mongo.user_tasks.update_one(
         {"user_id": str(user_id)},
         {"$set": {"tasks": [], "next_task_id": 1}}
     )
 
-    return task_count
+    return task_count, tasks
 
 
 async def delete_completed_tasks(
@@ -1548,11 +1552,25 @@ async def on_task_command(
                 await send_auto_delete_response(bot, event.channel_id, components)
 
         elif del_all_match:
-            count = await delete_all_tasks(mongo, event.author_id)
+            count, deleted_tasks = await delete_all_tasks(mongo, event.author_id)
 
             if count > 0:
                 tasks = []
                 await update_task_list_message(bot, mongo, event.author_id, tasks, event.guild_id)
+
+                # Update all assignees' task lists since their assigned tasks were deleted
+                # Get all tasks that were assigned
+                assigned_tasks = [t for t in deleted_tasks if t.get("assigned_to")]
+
+                # Collect unique assignee IDs
+                assignee_ids = set()
+                for task in assigned_tasks:
+                    assignee_ids.add(int(task["assigned_to"]))
+
+                # Update each assignee's task list message
+                for assignee_id in assignee_ids:
+                    assignee_tasks = await get_user_tasks(mongo, assignee_id)
+                    await update_task_list_message(bot, mongo, assignee_id, assignee_tasks, event.guild_id)
 
                 components = create_task_embed(
                     "✅ All Tasks Deleted",
@@ -1574,8 +1592,22 @@ async def on_task_command(
             count, remaining_tasks = await delete_completed_tasks(mongo, event.author_id)
 
             if count > 0:
-                # Update task list with remaining tasks
+                # Update owner's task list with remaining tasks
                 await update_task_list_message(bot, mongo, event.author_id, remaining_tasks, event.guild_id)
+
+                # Update all assignees' task lists so they see the new renumbered task IDs
+                # Get all tasks assigned by this user
+                assigned_tasks = [t for t in remaining_tasks if t.get("assigned_to")]
+
+                # Collect unique assignee IDs
+                assignee_ids = set()
+                for task in assigned_tasks:
+                    assignee_ids.add(int(task["assigned_to"]))
+
+                # Update each assignee's task list message
+                for assignee_id in assignee_ids:
+                    assignee_tasks = await get_user_tasks(mongo, assignee_id)
+                    await update_task_list_message(bot, mongo, assignee_id, assignee_tasks, event.guild_id)
 
                 components = create_task_embed(
                     "✅ Completed Tasks Deleted",
