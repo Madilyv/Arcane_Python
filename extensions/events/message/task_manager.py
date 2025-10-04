@@ -116,11 +116,42 @@ async def restore_reminders_on_startup(
                                                 user_mentions=True
                                             )
 
-                                            # Also ping user in task channel
+                                            # Also ping user in task channel (create separate components with mention)
+                                            channel_components = [
+                                                Container(
+                                                    accent_color=BLUE_ACCENT,
+                                                    components=[
+                                                        Text(content=f"{user.mention}"),
+                                                        Text(content="## 🔔 Task Reminder"),
+                                                        Separator(divider=True),
+                                                        Text(content=f"**Task #{task_id}:** {current_task['description']}"),
+                                                        Text(content=f"\nThis task is still pending completion!"),
+                                                        Separator(divider=True),
+                                                        ActionRow(
+                                                            components=[
+                                                                Button(
+                                                                    style=hikari.ButtonStyle.SUCCESS,
+                                                                    label="Mark Complete",
+                                                                    custom_id=f"complete_from_reminder:{user_id}_{task_id}",
+                                                                    emoji="✅"
+                                                                ),
+                                                                Button(
+                                                                    style=hikari.ButtonStyle.SECONDARY,
+                                                                    label="Snooze 1h",
+                                                                    custom_id=f"snooze_reminder:{user_id}_{task_id}_1h",
+                                                                    emoji="⏰"
+                                                                )
+                                                            ]
+                                                        ),
+                                                        Text(content=f"-# You set this reminder • Task created {current_task['created_at'][:10]}"),
+                                                        Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                                                    ]
+                                                )
+                                            ]
+
                                             await bot.rest.create_message(
                                                 channel=TASK_CHANNEL_ID,
-                                                content=f"{user.mention}",
-                                                components=components,
+                                                components=channel_components,
                                                 user_mentions=True
                                             )
 
@@ -1131,11 +1162,42 @@ async def create_reminder(
                         components=components
                     )
 
-                    # Also ping user in task channel
+                    # Also ping user in task channel (create separate components with mention)
+                    channel_components = [
+                        Container(
+                            accent_color=BLUE_ACCENT,
+                            components=[
+                                Text(content=f"{user.mention}"),
+                                Text(content="## 🔔 Task Reminder"),
+                                Separator(divider=True),
+                                Text(content=f"**Task #{task_id}:** {current_task['description']}"),
+                                Text(content=f"\nThis task is still pending completion!"),
+                                Separator(divider=True),
+                                ActionRow(
+                                    components=[
+                                        Button(
+                                            style=hikari.ButtonStyle.SUCCESS,
+                                            label="Mark Complete",
+                                            custom_id=f"complete_from_reminder:{user_id}_{task_id}",
+                                            emoji="✅"
+                                        ),
+                                        Button(
+                                            style=hikari.ButtonStyle.SECONDARY,
+                                            label="Snooze 1h",
+                                            custom_id=f"snooze_reminder:{user_id}_{task_id}_1h",
+                                            emoji="⏰"
+                                        )
+                                    ]
+                                ),
+                                Text(
+                                    content=f"-# You set this reminder • Task created {current_task['created_at'][:10]}"),
+                            ]
+                        )
+                    ]
+
                     await bot.rest.create_message(
                         channel=TASK_CHANNEL_ID,
-                        content=f"{user.mention}",
-                        components=components,
+                        components=channel_components,
                         user_mentions=True
                     )
 
