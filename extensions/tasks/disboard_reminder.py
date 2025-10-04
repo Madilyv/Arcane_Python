@@ -169,13 +169,22 @@ async def send_bump_reminder(first_time: bool = False):
     ]
 
     try:
-        await bot_instance.rest.create_message(
+        reminder_message = await bot_instance.rest.create_message(
             channel=BUMP_CHANNEL_ID,
             components=components,
             user_mentions=True,
             role_mentions=[BUMP_ROLE_ID]
         )
-        print("[Disboard Reminder] Sent bump reminder message")
+        print(f"[Disboard Reminder] Sent bump reminder message (ID: {reminder_message.id})")
+
+        # Store the reminder message ID in MongoDB so we can delete it later
+        await mongo_client.disboard_bump.update_one(
+            {},
+            {"$set": {"last_reminder_message_id": str(reminder_message.id)}},
+            upsert=True
+        )
+        print(f"[Disboard Reminder] Stored reminder message ID: {reminder_message.id}")
+
     except Exception as e:
         print(f"[Disboard Reminder] Error sending reminder: {e}")
 

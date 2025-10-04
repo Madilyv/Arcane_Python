@@ -116,6 +116,39 @@ async def on_disboard_bump(
 
     print(f"[Disboard Bump] Stored bump data to MongoDB")
 
+    # Delete the previous reminder message if it exists
+    try:
+        # Get the stored reminder message ID from MongoDB
+        existing_bump_data = await mongo_client.disboard_bump.find_one({"guild_id": str(event.guild_id)})
+
+        if existing_bump_data and existing_bump_data.get("last_reminder_message_id"):
+            reminder_message_id = existing_bump_data["last_reminder_message_id"]
+
+            try:
+                # Try to delete the reminder message
+                await bot.rest.delete_message(
+                    BUMP_CHANNEL_ID,
+                    int(reminder_message_id)
+                )
+                print(f"[Disboard Bump] Deleted old reminder message: {reminder_message_id}")
+
+                # Clear the stored reminder message ID
+                await mongo_client.disboard_bump.update_one(
+                    {"guild_id": str(event.guild_id)},
+                    {"$unset": {"last_reminder_message_id": ""}}
+                )
+            except hikari.NotFoundError:
+                print(f"[Disboard Bump] Reminder message already deleted or not found")
+                # Clear it anyway since it doesn't exist
+                await mongo_client.disboard_bump.update_one(
+                    {"guild_id": str(event.guild_id)},
+                    {"$unset": {"last_reminder_message_id": ""}}
+                )
+            except Exception as e:
+                print(f"[Disboard Bump] Error deleting reminder message: {e}")
+    except Exception as e:
+        print(f"[Disboard Bump] Error checking for reminder message: {e}")
+
     # Send thank you message with review reminder
     await send_bump_thank_you(event.channel_id, bumper_user_id)
 
