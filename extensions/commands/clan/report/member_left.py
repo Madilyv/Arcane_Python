@@ -461,6 +461,7 @@ async def process_refund(
                 Separator(divider=True),
                 Text(content="### Refund Details"),
                 Text(content=(
+                    f"<@&{clan.get('leader_role_id', 0)}> "
                     f"• **Player:** {recruit['player_name']} ({recruit['player_tag']})\n"
                     f"• **TH Level:** {recruit['player_th_level']}\n"
                     f"• **Clan:** {clan['name']}\n"
@@ -481,7 +482,8 @@ async def process_refund(
     try:
         await bot.rest.create_message(
             channel=RECRUITMENT_LOG_CHANNEL,
-            components=log_components
+            components=log_components,
+            role_mentions=True
         )
     except Exception as e:
         print(f"[ERROR] Failed to send refund log: {e}")

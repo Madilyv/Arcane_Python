@@ -533,6 +533,7 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
                     Separator(divider=True),
                     Text(content="### Recruitment Outcome:"),
                     Text(content=(
+                        f"<@&{winning_clan.get('leader_role_id', 0)}> "
                         f"**{winning_clan['name'] if winning_clan else 'Unknown'}** won the bid with {winning_amount} points, "
                         f"but the recruit joined {'**' + db_clan['name'] + '**' if db_clan else 'a different clan'} instead.\n\n"
                         f"✅ **Points Refunded:** {winning_amount} points returned to {winning_clan['name'] if winning_clan else 'winning clan'}"
@@ -554,7 +555,8 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
         try:
             await bot_app.rest.create_message(
                 channel=RECRUITMENT_LOG_CHANNEL,
-                components=failure_components
+                components=failure_components,
+                role_mentions=True
             )
             print(f"[INFO] Logged failed bid recruitment for {recruit.get('player_tag')}")
         except Exception as e:

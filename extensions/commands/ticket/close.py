@@ -7,7 +7,7 @@ from typing import Optional
 
 from extensions.commands.ticket import loader, ticket
 from utils.mongo import MongoClient
-from utils.constants import RED_ACCENT, GREEN_ACCENT
+from utils.constants import RED_ACCENT, GREEN_ACCENT, GOLD_ACCENT
 
 # Import Components V2
 from hikari.impl import (
@@ -20,6 +20,7 @@ from hikari.impl import (
 
 # Recruitment staff role ID (same as create.py)
 RECRUITMENT_STAFF_ROLE = 999140213953671188
+RECRUITMENT_LOG_CHANNEL = 1345589195695194113
 
 
 @ticket.register()
@@ -118,7 +119,7 @@ class CloseTicketCommand(
                 if bid_data and bid_data.get("bids"):
                     print(f"[DEBUG] Found active bids for {player_tag}, processing refunds...")
 
-                    # Refund all bids
+                    # Refund all bids and log to recruitment channel
                     for bid in bid_data.get("bids", []):
                         clan_tag = bid.get("clan_tag")
                         bid_amount = bid.get("amount", 0)
@@ -129,6 +130,40 @@ class CloseTicketCommand(
                                 {"$inc": {"points": bid_amount}}
                             )
                             print(f"[DEBUG] Refunded {bid_amount} points to {clan_tag}")
+
+                            # Get clan details for leadership ping
+                            refund_clan = await mongo.clans.find_one({"tag": clan_tag})
+
+                            if refund_clan:
+                                log_components = [
+                                    Container(
+                                        accent_color=GOLD_ACCENT,
+                                        components=[
+                                            Text(content=(
+                                                f"## 💰 Ticket Closed - Bid Refund"
+                                            )),
+                                            Separator(divider=True),
+                                            Text(content=(
+                                                f"<@&{refund_clan.get('leader_role_id', 0)}> "
+                                                f"Ticket was manually closed. Bid has been refunded.\n\n"
+                                                f"• **Clan:** {refund_clan['name']}\n"
+                                                f"• **Refund Amount:** {bid_amount} points\n"
+                                                f"• **Player:** {player_name or 'Unknown'} (`{player_tag}`)\n"
+                                                f"• **Closed By:** <@{ctx.user.id}>"
+                                            )),
+                                            Media(items=[MediaItem(media="assets/Gold_Footer.png")])
+                                        ]
+                                    )
+                                ]
+
+                                try:
+                                    await bot.rest.create_message(
+                                        channel=RECRUITMENT_LOG_CHANNEL,
+                                        components=log_components,
+                                        role_mentions=True
+                                    )
+                                except Exception as e:
+                                    print(f"[ERROR] Failed to send refund log: {e}")
 
                     # Delete the bidding document
                     await mongo.clan_bidding.delete_one({"player_tag": player_tag})
