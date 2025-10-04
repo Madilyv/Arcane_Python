@@ -116,6 +116,17 @@ async def restore_reminders_on_startup(
                                                 user_mentions=True
                                             )
 
+                                            # Also ping user in task channel
+                                            try:
+                                                await bot.rest.create_message(
+                                                    channel=TASK_CHANNEL_ID,
+                                                    content=f"{user.mention}",
+                                                    components=components,
+                                                    user_mentions=True
+                                                )
+                                            except Exception:
+                                                pass
+
                                     # Remove reminder from active list
                                     if reminder_id in active_reminders:
                                         del active_reminders[reminder_id]
