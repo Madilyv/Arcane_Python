@@ -2216,9 +2216,11 @@ async def handle_dismiss_channel_reminder(
 ) -> None:
     """Handle dismiss button - delete the channel reminder message."""
     try:
-        await bot.rest.delete_message(ctx.channel_id, ctx.message.id)
-    except:
-        pass
+        await bot.rest.delete_message(ctx.channel_id, ctx.interaction.message.id)
+    except Exception as e:
+        print(f"[Task Manager] Failed to dismiss channel reminder: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @loader.listener(hikari.StoppingEvent)
