@@ -172,13 +172,11 @@ async def send_bump_thank_you(channel_id: int, bumper_user_id: Optional[int] = N
                 Separator(divider=True, spacing=hikari.SpacingType.SMALL),
                 Text(content=(
                     "### 💎 **Earn Extra Clan Points!**\n"
-                    "Did you know? Your clan can gain **one extra point** for leaving a "
-                    "**5-star review** with meaningful content on Disboard!"
-                )),
-                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
-                Text(content=(
-                    "Help us reach more players and earn rewards for your clan by "
-                    "sharing your experience with Kings Alliance!"
+                    "Your clan gains **one extra point** for leaving a **5-star review** with meaningful content on Disboard!\n\n"
+                    "**How to claim:**\n"
+                    "1. Leave your 5⭐ review on Disboard\n"
+                    "2. Take a screenshot of your review\n"
+                    "3. Use </clan recruit-points:1392483831516237966> to claim your point"
                 )),
                 Separator(divider=True, spacing=hikari.SpacingType.SMALL),
                 ActionRow(

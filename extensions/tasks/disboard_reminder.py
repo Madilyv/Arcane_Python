@@ -141,13 +141,11 @@ async def send_bump_reminder(first_time: bool = False):
                 Separator(divider=True, spacing=hikari.SpacingType.SMALL),
                 Text(content=(
                     "### 💎 **Earn Extra Clan Points!**\n"
-                    "Don't forget: Your clan can gain **one extra point** for leaving a "
-                    "**5-star review** with meaningful content on Disboard!"
-                )),
-                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
-                Text(content=(
-                    "Share your experience with Kings Alliance and help us grow while "
-                    "earning rewards for your clan!"
+                    "Your clan gains **one extra point** for leaving a **5-star review** with meaningful content on Disboard!\n\n"
+                    "**How to claim:**\n"
+                    "1. Leave your 5⭐ review on Disboard\n"
+                    "2. Take a screenshot of your review\n"
+                    "3. Use </clan recruit-points:1392483831516237966> to claim your point"
                 )),
                 Separator(divider=True, spacing=hikari.SpacingType.SMALL),
                 ActionRow(
