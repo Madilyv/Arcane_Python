@@ -944,26 +944,14 @@ async def process_single_snapshot_ping(
     }
     """
     try:
-        # Fetch clan data to get announcement channel
+        # Hardcoded ping channel for all FWA LazyCWL pings
+        announcement_channel = 1424534057621917832
+
+        # Fetch clan data to get role ID for mentions
         clan_data = await mongo.clans.find_one({"tag": snapshot["clan_tag"]})
-        if not clan_data:
-            return {
-                'success': False,
-                'clan_name': snapshot.get('clan_name', 'Unknown'),
-                'error': f"Clan data not found for {snapshot['clan_tag']}"
-            }
 
-        # Get announcement channel ID
-        announcement_channel = clan_data.get("announcement_id")
-        if not announcement_channel:
-            return {
-                'success': False,
-                'clan_name': snapshot['clan_name'],
-                'error': f"No announcement channel set"
-            }
-
-        # Get clan role ID for mentions
-        clan_role_id = clan_data.get("role_id")
+        # Get clan role ID for mentions (optional)
+        clan_role_id = clan_data.get("role_id") if clan_data else None
 
         # Get current clan members
         clan = await coc_client.get_clan(snapshot["clan_tag"])
