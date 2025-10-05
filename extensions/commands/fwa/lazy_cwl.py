@@ -1824,9 +1824,10 @@ async def handle_remove_player_select_snapshot(
     action_id: str,
     user_id: int,
     mongo: MongoClient = lightbulb.di.INJECTED,
+    page: int = 0,
     **kwargs
 ) -> None:
-    """Handle snapshot selection for player removal, show player selector."""
+    """Handle snapshot selection for player removal, show player selector with pagination."""
     snapshot_id = ctx.interaction.values[0]
 
     try:
@@ -1855,19 +1856,37 @@ async def handle_remove_player_select_snapshot(
             key=lambda p: (-p.get("th_level", 0), p.get("name", "").lower())
         )
 
+        # Pagination calculations
+        players_per_page = 25
+        total_players = len(players_sorted)
+        total_pages = (total_players + players_per_page - 1) // players_per_page  # Ceiling division
+        current_page = page
+
+        # Ensure page is within bounds
+        if current_page < 0:
+            current_page = 0
+        if current_page >= total_pages:
+            current_page = total_pages - 1
+
+        # Get players for current page
+        start_idx = current_page * players_per_page
+        end_idx = min(start_idx + players_per_page, total_players)
+        players_on_page = players_sorted[start_idx:end_idx]
+
         # Create new action for player selection
         new_action_id = str(uuid.uuid4())
         data = {
             "_id": new_action_id,
             "command": "remove_player_select",
             "user_id": user_id,
-            "snapshot_id": snapshot_id
+            "snapshot_id": snapshot_id,
+            "page": current_page
         }
         await mongo.button_store.insert_one(data)
 
-        # Build player options (limit to 25 to fit in dropdown)
+        # Build player options for current page
         options = []
-        for player in players_sorted[:25]:
+        for player in players_on_page:
             th_level = player.get("th_level", 0)
             name = player.get("name", "Unknown")
             tag = player.get("tag", "Unknown")
@@ -1888,34 +1907,64 @@ async def handle_remove_player_select_snapshot(
         if snapshot.get("auto_ping_enabled"):
             auto_ping_warning = "⚠️ **Auto-ping is active** - Removed players will stop being pinged immediately."
 
-        components = [
-            Container(
-                accent_color=GOLD_ACCENT,
+        # Build component list
+        component_list = [
+            Text(content=f"## 👥 Select Players to Remove"),
+            Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
+            Text(content=f"**Total Players:** {total_players} • **Page {current_page + 1} of {total_pages}** (Players {start_idx + 1}-{end_idx})"),
+            Separator(),
+            Text(content="Select up to 10 players to remove from this snapshot:"),
+        ]
+
+        if auto_ping_warning:
+            component_list.extend([Text(content=auto_ping_warning), Separator()])
+
+        # Player dropdown
+        component_list.append(
+            ActionRow(
                 components=[
-                    Text(content=f"## 👥 Select Players to Remove"),
-                    Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
-                    Text(content=f"**Total Players:** {len(players)}"),
-                    Separator(),
-                    Text(content="Select up to 10 players to remove from this snapshot:"),
-                    *(
-                        [Text(content=auto_ping_warning), Separator()]
-                        if auto_ping_warning
-                        else []
-                    ),
-                    ActionRow(
-                        components=[
-                            TextSelectMenu(
-                                custom_id=f"lazycwl_remove_player_select_players:{new_action_id}",
-                                placeholder="Select players to remove...",
-                                min_values=1,
-                                max_values=min(10, len(options)),
-                                options=options
-                            )
-                        ]
+                    TextSelectMenu(
+                        custom_id=f"lazycwl_remove_player_select_players:{new_action_id}",
+                        placeholder="Select players to remove...",
+                        min_values=1,
+                        max_values=min(10, len(options)),
+                        options=options
                     )
                 ]
             )
-        ]
+        )
+
+        # Pagination buttons (if needed)
+        if total_pages > 1:
+            pagination_buttons = []
+
+            if current_page > 0:
+                pagination_buttons.append(
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"lazycwl_remove_player_page_prev:{new_action_id}",
+                        label="◀ Previous Page",
+                        emoji="⬅️"
+                    )
+                )
+
+            if current_page < total_pages - 1:
+                pagination_buttons.append(
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"lazycwl_remove_player_page_next:{new_action_id}",
+                        label="Next Page ▶",
+                        emoji="➡️"
+                    )
+                )
+
+            if pagination_buttons:
+                component_list.extend([
+                    Separator(),
+                    ActionRow(components=pagination_buttons)
+                ])
+
+        components = [Container(accent_color=GOLD_ACCENT, components=component_list)]
 
         await ctx.interaction.edit_initial_response(components=components)
 
@@ -2115,6 +2164,117 @@ async def handle_remove_player_confirm(
                     Text(content="## ❌ Removal Failed"),
                     Text(content=f"Failed to remove players: {str(e)}"),
                     Text(content="Please try again or contact support."),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_page_next", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_page_next(
+    ctx,
+    action_id: str,
+    snapshot_id: str,
+    user_id: int,
+    page: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle next page button for player selection."""
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        # Re-render with next page
+        # We need to simulate the dropdown selection to reuse the handler
+        # Create a mock context-like object with the snapshot_id as the selected value
+
+        # Increment page
+        next_page = page + 1
+
+        # Call the snapshot selection handler with new page
+        class MockInteraction:
+            def __init__(self, snapshot_id):
+                self.values = [snapshot_id]
+
+        # Create mock context with new interaction
+        mock_ctx = type('obj', (object,), {
+            'interaction': MockInteraction(snapshot_id)
+        })()
+        mock_ctx.interaction.edit_initial_response = ctx.interaction.edit_initial_response
+
+        await handle_remove_player_select_snapshot(
+            mock_ctx,
+            action_id,
+            user_id,
+            mongo,
+            page=next_page
+        )
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error navigating to next page: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Error"),
+                    Text(content=f"Failed to navigate: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_page_prev", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_page_prev(
+    ctx,
+    action_id: str,
+    snapshot_id: str,
+    user_id: int,
+    page: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle previous page button for player selection."""
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        # Decrement page
+        prev_page = max(0, page - 1)
+
+        # Call the snapshot selection handler with new page
+        class MockInteraction:
+            def __init__(self, snapshot_id):
+                self.values = [snapshot_id]
+
+        mock_ctx = type('obj', (object,), {
+            'interaction': MockInteraction(snapshot_id)
+        })()
+        mock_ctx.interaction.edit_initial_response = ctx.interaction.edit_initial_response
+
+        await handle_remove_player_select_snapshot(
+            mock_ctx,
+            action_id,
+            user_id,
+            mongo,
+            page=prev_page
+        )
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error navigating to previous page: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Error"),
+                    Text(content=f"Failed to navigate: {str(e)}"),
                 ]
             )
         ]
