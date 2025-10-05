@@ -723,6 +723,93 @@ class LazyCwlAutopingsStatus(
         await ctx.respond(components=final_components, ephemeral=True)
 
 
+@fwa.register()
+class LazyCwlRemovePlayer(
+    lightbulb.SlashCommand,
+    name="lazycwl-remove-player",
+    description="Remove player(s) from a snapshot to stop auto-pinging them"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx: lightbulb.Context,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+
+        # Get all active snapshots
+        snapshots = await mongo.lazy_cwl_snapshots.find({
+            "active": True
+        }).sort("snapshot_date", -1).to_list(length=None)
+
+        if not snapshots:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No Active Snapshots"),
+                        Text(content="No active snapshots found. Create a snapshot first with `/lazycwl-snapshot`."),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, ephemeral=True)
+            return
+
+        # Create action for button store
+        action_id = str(uuid.uuid4())
+        data = {
+            "_id": action_id,
+            "command": "remove_player",
+            "user_id": ctx.member.id
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build snapshot options
+        options = []
+        for snapshot in snapshots:
+            player_count = len(snapshot.get("players", []))
+            snapshot_date = snapshot.get("snapshot_date")
+            date_str = snapshot_date.strftime("%m/%d %I:%M%p") if snapshot_date else "Unknown"
+            auto_ping_status = "🔔 Auto-ping ON" if snapshot.get("auto_ping_enabled") else ""
+
+            description_parts = [f"{snapshot['clan_tag']} • {player_count} players • {date_str}"]
+            if auto_ping_status:
+                description_parts.append(auto_ping_status)
+
+            options.append(
+                SelectOption(
+                    label=snapshot["clan_name"],
+                    value=snapshot["_id"],
+                    description=" • ".join(description_parts),
+                    emoji=emojis.FWA.partial_emoji
+                )
+            )
+
+        components = [
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(content="## 🗑️ Remove Player from Snapshot"),
+                    Text(content="Select a snapshot to remove players from:"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_remove_player_select_snapshot:{action_id}",
+                                placeholder="Select a snapshot...",
+                                max_values=1,
+                                options=options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.respond(components=components, ephemeral=True)
+
+
 # ======================== COMPONENT HANDLERS ========================
 
 @register_action("lazycwl_snapshot_select", no_return=True)
@@ -1728,6 +1815,325 @@ async def handle_autopings_stop_select(
             )
         ]
         await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_select_snapshot", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_select_snapshot(
+    ctx,
+    action_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle snapshot selection for player removal, show player selector."""
+    snapshot_id = ctx.interaction.values[0]
+
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        players = snapshot.get("players", [])
+        if not players:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No Players"),
+                        Text(content=f"Snapshot for **{snapshot['clan_name']}** has no players."),
+                    ]
+                )
+            ]
+            await ctx.interaction.edit_initial_response(components=components)
+            return
+
+        # Sort players by TH (desc) then name (asc)
+        players_sorted = sorted(
+            players,
+            key=lambda p: (-p.get("th_level", 0), p.get("name", "").lower())
+        )
+
+        # Create new action for player selection
+        new_action_id = str(uuid.uuid4())
+        data = {
+            "_id": new_action_id,
+            "command": "remove_player_select",
+            "user_id": user_id,
+            "snapshot_id": snapshot_id
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build player options (limit to 25 to fit in dropdown)
+        options = []
+        for player in players_sorted[:25]:
+            th_level = player.get("th_level", 0)
+            name = player.get("name", "Unknown")
+            tag = player.get("tag", "Unknown")
+            discord_id = player.get("discord_id")
+
+            discord_status = "✅" if discord_id else "❌"
+
+            options.append(
+                SelectOption(
+                    label=f"TH{th_level} {name}",
+                    value=tag,
+                    description=f"{tag} • Discord: {discord_status}",
+                    emoji="👤"
+                )
+            )
+
+        auto_ping_warning = ""
+        if snapshot.get("auto_ping_enabled"):
+            auto_ping_warning = "⚠️ **Auto-ping is active** - Removed players will stop being pinged immediately."
+
+        components = [
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(content=f"## 👥 Select Players to Remove"),
+                    Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
+                    Text(content=f"**Total Players:** {len(players)}"),
+                    Separator(),
+                    Text(content="Select up to 10 players to remove from this snapshot:"),
+                    *(
+                        [Text(content=auto_ping_warning), Separator()]
+                        if auto_ping_warning
+                        else []
+                    ),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_remove_player_select_players:{new_action_id}",
+                                placeholder="Select players to remove...",
+                                min_values=1,
+                                max_values=min(10, len(options)),
+                                options=options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error selecting snapshot: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Error"),
+                    Text(content=f"Failed to load snapshot: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_select_players", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_select_players(
+    ctx,
+    action_id: str,
+    snapshot_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle player selection and show confirmation."""
+    selected_player_tags = ctx.interaction.values
+
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        # Get full player info for selected tags
+        players = snapshot.get("players", [])
+        selected_players = [p for p in players if p.get("tag") in selected_player_tags]
+
+        if not selected_players:
+            raise Exception("Selected players not found in snapshot")
+
+        # Create new action for confirmation
+        new_action_id = str(uuid.uuid4())
+        data = {
+            "_id": new_action_id,
+            "command": "remove_player_confirm",
+            "user_id": user_id,
+            "snapshot_id": snapshot_id,
+            "player_tags": selected_player_tags
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build player list for confirmation
+        player_list_components = []
+        for player in selected_players:
+            th_level = player.get("th_level", 0)
+            name = player.get("name", "Unknown")
+            tag = player.get("tag", "Unknown")
+            discord_id = player.get("discord_id")
+
+            discord_str = f"<@{discord_id}>" if discord_id else "No Discord"
+            player_list_components.append(
+                Text(content=f"• **TH{th_level}** {name} `{tag}` - {discord_str}")
+            )
+
+        current_count = len(players)
+        new_count = current_count - len(selected_players)
+
+        components = [
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(content="## ⚠️ Confirm Player Removal"),
+                    Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
+                    Separator(),
+                    Text(content=f"**Players to Remove:** {len(selected_players)}"),
+                    *player_list_components,
+                    Separator(),
+                    Text(content=f"**Current Player Count:** {current_count}"),
+                    Text(content=f"**New Player Count:** {new_count}"),
+                    *(
+                        [
+                            Separator(),
+                            Text(content="⚠️ **Auto-ping is active** - These players will immediately stop being pinged.")
+                        ]
+                        if snapshot.get("auto_ping_enabled")
+                        else []
+                    ),
+                    Separator(),
+                    Text(content="Are you sure you want to remove these players?"),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.DANGER,
+                                custom_id=f"lazycwl_remove_player_confirm:{new_action_id}",
+                                label="Remove Players",
+                                emoji="✅"
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"lazycwl_remove_player_cancel:{new_action_id}",
+                                label="Cancel",
+                                emoji="❌"
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error selecting players: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Error"),
+                    Text(content=f"Failed to process selection: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_confirm", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_confirm(
+    ctx,
+    action_id: str,
+    snapshot_id: str,
+    player_tags: list,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle confirmation and remove players from snapshot."""
+    try:
+        # Fetch snapshot to get current state
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        original_count = len(snapshot.get("players", []))
+
+        # Remove players using $pull operator
+        result = await mongo.lazy_cwl_snapshots.update_one(
+            {"_id": snapshot_id},
+            {"$pull": {"players": {"tag": {"$in": player_tags}}}}
+        )
+
+        if result.modified_count == 0:
+            raise Exception("Failed to update snapshot")
+
+        # Fetch updated snapshot to get new count
+        updated_snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        new_count = len(updated_snapshot.get("players", []))
+        removed_count = original_count - new_count
+
+        print(f"[LazyCWL Remove] Removed {removed_count} players from {snapshot['clan_name']}")
+
+        # Success message
+        components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content="## ✅ Players Removed"),
+                    Separator(),
+                    Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
+                    Text(content=f"**Players Removed:** {removed_count}"),
+                    Text(content=f"**Remaining Players:** {new_count}"),
+                    *(
+                        [
+                            Separator(),
+                            Text(content="✅ Auto-ping system will no longer ping these players.")
+                        ]
+                        if snapshot.get("auto_ping_enabled")
+                        else []
+                    ),
+                    Separator(),
+                    Text(content="Players have been successfully removed from the snapshot."),
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error removing players: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Removal Failed"),
+                    Text(content=f"Failed to remove players: {str(e)}"),
+                    Text(content="Please try again or contact support."),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_cancel", no_return=True)
+async def handle_remove_player_cancel(ctx, action_id: str, **kwargs) -> None:
+    """Handle cancellation of player removal."""
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content="## ❌ Removal Cancelled"),
+                Text(content="Player removal has been cancelled. No changes were made."),
+            ]
+        )
+    ]
+    await ctx.interaction.edit_initial_response(components=components)
 
 
 @loader.listener(hikari.StartedEvent)
