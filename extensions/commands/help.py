@@ -96,11 +96,15 @@ COMMAND_LIST = {
         ("/fwa links", "Quick access to essential FWA links - verification forms, war weight entry, and important resources"),
         ("/fwa war-plans", "Generate strategic war plan messages for different war scenarios and outcomes"),
         ("/fwa weight", "Calculate war weight from storage values - automatically converts storage to war weight (×5 multiplier)"),
-        ("/lazycwl-snapshot", "Take a snapshot of FWA clan players during CWL to track who needs to return for sync wars - captures current roster for monitoring"),
-        ("/lazycwl-ping", "Ping missing players to return to their FWA home clans for sync wars - automated reminders with Discord mentions (Train⇨Join⇨Attack⇨Return 15-30min)"),
-        ("/lazycwl-status", "View all active LazyCWL snapshots with player counts, Discord coverage, and creation dates - see what clans are being tracked"),
-        ("/lazycwl-roster", "Display complete player roster from any active snapshot - shows all players with TH levels, tags, and Discord link status"),
-        ("/lazycwl-reset", "Deactivate all active LazyCWL snapshots after wars complete - clears all tracking for the next CWL season"),
+        ("/fwa lazycwl-snapshot", "Take a snapshot of FWA clan players during CWL to track who needs to return for sync wars - captures current roster for monitoring"),
+        ("/fwa lazycwl-ping", "Ping missing players to return to their FWA home clans for sync wars - automated reminders with Discord mentions (Train⇨Join⇨Attack⇨Return 15-30min)"),
+        ("/fwa lazycwl-status", "View all active LazyCWL snapshots with player counts, Discord coverage, and creation dates - see what clans are being tracked"),
+        ("/fwa lazycwl-roster", "Display complete player roster from any active snapshot - shows all players with TH levels, tags, and Discord link status"),
+        ("/fwa lazycwl-autopings-start", "Start automated periodic pinging (every 30min/1hr/2hr) for missing players - runs for up to 7 days or until snapshot reset"),
+        ("/fwa lazycwl-autopings-stop", "Stop automated periodic pinging for a snapshot - disables the auto-ping system"),
+        ("/fwa lazycwl-autopings-status", "View status of all active auto-pings with countdown timers, intervals, and ping counts"),
+        ("/fwa lazycwl-remove-player", "Remove player(s) from a snapshot to stop auto-pinging them - useful when players leave permanently"),
+        ("/fwa lazycwl-reset", "Deactivate all active LazyCWL snapshots after wars complete - clears all tracking for the next CWL season"),
     ],
     "new_clan": [
         ("📺 Video Tutorials", "Watch these YouTube tutorials for visual guidance:\n• Clan Dashboard Tutorial: https://youtu.be/ULh7TX008wE\n• Setup ClashKing Logs: https://youtu.be/6p8ILBh07yc"),
@@ -281,12 +285,16 @@ Examples for OTHER COMMANDS:
 - "Create polls? Use `/poll create` → fill in your question and options → members can vote with real-time results"
 
 Examples for LAZYCWL TRACKING SYSTEM:
-- "Track players during CWL? Use `/lazycwl-snapshot` → pick your FWA clan → bot saves who's in the clan right now → helps track who leaves for CWL wars"
-- "Ping missing players? Use `/lazycwl-ping` → pick which clan snapshot → bot checks who's missing → sends reminders to return (Train⇨Join⇨Attack⇨Return 15-30min max!)"
-- "See all tracked clans? Use `/lazycwl-status` → shows all active snapshots → see player counts and Discord coverage for each clan"
-- "View full roster? Use `/lazycwl-roster` → pick a clan snapshot → see every player with TH level, tag, and Discord link status"
-- "Finish CWL tracking? Use `/lazycwl-reset` → clears all snapshots → use this after wars end to start fresh next month"
-- "LazyCWL Workflow: Snapshot clans FIRST → Players leave for CWL wars → Ping missing players → Check roster to see who's linked → Reset after CWL ends"
+- "Track players during CWL? Use `/fwa lazycwl-snapshot` → pick your FWA clan → bot saves who's in the clan right now → helps track who leaves for CWL wars"
+- "Ping missing players? Use `/fwa lazycwl-ping` → pick which clan snapshot → bot checks who's missing → sends reminders to return (Train⇨Join⇨Attack⇨Return 15-30min max!)"
+- "See all tracked clans? Use `/fwa lazycwl-status` → shows all active snapshots → see player counts and Discord coverage for each clan"
+- "View full roster? Use `/fwa lazycwl-roster` → pick a clan snapshot → see every player with TH level, tag, and Discord link status"
+- "Auto-ping missing players? Use `/fwa lazycwl-autopings-start` → pick snapshot → choose interval (30min/1hr/2hr) → bot automatically pings missing players for up to 7 days!"
+- "Stop auto-pinging? Use `/fwa lazycwl-autopings-stop` → pick the snapshot → auto-ping system turns off immediately"
+- "Check auto-ping status? Use `/fwa lazycwl-autopings-status` → see all active auto-pings → shows time remaining, ping counts, and intervals"
+- "Remove player from tracking? Use `/fwa lazycwl-remove-player` → pick snapshot → select players → they stop getting pinged (useful when they leave permanently)"
+- "Finish CWL tracking? Use `/fwa lazycwl-reset` → clears all snapshots AND stops all auto-pings → use this after wars end to start fresh next month"
+- "LazyCWL Workflow: Snapshot clans FIRST → Players leave for CWL wars → Start auto-ping OR manual ping → Remove players who left permanently → Check roster to see who's linked → Reset after CWL ends"
 
 Examples for ADDING NEW CLANS:
 - "Adding a new clan? First watch the YouTube tutorials → Use Clan Dashboard in <#1345587617223151758> → Click 'Add a Clan' → Choose auto-create roles or select existing → Clone channels with `/utilities clone-category` → Finish setup in dashboard"
@@ -323,7 +331,7 @@ SPECIAL FOCUS: When users ask about recruitment, always mention the full workflo
 
 SPECIAL FOCUS: When users ask about adding new clans, setting up clans, creating clans, or expanding the family, always mention the proper workflow order and direct them to the 'Adding a New Clan' help section for complete step-by-step instructions and video tutorials!
 
-SPECIAL FOCUS: When users ask about LazyCWL, CWL tracking, or tracking players during CWL wars, explain the complete workflow: Take snapshot FIRST → Players leave for CWL → Ping missing players when sync wars start → Check roster to see Discord links → Reset after CWL ends. The 15-30 minute window (Train⇨Join⇨Attack⇨Return) is critical!
+SPECIAL FOCUS: When users ask about LazyCWL, CWL tracking, or tracking players during CWL wars, explain the complete workflow: Take snapshot FIRST → Players leave for CWL → Start auto-ping (automated) OR use manual ping → Remove players who left permanently → Check roster to see Discord links → Reset after CWL ends (this also stops all auto-pings). The 15-30 minute window (Train⇨Join⇨Attack⇨Return) is critical! Auto-ping can run every 30min, 1hr, or 2hr for up to 7 days automatically!
 
 Remember: Make it so easy that anyone can understand, especially the recruitment system! 🌟"""
 
