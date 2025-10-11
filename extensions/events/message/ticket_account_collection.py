@@ -334,6 +334,41 @@ async def handle_player_tag_modal_submit(
 
             await mongo.new_recruits.insert_one(new_recruit_data)
 
+            # Check if this additional account is in a family clan
+            try:
+                family_clans = await mongo.clans.find().to_list(length=None)
+                if family_clans:
+                    family_clan_lookup = {clan["tag"]: clan for clan in family_clans}
+
+                    # Check if player is in a family clan
+                    if player.clan and player.clan.tag in family_clan_lookup:
+                        clan_data = family_clan_lookup[player.clan.tag]
+                        thread_id = ticket_state["ticket_info"]["thread_id"]
+
+                        # Send early detection alert to thread
+                        alert_content = (
+                            f"⚠️ **EARLY DETECTION:** Additional account is already in a family clan:\n\n"
+                            f"• **{player.name}** (`{player.tag}`) is in **{clan_data.get('name', player.clan.name)}**\n"
+                        )
+
+                        if clan_data.get('leader_id') and clan_data.get('leader_role_id'):
+                            alert_content += f"  → Contact: <@{clan_data['leader_id']}> and <@&{clan_data['leader_role_id']}>\n\n"
+
+                        alert_content += (
+                            "This candidate may be trying to transfer between family clans.\n"
+                            "Please verify with their current leadership before proceeding."
+                        )
+
+                        await bot_instance.rest.create_message(
+                            channel=int(thread_id),
+                            content=alert_content,
+                            role_mentions=True
+                        )
+
+                        print(f"[Account Collection] Additional account {player.name} found in family clan {clan_data.get('name')}")
+            except Exception as e:
+                print(f"[Account Collection] Error checking additional account family clan: {e}")
+
         # For FWA tickets, send chocolate link
         if HAS_FWA_CHOCOLATE:
             channel = bot_instance.cache.get_guild_channel(int(channel_id))
