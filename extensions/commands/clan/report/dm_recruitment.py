@@ -783,6 +783,15 @@ async def dm_confirm_submission(
                     )
                 ]
             ),
+            ActionRow(
+                components=[
+                    LinkButton(
+                        url=f"https://discord.com/users/{data['discord_id']}",
+                        label="View Profile",
+                        emoji="👤"
+                    )
+                ]
+            ),
             Media(items=[MediaItem(media="assets/Purple_Footer.png")])
         ])
 
