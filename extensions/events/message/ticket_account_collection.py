@@ -347,6 +347,42 @@ async def handle_player_tag_modal_submit(
                 )
                 print(f"[Account Collection] Sent FWA chocolate link for {player.name}")
 
+        # Check if this player is already in a family clan (early detection)
+        try:
+            # Check if player is in any family clan
+            family_clans = await mongo.clans.find().to_list(length=None)
+            if family_clans:
+                family_clan_lookup = {clan["tag"]: clan for clan in family_clans}
+
+                # Check if this specific player is in a family clan
+                if player.clan and player.clan.tag in family_clan_lookup:
+                    clan_data = family_clan_lookup[player.clan.tag]
+                    thread_id = ticket_state["ticket_info"]["thread_id"]
+
+                    # Send early detection alert to thread
+                    alert_content = (
+                        f"⚠️ **EARLY DETECTION:** Account added to ticket is already in a family clan:\n\n"
+                        f"• **{player.name}** (`{player.tag}`) is in **{clan_data.get('name', player.clan.name)}**\n"
+                    )
+
+                    if clan_data.get('leader_id') and clan_data.get('leader_role_id'):
+                        alert_content += f"  → Contact: <@{clan_data['leader_id']}> and <@&{clan_data['leader_role_id']}>\n\n"
+
+                    alert_content += (
+                        "This candidate may be trying to transfer between family clans.\n"
+                        "Please verify with their current leadership before proceeding."
+                    )
+
+                    await bot_instance.rest.create_message(
+                        channel=int(thread_id),
+                        content=alert_content,
+                        role_mentions=True
+                    )
+
+                    print(f"[Account Collection] Early detection: {player.name} found in family clan {clan_data.get('name')}")
+        except Exception as e:
+            print(f"[Account Collection] Error checking family clan membership: {e}")
+
         # Show success and account info
         account_components = [
             Container(
