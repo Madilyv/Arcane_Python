@@ -675,5 +675,57 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
             user_mentions=True  # Enable user mentions so the ping works
         )
         print(f"[DEBUG] Successfully sent message to channel {event.channel.id}")
+
+        # Early detection: Check if candidate is already in a family clan
+        # Run this in background after a small delay to ensure everything is initialized
+        async def check_family_clan_membership():
+            try:
+                # Small delay to ensure ticket is fully initialized
+                await asyncio.sleep(2)
+
+                # Only check if we have player data and thread_id
+                if not player_data or not thread_id or not mongo_client:
+                    return
+
+                # Get all family clans
+                family_clans = await mongo_client.clans.find().to_list(length=None)
+                if not family_clans:
+                    return
+
+                # Create lookup dict
+                family_clan_lookup = {clan["tag"]: clan for clan in family_clans}
+
+                # Check if player is in a family clan
+                if player_data.clan and player_data.clan.tag in family_clan_lookup:
+                    clan_data = family_clan_lookup[player_data.clan.tag]
+
+                    # Send early detection alert to thread
+                    alert_content = (
+                        f"⚠️ **EARLY DETECTION:** Candidate's account is already in a family clan:\n\n"
+                        f"• **{player_data.name}** (`{player_data.tag}`) is in **{clan_data.get('name', player_data.clan.name)}**\n"
+                    )
+
+                    if clan_data.get('leader_id') and clan_data.get('leader_role_id'):
+                        alert_content += f"  → Contact: <@{clan_data['leader_id']}> and <@&{clan_data['leader_role_id']}>\n\n"
+
+                    alert_content += (
+                        "This candidate may be trying to transfer between family clans.\n"
+                        "Please verify with their current leadership before proceeding."
+                    )
+
+                    await event.app.rest.create_message(
+                        channel=int(thread_id),
+                        content=alert_content,
+                        role_mentions=True
+                    )
+
+                    print(f"[Early Detection] {player_data.name} found in family clan {clan_data.get('name')}")
+
+            except Exception as e:
+                print(f"[Early Detection] Error checking family clan membership: {e}")
+
+        # Run the check in background
+        asyncio.create_task(check_family_clan_membership())
+
     except Exception as e:
         print(f"[ERROR] Failed to send message to channel {event.channel.id}: {e}")
