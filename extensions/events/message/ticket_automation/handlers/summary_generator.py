@@ -7,6 +7,7 @@ Collects all data from the automation process and formats it nicely.
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Any
 import hikari
+import coc
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -31,6 +32,94 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     global mongo_client, bot_instance
     mongo_client = mongo
     bot_instance = bot
+
+
+async def check_candidate_in_family_clans(channel_id: int) -> List[Dict[str, Any]]:
+    """
+    Check if candidate's accounts are already in any family clans.
+
+    Args:
+        channel_id: The ticket channel ID
+
+    Returns:
+        List of matches with player and clan details. Empty list if no matches or on error.
+        Each match: {
+            "player_name": str,
+            "player_tag": str,
+            "clan_name": str,
+            "clan_tag": str,
+            "leader_id": int,
+            "leader_role_id": int
+        }
+    """
+    if not mongo_client:
+        print("[SummaryGenerator] MongoDB client not initialized")
+        return []
+
+    try:
+        # Get CoC client from bot_data
+        from utils import bot_data
+        coc_client = bot_data.data.get("coc_client")
+        if not coc_client:
+            print("[SummaryGenerator] CoC client not available")
+            return []
+
+        # Get all recruit accounts for this ticket
+        recruits = await mongo_client.new_recruits.find({
+            "ticket_channel_id": str(channel_id)
+        }).to_list(length=None)
+
+        if not recruits:
+            print(f"[SummaryGenerator] No recruits found for channel {channel_id}")
+            return []
+
+        # Get all family clans
+        family_clans = await mongo_client.clans.find().to_list(length=None)
+        if not family_clans:
+            print("[SummaryGenerator] No family clans found in database")
+            return []
+
+        # Create lookup dict: clan_tag -> clan_data
+        family_clan_lookup = {clan["tag"]: clan for clan in family_clans}
+
+        matches = []
+
+        # Check each recruit account
+        for recruit in recruits:
+            player_tag = recruit.get("player_tag")
+            if not player_tag:
+                continue
+
+            try:
+                # Get player from CoC API
+                player = await coc_client.get_player(player_tag)
+
+                # Check if player is in a clan and if that clan is in our family
+                if player.clan and player.clan.tag in family_clan_lookup:
+                    clan_data = family_clan_lookup[player.clan.tag]
+                    matches.append({
+                        "player_name": player.name,
+                        "player_tag": player.tag,
+                        "clan_name": clan_data.get("name", player.clan.name),
+                        "clan_tag": player.clan.tag,
+                        "leader_id": clan_data.get("leader_id"),
+                        "leader_role_id": clan_data.get("leader_role_id")
+                    })
+
+            except coc.NotFound:
+                print(f"[SummaryGenerator] Player not found: {player_tag}")
+                continue
+            except Exception as e:
+                print(f"[SummaryGenerator] Error checking player {player_tag}: {e}")
+                continue
+
+        return matches
+
+    except Exception as e:
+        print(f"[SummaryGenerator] Error in check_candidate_in_family_clans: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 async def generate_candidate_summary(channel_id: int, user_id: int) -> Optional[List[Container]]:
@@ -222,19 +311,53 @@ async def send_candidate_summary(channel_id: int, thread_id: int, user_id: int) 
             channel=thread_id,
             components=summary_components
         )
-        
-        # Send recruitment lead ping as a separate message
+
+        # Check if candidate is already in family clans
+        matches = await check_candidate_in_family_clans(channel_id)
+
+        # Build dynamic message based on results
+        if matches:
+            # Found in family clan(s) - send alert with specific details
+            alert_lines = ["⚠️ **ALERT:** The following account(s) are already in family clans:\n"]
+            for match in matches:
+                alert_lines.append(f"• **{match['player_name']}** (`{match['player_tag']}`) is in **{match['clan_name']}**")
+                if match.get('leader_id') and match.get('leader_role_id'):
+                    alert_lines.append(f"  → Contact: <@{match['leader_id']}> and <@&{match['leader_role_id']}>")
+                alert_lines.append("")
+
+            alert_lines.append("Please coordinate with their current clan leadership before proceeding.\n")
+            alert_lines.append("Run `/recruit bidding` only after resolving these conflicts.")
+
+            notification_content = "<@&1039311270614142977> **Automated interview complete!**\n\n" + "\n".join(alert_lines)
+        else:
+            # Not found in any family clan or API failed - send success/fallback message
+            # Check if we had an API error by trying a quick check
+            from utils import bot_data
+            coc_client = bot_data.data.get("coc_client")
+
+            if coc_client:
+                # API available - they're not in any family clan
+                notification_content = (
+                    "<@&1039311270614142977> **Automated interview complete!**\n\n"
+                    "✅ **Verification Complete:** Candidate is not currently in any family clan.\n\n"
+                    "Proceed with `/recruit bidding` for the appropriate user accounts."
+                )
+            else:
+                # API unavailable - fallback to manual check
+                notification_content = (
+                    "<@&1039311270614142977> **Automated interview complete!**\n\n"
+                    "⚠️ **Unable to verify clan membership automatically.**\n"
+                    "Please manually check if the candidate is already in a family clan.\n\n"
+                    "Run `/recruit bidding` after manual verification."
+                )
+
+        # Send recruitment lead ping with dynamic message
         await bot_instance.rest.create_message(
             channel=thread_id,
-            content=(
-                "<@&1039311270614142977> **Automated interview complete!**\n\n"
-                "⚠️ **IMPORTANT:** Before proceeding, verify the candidate hasn't already joined another clan in the family. "
-                "If they have, contact that clan's leadership first.\n\n"
-                "Run `/recruit bidding` for the appropriate user accounts."
-            ),
+            content=notification_content,
             role_mentions=True
         )
-        
+
         print(f"[SummaryGenerator] Sent candidate summary and recruitment lead ping to thread {thread_id}")
         return True
         

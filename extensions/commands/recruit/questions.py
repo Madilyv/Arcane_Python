@@ -280,18 +280,53 @@ async def primary_questions(
         # Send notification to the thread (if it exists)
         try:
             from extensions.events.message.ticket_automation.core.state_manager import StateManager
+            from extensions.events.message.ticket_automation.handlers.summary_generator import check_candidate_in_family_clans
+
             ticket_state = await StateManager.get_ticket_state(str(ctx.channel_id))
             if ticket_state:
                 thread_id = ticket_state.get("ticket_info", {}).get("thread_id")
                 if thread_id:
+                    # Check if candidate is already in family clans
+                    matches = await check_candidate_in_family_clans(ctx.channel_id)
+
+                    # Build dynamic message based on results
+                    if matches:
+                        # Found in family clan(s) - send alert with specific details
+                        alert_lines = ["⚠️ **ALERT:** The following account(s) are already in family clans:\n"]
+                        for match in matches:
+                            alert_lines.append(f"• **{match['player_name']}** (`{match['player_tag']}`) is in **{match['clan_name']}**")
+                            if match.get('leader_id') and match.get('leader_role_id'):
+                                alert_lines.append(f"  → Contact: <@{match['leader_id']}> and <@&{match['leader_role_id']}>")
+                            alert_lines.append("")
+
+                        alert_lines.append("Please coordinate with their current clan leadership before proceeding.\n")
+                        alert_lines.append("Run `/recruit bidding` only after resolving these conflicts.")
+
+                        notification_content = "<@&1039311270614142977> **Application review initiated!**\n\n" + "\n".join(alert_lines)
+                    else:
+                        # Not found in any family clan or API failed - send success/fallback message
+                        from utils import bot_data
+                        coc_client = bot_data.data.get("coc_client")
+
+                        if coc_client:
+                            # API available - they're not in any family clan
+                            notification_content = (
+                                "<@&1039311270614142977> **Application review initiated!**\n\n"
+                                "✅ **Verification Complete:** Candidate is not currently in any family clan.\n\n"
+                                "Proceed with `/recruit bidding` for the appropriate user accounts."
+                            )
+                        else:
+                            # API unavailable - fallback to manual check
+                            notification_content = (
+                                "<@&1039311270614142977> **Application review initiated!**\n\n"
+                                "⚠️ **Unable to verify clan membership automatically.**\n"
+                                "Please manually check if the candidate is already in a family clan.\n\n"
+                                "Run `/recruit bidding` after manual verification."
+                            )
+
                     await bot.rest.create_message(
                         channel=int(thread_id),
-                        content=(
-                            "<@&1039311270614142977> **Application review initiated!**\n\n"
-                            "⚠️ **IMPORTANT:** Before proceeding, verify the candidate hasn't already joined another clan in the family. "
-                            "If they have, contact that clan's leadership first.\n\n"
-                            "Run `/recruit bidding` for the appropriate user accounts once verified."
-                        ),
+                        content=notification_content,
                         role_mentions=True
                     )
         except Exception as e:
