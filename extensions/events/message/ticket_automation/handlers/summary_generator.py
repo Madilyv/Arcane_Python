@@ -226,7 +226,12 @@ async def send_candidate_summary(channel_id: int, thread_id: int, user_id: int) 
         # Send recruitment lead ping as a separate message
         await bot_instance.rest.create_message(
             channel=thread_id,
-            content="<@&1039311270614142977> Automated interview complete! Run `/recruit bidding` for the appropriate user accounts.",
+            content=(
+                "<@&1039311270614142977> **Automated interview complete!**\n\n"
+                "⚠️ **IMPORTANT:** Before proceeding, verify the candidate hasn't already joined another clan in the family. "
+                "If they have, contact that clan's leadership first.\n\n"
+                "Run `/recruit bidding` for the appropriate user accounts."
+            ),
             role_mentions=True
         )
         

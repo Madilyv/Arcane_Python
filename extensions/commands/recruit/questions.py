@@ -276,6 +276,26 @@ async def primary_questions(
                 ]
             )
         ]
+
+        # Send notification to the thread (if it exists)
+        try:
+            from extensions.events.message.ticket_automation.core.state_manager import StateManager
+            ticket_state = await StateManager.get_ticket_state(str(ctx.channel_id))
+            if ticket_state:
+                thread_id = ticket_state.get("ticket_info", {}).get("thread_id")
+                if thread_id:
+                    await bot.rest.create_message(
+                        channel=int(thread_id),
+                        content=(
+                            "<@&1039311270614142977> **Application review initiated!**\n\n"
+                            "⚠️ **IMPORTANT:** Before proceeding, verify the candidate hasn't already joined another clan in the family. "
+                            "If they have, contact that clan's leadership first.\n\n"
+                            "Run `/recruit bidding` for the appropriate user accounts once verified."
+                        ),
+                        role_mentions=True
+                    )
+        except Exception as e:
+            print(f"[Questions] Error sending thread notification: {e}")
     await bot.rest.create_message(
         components=components,
         channel=ctx.channel_id,
