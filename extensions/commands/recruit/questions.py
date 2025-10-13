@@ -345,7 +345,10 @@ async def primary_questions(
         user_id=user_id,
         ctx=ctx,
     )
-    await ctx.interaction.delete_initial_response()
+    try:
+        await ctx.interaction.delete_initial_response()
+    except hikari.errors.NotFoundError:
+        pass  # Interaction expired or already deleted, continue anyway
     await ctx.respond(
         components=new_components,
         ephemeral=True,
@@ -372,7 +375,10 @@ async def on_age_button(
         )
         return
 
-    await ctx.interaction.delete_initial_response()
+    try:
+        await ctx.interaction.delete_initial_response()
+    except hikari.errors.NotFoundError:
+        pass  # Interaction expired or already deleted, continue anyway
 
     if bracket == "16_under":
         components = [
@@ -770,7 +776,10 @@ async def fwa_questions(
         user_id=user_id,
         ctx=ctx,
     )
-    await ctx.interaction.delete_initial_response()
+    try:
+        await ctx.interaction.delete_initial_response()
+    except hikari.errors.NotFoundError:
+        pass  # Interaction expired or already deleted, continue anyway
     await ctx.respond(
         components=new_components,
         ephemeral=True,
@@ -1087,7 +1096,10 @@ async def explanations(
         user_id=user_id,
         ctx=ctx,
     )
-    await ctx.interaction.delete_initial_response()
+    try:
+        await ctx.interaction.delete_initial_response()
+    except hikari.errors.NotFoundError:
+        pass  # Interaction expired or already deleted, continue anyway
     await ctx.respond(
         components=new_components,
         ephemeral=True,
@@ -1193,7 +1205,10 @@ async def keep_it_moving(
         user_id=user_id,
         ctx=ctx,
     )
-    await ctx.interaction.delete_initial_response()
+    try:
+        await ctx.interaction.delete_initial_response()
+    except hikari.errors.NotFoundError:
+        pass  # Interaction expired or already deleted, continue anyway
     await ctx.respond(
         components=new_components,
         ephemeral=True,

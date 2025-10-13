@@ -1,5 +1,6 @@
 from logging import exception
 
+import uuid
 import lightbulb
 import hikari
 import coc
@@ -906,10 +907,21 @@ async def remove_clan_select(
 
     clans = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=data) for data in clans]
+
+    # Check if pagination is needed (Discord limit is 25 per dropdown)
+    if len(clans) <= 25:
+        # All clans fit in one dropdown - simple mode
+        top_clans = clans
+        remaining_clans = []
+    else:
+        # Too many clans - pagination mode
+        top_clans = clans[:24]
+        remaining_clans = clans[24:]
+
     options = []
     seen_tags = {}
 
-    for c in clans:
+    for c in top_clans:
         # Handle duplicate clan tags by making values unique
         if c.tag in seen_tags:
             seen_tags[c.tag] += 1
@@ -926,26 +938,226 @@ async def remove_clan_select(
             option = SelectOption(label=c.name, value=unique_value, description=c.tag)
         options.append(option)
 
+    action_id = str(uuid.uuid4())
+
+    # Store remaining clans in button_store if they exist
+    if remaining_clans:
+        remaining_tags = [c.tag for c in remaining_clans]
+        await mongo.button_store.insert_one({
+            "_id": action_id,
+            "command": "clan_remove_browse",
+            "user_id": ctx.user.id,
+            "remaining_tags": remaining_tags,
+            "page": 0
+        })
+
+    # Build component list
+    component_list = [
+        Text(content="📋 **Select a clan to remove**"),
+        ActionRow(
+            components=[
+                TextSelectMenu(
+                    custom_id=f"clan_remove_menu:",
+                    placeholder="Select a clan…",
+                    max_values=1,
+                    options=options,
+                )
+            ]
+        ),
+    ]
+
+    # Add "Show More" button if there are remaining clans
+    if remaining_clans:
+        component_list.append(
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        custom_id=f"clan_remove_show_more:{action_id}",
+                        label=f"Show More Clans ({len(remaining_clans)} more)",
+                        emoji="🔍"
+                    )
+                ]
+            )
+        )
+
+    component_list.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
+
     components = [
         Container(
             accent_color=RED_ACCENT,
-            components=[
-                Text(content="📋 **Select a clan**"),
-                ActionRow(
-                    components=[
-                        TextSelectMenu(
-                            custom_id=f"clan_remove_menu:",
-                            placeholder="Select a clan…",
-                            max_values=1,
-                            options=options,
-                        )
-                    ]
-                ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-            ],
+            components=component_list,
         )
     ]
     return components
+
+
+@register_action("clan_remove_show_more", ephemeral=True)
+@lightbulb.di.with_di
+async def clan_remove_show_more(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle 'Show More' button for remove clan browse mode."""
+    stored_data = await mongo.button_store.find_one({"_id": action_id})
+    if not stored_data:
+        return [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[Text(content="⚠️ Session expired. Please run the command again.")]
+            )
+        ]
+
+    remaining_tags = stored_data.get("remaining_tags", [])
+    current_page = stored_data.get("page", 0)
+
+    clan_data = await mongo.clans.find({"tag": {"$in": remaining_tags}}).to_list(length=None)
+    remaining_clans = [Clan(data=d) for d in clan_data]
+
+    # Sort by original order (alphabetical)
+    remaining_clans = sorted(
+        remaining_clans,
+        key=lambda c: remaining_tags.index(c.tag) if c.tag in remaining_tags else 999
+    )
+
+    # Pagination - treat dropdown as page 1
+    clans_per_page = 25
+    total_clans_in_db = len(remaining_clans) + 24
+    remaining_pages = (len(remaining_clans) + clans_per_page - 1) // clans_per_page
+    total_pages = 1 + remaining_pages
+    current_page = max(0, min(current_page, remaining_pages - 1))
+    display_page = current_page + 2
+
+    start_idx_in_array = current_page * clans_per_page
+    end_idx_in_array = min(start_idx_in_array + clans_per_page, len(remaining_clans))
+    clans_on_page = remaining_clans[start_idx_in_array:end_idx_in_array]
+
+    start_idx_display = 24 + (current_page * clans_per_page)
+    end_idx_display = start_idx_display + len(clans_on_page)
+
+    # Build options
+    options = []
+    seen_tags = {}
+    for c in clans_on_page:
+        if c.tag in seen_tags:
+            seen_tags[c.tag] += 1
+            unique_value = f"{c.tag}_{seen_tags[c.tag]}"
+        else:
+            seen_tags[c.tag] = 0
+            unique_value = c.tag
+
+        if c.partial_emoji:
+            option = SelectOption(label=c.name, value=unique_value, description=c.tag, emoji=c.partial_emoji)
+        else:
+            option = SelectOption(label=c.name, value=unique_value, description=c.tag)
+        options.append(option)
+
+    component_list = [
+        Text(content="## **Browse All Clans**"),
+        Text(content=f"**Page {display_page} of {total_pages}** • Showing clans {start_idx_display + 1}-{end_idx_display} of {total_clans_in_db} total"),
+        Separator(divider=True),
+        ActionRow(
+            components=[
+                TextSelectMenu(
+                    custom_id=f"clan_remove_menu:",
+                    placeholder="Select a clan…",
+                    max_values=1,
+                    options=options,
+                )
+            ]
+        ),
+    ]
+
+    # Navigation buttons
+    navigation_buttons = [
+        Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"clan_remove_back_to_list:{action_id}",
+            label="Back to List",
+            emoji="⬅️"
+        )
+    ]
+
+    if remaining_pages > 1:
+        if current_page > 0:
+            navigation_buttons.append(
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"clan_remove_browse_prev:{action_id}",
+                    label="Previous",
+                    emoji="◀️"
+                )
+            )
+
+        if current_page < remaining_pages - 1:
+            navigation_buttons.append(
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"clan_remove_browse_next:{action_id}",
+                    label="Next",
+                    emoji="▶️"
+                )
+            )
+
+    component_list.append(ActionRow(components=navigation_buttons))
+    component_list.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
+
+    return [Container(accent_color=RED_ACCENT, components=component_list)]
+
+
+@register_action("clan_remove_browse_next", ephemeral=True)
+@lightbulb.di.with_di
+async def clan_remove_browse_next(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle next page for remove clan browse."""
+    stored_data = await mongo.button_store.find_one({"_id": action_id})
+    if stored_data:
+        current_page = stored_data.get("page", 0)
+        await mongo.button_store.update_one(
+            {"_id": action_id},
+            {"$set": {"page": current_page + 1}}
+        )
+
+    return await clan_remove_show_more(ctx, action_id, mongo=mongo)
+
+
+@register_action("clan_remove_browse_prev", ephemeral=True)
+@lightbulb.di.with_di
+async def clan_remove_browse_prev(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle previous page for remove clan browse."""
+    stored_data = await mongo.button_store.find_one({"_id": action_id})
+    if stored_data:
+        current_page = stored_data.get("page", 0)
+        await mongo.button_store.update_one(
+            {"_id": action_id},
+            {"$set": {"page": max(0, current_page - 1)}}
+        )
+
+    return await clan_remove_show_more(ctx, action_id, mongo=mongo)
+
+
+@register_action("clan_remove_back_to_list", ephemeral=True)
+@lightbulb.di.with_di
+async def clan_remove_back_to_list(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Return to dropdown view from browse mode."""
+    return await remove_clan_select(ctx, mongo=mongo)
+
 
 @register_action("clan_remove_menu", ephemeral=True)
 @lightbulb.di.with_di
@@ -1073,10 +1285,21 @@ async def choose_clan_select(
 ):
     clans = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=data) for data in clans]
+
+    # Check if pagination is needed (Discord limit is 25 per dropdown)
+    if len(clans) <= 25:
+        # All clans fit in one dropdown - simple mode
+        top_clans = clans
+        remaining_clans = []
+    else:
+        # Too many clans - pagination mode
+        top_clans = clans[:24]
+        remaining_clans = clans[24:]
+
     options = []
     seen_tags = {}
 
-    for c in clans:
+    for c in top_clans:
         # Handle duplicate clan tags by making values unique
         if c.tag in seen_tags:
             seen_tags[c.tag] += 1
@@ -1093,26 +1316,225 @@ async def choose_clan_select(
             option = SelectOption(label=c.name, value=unique_value, description=c.tag)
         options.append(option)
 
+    action_id = str(uuid.uuid4())
+
+    # Store remaining clans in button_store if they exist
+    if remaining_clans:
+        remaining_tags = [c.tag for c in remaining_clans]
+        await mongo.button_store.insert_one({
+            "_id": action_id,
+            "command": "clan_edit_browse",
+            "user_id": ctx.user.id,
+            "remaining_tags": remaining_tags,
+            "page": 0
+        })
+
+    # Build component list
+    component_list = [
+        Text(content="📋 **Select a clan to edit**"),
+        ActionRow(
+            components=[
+                TextSelectMenu(
+                    custom_id=f"clan_edit_menu:",
+                    placeholder="Select a clan…",
+                    max_values=1,
+                    options=options,
+                )
+            ]
+        ),
+    ]
+
+    # Add "Show More" button if there are remaining clans
+    if remaining_clans:
+        component_list.append(
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        custom_id=f"clan_edit_show_more:{action_id}",
+                        label=f"Show More Clans ({len(remaining_clans)} more)",
+                        emoji="🔍"
+                    )
+                ]
+            )
+        )
+
+    component_list.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
+
     components = [
         Container(
             accent_color=RED_ACCENT,
-            components=[
-                Text(content="📋 **Select a clan**"),
-                ActionRow(
-                    components=[
-                        TextSelectMenu(
-                            custom_id=f"clan_edit_menu:",
-                            placeholder="Select a clan…",
-                            max_values=1,
-                            options=options,
-                        )
-                    ]
-                ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-            ],
+            components=component_list,
         )
     ]
     return components
+
+
+@register_action("clan_edit_show_more", ephemeral=True)
+@lightbulb.di.with_di
+async def clan_edit_show_more(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle 'Show More' button for edit clan browse mode."""
+    stored_data = await mongo.button_store.find_one({"_id": action_id})
+    if not stored_data:
+        return [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[Text(content="⚠️ Session expired. Please run the command again.")]
+            )
+        ]
+
+    remaining_tags = stored_data.get("remaining_tags", [])
+    current_page = stored_data.get("page", 0)
+
+    clan_data = await mongo.clans.find({"tag": {"$in": remaining_tags}}).to_list(length=None)
+    remaining_clans = [Clan(data=d) for d in clan_data]
+
+    # Sort by original order (alphabetical)
+    remaining_clans = sorted(
+        remaining_clans,
+        key=lambda c: remaining_tags.index(c.tag) if c.tag in remaining_tags else 999
+    )
+
+    # Pagination - treat dropdown as page 1
+    clans_per_page = 25
+    total_clans_in_db = len(remaining_clans) + 24
+    remaining_pages = (len(remaining_clans) + clans_per_page - 1) // clans_per_page
+    total_pages = 1 + remaining_pages
+    current_page = max(0, min(current_page, remaining_pages - 1))
+    display_page = current_page + 2
+
+    start_idx_in_array = current_page * clans_per_page
+    end_idx_in_array = min(start_idx_in_array + clans_per_page, len(remaining_clans))
+    clans_on_page = remaining_clans[start_idx_in_array:end_idx_in_array]
+
+    start_idx_display = 24 + (current_page * clans_per_page)
+    end_idx_display = start_idx_display + len(clans_on_page)
+
+    # Build options
+    options = []
+    seen_tags = {}
+    for c in clans_on_page:
+        if c.tag in seen_tags:
+            seen_tags[c.tag] += 1
+            unique_value = f"{c.tag}_{seen_tags[c.tag]}"
+        else:
+            seen_tags[c.tag] = 0
+            unique_value = c.tag
+
+        if c.partial_emoji:
+            option = SelectOption(label=c.name, value=unique_value, description=c.tag, emoji=c.partial_emoji)
+        else:
+            option = SelectOption(label=c.name, value=unique_value, description=c.tag)
+        options.append(option)
+
+    component_list = [
+        Text(content="## **Browse All Clans**"),
+        Text(content=f"**Page {display_page} of {total_pages}** • Showing clans {start_idx_display + 1}-{end_idx_display} of {total_clans_in_db} total"),
+        Separator(divider=True),
+        ActionRow(
+            components=[
+                TextSelectMenu(
+                    custom_id=f"clan_edit_menu:",
+                    placeholder="Select a clan…",
+                    max_values=1,
+                    options=options,
+                )
+            ]
+        ),
+    ]
+
+    # Navigation buttons
+    navigation_buttons = [
+        Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"clan_edit_back_to_list:{action_id}",
+            label="Back to List",
+            emoji="⬅️"
+        )
+    ]
+
+    if remaining_pages > 1:
+        if current_page > 0:
+            navigation_buttons.append(
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"clan_edit_browse_prev:{action_id}",
+                    label="Previous",
+                    emoji="◀️"
+                )
+            )
+
+        if current_page < remaining_pages - 1:
+            navigation_buttons.append(
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"clan_edit_browse_next:{action_id}",
+                    label="Next",
+                    emoji="▶️"
+                )
+            )
+
+    component_list.append(ActionRow(components=navigation_buttons))
+    component_list.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
+
+    return [Container(accent_color=RED_ACCENT, components=component_list)]
+
+
+@register_action("clan_edit_browse_next", ephemeral=True)
+@lightbulb.di.with_di
+async def clan_edit_browse_next(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle next page for edit clan browse."""
+    stored_data = await mongo.button_store.find_one({"_id": action_id})
+    if stored_data:
+        current_page = stored_data.get("page", 0)
+        await mongo.button_store.update_one(
+            {"_id": action_id},
+            {"$set": {"page": current_page + 1}}
+        )
+
+    return await clan_edit_show_more(ctx, action_id, mongo=mongo)
+
+
+@register_action("clan_edit_browse_prev", ephemeral=True)
+@lightbulb.di.with_di
+async def clan_edit_browse_prev(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Handle previous page for edit clan browse."""
+    stored_data = await mongo.button_store.find_one({"_id": action_id})
+    if stored_data:
+        current_page = stored_data.get("page", 0)
+        await mongo.button_store.update_one(
+            {"_id": action_id},
+            {"$set": {"page": max(0, current_page - 1)}}
+        )
+
+    return await clan_edit_show_more(ctx, action_id, mongo=mongo)
+
+
+@register_action("clan_edit_back_to_list", ephemeral=True)
+@lightbulb.di.with_di
+async def clan_edit_back_to_list(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Return to dropdown view from browse mode."""
+    return await choose_clan_select(ctx, mongo=mongo)
 
 
 @register_action("clan_edit_menu", ephemeral=True)
