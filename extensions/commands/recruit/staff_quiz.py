@@ -636,7 +636,7 @@ HARD_MODE_QUESTIONS = [
             "A": "In the recruit's ticket",
             "B": "Through leadership only",
             "C": "Publicly in chat for transparency",
-            "D": "Privately via DM and be constructive"
+            "D": "In recruit ticket's private thread for transparency, respectfully and constructively"
         },
         "correct": "D"
     },
