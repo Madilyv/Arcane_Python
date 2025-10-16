@@ -723,10 +723,10 @@ HARD_MODE_QUESTIONS = [
         "category": "Point System",
         "question": "What is forbidden on Reddit that risks a permanent ban?",
         "options": {
-            "A": "Giveaways or using alt Reddit accounts",
+            "A": "Giveaways, using alt Reddit accounts, or posting daily",
             "B": "Mentioning Kings Alliance",
             "C": "Posting in r/ClashOfClansRecruit",
-            "D": "Posting daily"
+            "D": "Using the discord invite link"
         },
         "correct": "A"
     },
@@ -1000,8 +1000,8 @@ async def handle_quiz_answer(
             }}
         )
 
-        # Calculate passing score based on difficulty (80%)
-        passing_score = 40 if difficulty == "Hard Mode" else 12
+        # Calculate passing score based on difficulty (90%)
+        passing_score = 45 if difficulty == "Hard Mode" else 14
 
         # Store permanent result
         result = {
@@ -1051,7 +1051,7 @@ async def build_results_screen(quiz_state: dict, user: hikari.User, bot: hikari.
     """Build the final results screen"""
     # Select correct question set and passing score based on difficulty
     questions = HARD_MODE_QUESTIONS if difficulty == "Hard Mode" else QUIZ_QUESTIONS
-    passing_score = 40 if difficulty == "Hard Mode" else 12  # 80% for both
+    passing_score = 45 if difficulty == "Hard Mode" else 14  # 90% for both
 
     score = quiz_state["score"]
     total = len(questions)
@@ -1072,7 +1072,7 @@ async def build_results_screen(quiz_state: dict, user: hikari.User, bot: hikari.
 
     # Build mode-specific messages
     mode_text = "HARD MODE " if difficulty == "Hard Mode" else ""
-    passing_text = f"{passing_score}/{total} (80%)"
+    passing_text = f"{passing_score}/{total} (90%)"
 
     if passed:
         accent_color = GREEN_ACCENT
