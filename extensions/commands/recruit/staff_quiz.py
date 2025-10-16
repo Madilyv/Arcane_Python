@@ -1096,9 +1096,17 @@ async def build_results_screen(quiz_state: dict, user: hikari.User, bot: hikari.
         )
     ]
 
-    # Show incorrect answers if any
+    # Show incorrect answers if any (limit to first 10 to avoid Discord character limit)
     if incorrect_questions:
-        incorrect_text = "\n\n".join(incorrect_questions)
+        # Limit to first 10 incorrect answers
+        display_count = min(10, len(incorrect_questions))
+        incorrect_text = "\n\n".join(incorrect_questions[:display_count])
+
+        # Add note if there are more than 10 incorrect answers
+        if len(incorrect_questions) > 10:
+            remaining = len(incorrect_questions) - 10
+            incorrect_text += f"\n\n...and **{remaining} more incorrect answer{'s' if remaining > 1 else ''}**. Please review the recruitment guidelines thoroughly and retake the quiz."
+
         components.append(
             Container(
                 accent_color=GOLD_ACCENT,
