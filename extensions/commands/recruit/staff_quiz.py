@@ -166,7 +166,7 @@ QUIZ_QUESTIONS = [
         "question": "Where should staff with seniority provide corrections and feedback?",
         "options": {
             "A": "Publicly in chat",
-            "B": "In recruit ticket's private channel, respectfully and constructively",
+            "B": "In <#1070040793642958889>, respectfully and constructively",
             "C": "Privately via DM",
             "D": "In the general channel"
         },
@@ -336,26 +336,26 @@ HARD_MODE_QUESTIONS = [
         "correct": "A"
     },
     {
-        "category": "One Recruiter Rule",
-        "question": "Where should staff and leaders discuss a recruit privately?",
+        "category": "Clan Types",
+        "question": "What is Zen?",
         "options": {
-            "A": "In general staff chat",
-            "B": "In DMs between staff",
-            "C": "In the ticket's private thread",
-            "D": "In the recruitment channel"
+            "A": "Competitive war clan",
+            "B": "Casual clan where heroes can be down for war",
+            "C": "FWA alternative",
+            "D": "TH13+ only clan"
         },
-        "correct": "C"
+        "correct": "B"
     },
     {
-        "category": "One Recruiter Rule",
-        "question": "What happens if multiple recruiters try to claim the same ticket?",
+        "category": "Clan Types",
+        "question": "What is FWA?",
         "options": {
-            "A": "Leadership decides who gets it",
-            "B": "They work together",
-            "C": "First one to claim gets it - one recruiter only",
-            "D": "They split the interview"
+            "A": "Competitive war league",
+            "B": "Maximizing loot with fixed bases for casual players to quickly upgrade",
+            "C": "Farming without wars",
+            "D": "Free-for-all war system"
         },
-        "correct": "C"
+        "correct": "B"
     },
 
     # Bidding System - Basics (9 questions)
@@ -393,15 +393,15 @@ HARD_MODE_QUESTIONS = [
         "correct": "A"
     },
     {
-        "category": "Bidding System - Basics",
-        "question": "Who can start a bidding round?",
+        "category": "Clan Types",
+        "question": "How do you get Account Weight for FWA?",
         "options": {
-            "A": "Recruitment Leadership only",
-            "B": "Clan leaders",
-            "C": "Mentors",
-            "D": "Any recruiter"
+            "A": "Request it from FWA Discord server",
+            "B": "Use FC or scout base in war",
+            "C": "Calculate manually using TH level",
+            "D": "Leadership assigns it automatically"
         },
-        "correct": "A"
+        "correct": "B"
     },
     {
         "category": "Bidding System - Basics",
@@ -527,13 +527,13 @@ HARD_MODE_QUESTIONS = [
         "correct": "A"
     },
     {
-        "category": "Bidding System - Advanced",
-        "question": "What is the strategy behind the one-bid auto-win bonus?",
+        "category": "Point System",
+        "question": "Can we approve our own clan points?",
         "options": {
-            "A": "To reward high point clans",
-            "B": "To discourage bidding",
-            "C": "To speed up process",
-            "D": "Free recruit if you're the only bidder"
+            "A": "Yes, if you have proof",
+            "B": "Only if no one else is available",
+            "C": "It depends on the point type",
+            "D": "No"
         },
         "correct": "D"
     },
@@ -573,28 +573,28 @@ HARD_MODE_QUESTIONS = [
         "correct": "D"
     },
     {
-        "category": "Invited Candidates",
-        "question": "What type of proof is required to claim you invited a recruit?",
+        "category": "Point System",
+        "question": "Who can approve clan points?",
         "options": {
-            "A": "Witness testimony",
-            "B": "Chat logs",
-            "C": "Screenshot",
-            "D": "Verbal confirmation"
+            "A": "Any clan leader",
+            "B": "Recruitment Lead and above",
+            "C": "Mentors and Trainers",
+            "D": "Any recruiter with proof"
         },
-        "correct": "C"
+        "correct": "B"
     },
 
     # Hierarchy & Leadership (6 questions)
     {
         "category": "Hierarchy & Leadership",
-        "question": "Who has ultimate authority on all recruitment issues?",
+        "question": "If there is an argument with recruitment staff, who should you contact?",
         "options": {
-            "A": "Mentors",
-            "B": "Recruitment Lead",
-            "C": "Recruitment Chairman",
-            "D": "Clan Leaders"
+            "A": "Other staff",
+            "B": "Ask the recruit",
+            "C": "Recruitment Lead",
+            "D": "Recruitment Chairman"
         },
-        "correct": "C"
+        "correct": "D"
     },
     {
         "category": "Hierarchy & Leadership",
@@ -614,31 +614,31 @@ HARD_MODE_QUESTIONS = [
             "A": "Clan leaders",
             "B": "Recruitment Chairman only",
             "C": "Any recruiter",
-            "D": "Recruitment Lead"
+            "D": "Recruitment Lead and above"
         },
         "correct": "D"
     },
     {
         "category": "Hierarchy & Leadership",
-        "question": "What is the role of Mentors and Trainers?",
+        "question": "Who should train new recruitment staff?",
         "options": {
-            "A": "Provide guidance, share best practices, answer questions, deliver feedback",
-            "B": "Start bidding and assign recruits",
-            "C": "Manage clan points",
-            "D": "Interview all new recruits"
+            "A": "Any experienced recruiter",
+            "B": "Clan Leaders",
+            "C": "Mentors and Trainers",
+            "D": "Recruitment Lead and above"
         },
-        "correct": "A"
+        "correct": "D"
     },
     {
         "category": "Hierarchy & Leadership",
-        "question": "How should staff provide corrections or feedback to other staff?",
+        "question": "Where should staff and leaders talk privately about a recruit?",
         "options": {
-            "A": "In the recruit's ticket",
-            "B": "Through leadership only",
-            "C": "Publicly in chat for transparency",
-            "D": "In recruit ticket's private thread for transparency, respectfully and constructively"
+            "A": "In general staff chat",
+            "B": "In DMs between staff",
+            "C": "In the ticket's private thread",
+            "D": "In the recruitment channel"
         },
-        "correct": "D"
+        "correct": "C"
     },
     {
         "category": "Hierarchy & Leadership",
@@ -745,14 +745,15 @@ HARD_MODE_QUESTIONS = [
     },
     {
         "category": "Common Sense",
-        "question": "What happens to a recruit's Raid Medals, CWL Medals, and Clan Game rewards when they switch clans?",
+        "question": "Which of these is a red flag during a recruit interview?",
         "options": {
-            "A": "They keep all rewards - the game tracks everything earned",
-            "B": "Only Clan Game rewards transfer",
-            "C": "They lose 50%",
-            "D": "They lose everything"
+            "A": "They refuse to provide a base screenshot",
+            "B": "They were banned from multiple clans",
+            "C": "They demand co-leader immediately",
+            "D": "They ask how many girls are in the clan",
+            "E": "All of the above"
         },
-        "correct": "A"
+        "correct": "E"
     },
     {
         "category": "Common Sense",
