@@ -748,12 +748,11 @@ HARD_MODE_QUESTIONS = [
         "question": "Which of these is a red flag during a recruit interview?",
         "options": {
             "A": "They refuse to provide a base screenshot",
-            "B": "They were banned from multiple clans",
-            "C": "They demand co-leader immediately",
-            "D": "They ask how many girls are in the clan",
-            "E": "All of the above"
+            "B": "They were banned from multiple clans or demand Co immediately",
+            "C": "They ask how many girls are in the clan",
+            "D": "All of the above"
         },
-        "correct": "E"
+        "correct": "D"
     },
     {
         "category": "Common Sense",
