@@ -29,8 +29,7 @@ loader = lightbulb.Loader()
 class RecruitDeny(
     lightbulb.SlashCommand,
     name="deny",
-    description="Deny a recruit application with a reason",
-    default_member_permissions=hikari.Permissions.MANAGE_GUILD
+    description="Deny a recruit application with a reason"
 ):
     user = lightbulb.user(
         "user",

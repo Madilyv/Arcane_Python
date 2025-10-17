@@ -245,9 +245,9 @@ async def check_reddit_posts(startup_mode=False):
         post_limit = 100 if startup_mode else 50
         new_posts = [post async for post in subreddit.new(limit=post_limit)]
 
-        print(f"[Clan Post Monitor] Checking {len(new_posts)} posts. Keywords: {', '.join(SEARCH_KEYWORDS)}")
+        debug_print(f"Checking {len(new_posts)} posts. Keywords: {', '.join(SEARCH_KEYWORDS)}")
         debug_print(
-            f"Checking {len(new_posts)} posts. Last check: {datetime.fromtimestamp(last_check_time) if last_check_time else 'Never'}")
+            f"Last check: {datetime.fromtimestamp(last_check_time) if last_check_time else 'Never'}")
 
         # Process posts from oldest to newest
         posts_checked = 0

@@ -210,8 +210,7 @@ class Bidding(
 class FixPlaceholderPoints(
     lightbulb.SlashCommand,
     name="fix-placeholder-points",
-    description="Fix negative placeholder points for all clans",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    description="Fix negative placeholder points for all clans"
 ):
     @lightbulb.invoke
     @lightbulb.di.with_di

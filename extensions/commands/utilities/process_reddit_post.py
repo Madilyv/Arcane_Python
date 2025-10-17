@@ -188,8 +188,7 @@ async def create_reddit_post_notification(post, clan_data: Dict, manual: bool = 
 class ProcessRedditPost(
     lightbulb.SlashCommand,
     name="process-reddit-post",
-    description="Manually process a Reddit post for clan recognition and points",
-    default_member_permissions=hikari.Permissions.MANAGE_GUILD
+    description="Manually process a Reddit post for clan recognition and points"
 ):
     url = lightbulb.string(
         "url",

@@ -49,18 +49,11 @@ async def on_message_create(event: hikari.GuildMessageCreateEvent) -> None:
     session_key = None
     session_data = None
 
-    print(f"[DEBUG] Looking for session with user_id={user_id} (type: {type(user_id)}) and channel_id={event.channel_id}")
-    print(f"[DEBUG] Active sessions: {list(image_collection_sessions.keys())}")
-    
     for key, session in image_collection_sessions.items():
-        print(f"[DEBUG] Checking session {key}: user_id={session.get('user_id')} (type: {type(session.get('user_id'))}), channel_id={session.get('channel_id')}")
-        
         # Convert both to int for comparison to handle type mismatches
         if int(session["user_id"]) == int(user_id) and session["channel_id"] == event.channel_id:
             session_key = key
             session_data = session
-            print(f"[DEBUG] Found session for user {user_id}: key={key}")
-            print(f"[DEBUG] Session data: {session_data}")
             break
 
     if not session_data:
@@ -71,10 +64,6 @@ async def on_message_create(event: hikari.GuildMessageCreateEvent) -> None:
     for attachment in event.message.attachments:
         if attachment.media_type and attachment.media_type.startswith("image/"):
             image_attachment = attachment
-            print(f"[DEBUG] Found image attachment: {attachment.filename}")
-            print(f"[DEBUG] Attachment URL: {attachment.url}")
-            print(f"[DEBUG] Attachment proxy URL: {attachment.proxy_url}")
-            print(f"[DEBUG] Attachment size: {attachment.size}")
             break
 
     if not image_attachment:
@@ -98,8 +87,6 @@ async def process_screenshot_upload(
         message: hikari.Message
 ) -> None:
     """Process the uploaded screenshot"""
-    print(f"[DEBUG] process_screenshot_upload called with session_key={session_key}")
-
     # Import here to avoid circular imports
     from extensions.commands.clan.report.dm_recruitment import (
         image_collection_sessions,
@@ -175,12 +162,6 @@ async def process_screenshot_upload(
         del image_collection_sessions[session_key]
 
         # Show review screen (this will edit the existing message)
-        print(f"[DEBUG] Calling show_dm_review_in_channel with:")
-        print(f"  - session_key: {session_key}")
-        print(f"  - user_id: {session_data['user_id']}")
-        print(f"  - channel_id: {message.channel_id}")
-        print(f"  - upload_prompt_message_id: {session_data.get('upload_prompt_message_id', 'NOT FOUND')}")
-        
         await show_dm_review_in_channel(
             bot,
             session_key,

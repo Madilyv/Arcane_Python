@@ -27,8 +27,7 @@ RECRUITMENT_LOG_CHANNEL = 1345589195695194113
 class CloseTicketCommand(
     lightbulb.SlashCommand,
     name="close",
-    description="Close a recruitment ticket and clean up all data",
-    default_member_permissions=hikari.Permissions.MANAGE_CHANNELS,
+    description="Close a recruitment ticket and clean up all data"
 ):
     channel = lightbulb.channel(
         "channel",

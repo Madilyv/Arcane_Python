@@ -32,8 +32,7 @@ OWNER_ID = 505227988229554179
 class Reboot(
     lightbulb.SlashCommand,
     name="reboot",
-    description="Restart the bot (Owner only)",
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+    description="Restart the bot (Owner only)"
 ):
     @lightbulb.invoke
     async def invoke(

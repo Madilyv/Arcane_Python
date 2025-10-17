@@ -54,8 +54,7 @@ def get_error_reason(error: Exception) -> str:
 class PurgeCategory(
     lightbulb.SlashCommand,
     name="purge-category",
-    description="Delete a category and all its child channels (DESTRUCTIVE)",
-    default_member_permissions=hikari.Permissions.MANAGE_CHANNELS
+    description="Delete a category and all its child channels (DESTRUCTIVE)"
 ):
     category = lightbulb.channel(
         "category",
