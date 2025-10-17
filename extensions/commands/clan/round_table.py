@@ -226,5 +226,4 @@ def create_doesnt_have_role_response(member: hikari.Member, executor: hikari.Mem
     ]
 
 
-# Register with the loader
-loader.command(clan)
+# Note: loader.command(clan) is now called once in clan/__init__.py

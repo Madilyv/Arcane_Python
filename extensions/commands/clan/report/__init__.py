@@ -31,5 +31,4 @@ from . import approval
 from . import router
 from . import recruitment_help  # New import
 
-# Register the clan group with the loader
-loader.command(clan)
+# Note: loader.command(clan) is now called once in clan/__init__.py

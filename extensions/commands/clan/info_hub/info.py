@@ -152,5 +152,4 @@ class Info(
 # Import handlers to register their actions
 from . import handlers
 
-# Add the command to the loader
-loader.command(clan)
+# Note: loader.command(clan) is now called once in clan/__init__.py
