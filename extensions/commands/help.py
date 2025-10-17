@@ -163,6 +163,7 @@ async def create_help_menu_components(selected_category: Optional[str] = None) -
                 TextSelectMenu(
                     custom_id="help_category_select:menu",
                     placeholder="Pick a category to see commands...",
+                    max_values=1,
                     options=select_options
                 )
             ]
@@ -382,7 +383,7 @@ class Help(
         )
 
 
-@register_action("help_category_select", opens_modal=False)
+@register_action("help_category_select", opens_modal=False, ephemeral=True)
 async def handle_category_select(ctx, action_id: str, **kwargs) -> list:
     """Handle category selection from dropdown."""
     # Get selected value from interaction
@@ -392,7 +393,7 @@ async def handle_category_select(ctx, action_id: str, **kwargs) -> list:
     return await create_category_view(selected_category)
 
 
-@register_action("help_back", no_return=True)
+@register_action("help_back", no_return=True, ephemeral=True)
 async def handle_back_button(ctx, action_id: str, **kwargs) -> None:
     """Handle back button to return to main menu."""
     # The interaction is already deferred by component handler
@@ -401,7 +402,7 @@ async def handle_back_button(ctx, action_id: str, **kwargs) -> None:
     )
 
 
-@register_action("help_refresh", no_return=True)
+@register_action("help_refresh", no_return=True, ephemeral=True)
 async def handle_refresh(ctx, action_id: str, **kwargs) -> None:
     """Refresh the help menu."""
     # The interaction is already deferred by component handler
