@@ -40,8 +40,7 @@ class Bases(
     base_only = lightbulb.boolean(
         "base-only",
         "Send only the base link button without description",
-        default=False,
-        required=False
+        default=False
     )
 
     @lightbulb.invoke
