@@ -260,4 +260,4 @@ class UploadImages(
             await ctx.respond(embed=error_embed, ephemeral=True)
 
 
-# Note: loader.command(clan) is now called once in clan/__init__.py
+loader.command(clan)

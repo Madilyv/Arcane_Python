@@ -538,4 +538,4 @@ async def on_clan_back_to_list(
     )
 
 
-# Note: loader.command(clan) is now called once in clan/__init__.py
+loader.command(clan)
