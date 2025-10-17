@@ -13,6 +13,7 @@ class RecruitPoints(
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context):
         """Initialize the reporting dashboard"""
+        await ctx.defer(ephemeral=True)
         await ctx.respond(
             components=await create_home_dashboard(ctx.member),
             ephemeral=True
