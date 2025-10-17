@@ -412,11 +412,12 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
     """Process recruitment when bids were placed"""
     now = datetime.now(timezone.utc)
     new_expires_at = now + timedelta(days=12)
-    
+
     # Get the winning bid info
     winner_tag = bid_data.get("winner")
     winning_amount = bid_data.get("amount", 0)
-    
+    is_finalized = bid_data.get("is_finalized", False)
+
     # If no winner set but bids exist, find the highest bidder
     if not winner_tag and bid_data.get("bids"):
         bids = sorted(bid_data["bids"], key=lambda x: x["amount"], reverse=True)
@@ -424,12 +425,41 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
             winner_tag = bids[0]["clan_tag"]
             winning_amount = bids[0]["amount"]
             print(f"[WARN] No winner set in bid_data, using highest bid: {winner_tag} for {winning_amount}")
-    
+
     # Check if player joined the winning clan
     if player_clan and player_clan["tag"] == winner_tag:
         # Success! They joined the winning clan
         print(f"[INFO] {recruit['player_name']} joined winning clan {winner_tag}")
-        
+
+        # CRITICAL: Check if bidding was finalized (timer completed)
+        if not is_finalized:
+            print(f"[CRITICAL] Bidding not finalized - ticket closed before timer expired")
+            print(f"[CRITICAL] Deducting {winning_amount} points from {winner_tag} now")
+
+            # Deduct actual points (since bidding timer never ran)
+            await mongo_client.clans.update_one(
+                {"tag": winner_tag},
+                {"$inc": {"points": -winning_amount}}
+            )
+
+            # Import and use safe_adjust_placeholder_points
+            from extensions.commands.recruit.bidding import safe_adjust_placeholder_points
+
+            # Release placeholder points for winner
+            await safe_adjust_placeholder_points(mongo_client, winner_tag, -winning_amount)
+            print(f"[INFO] Deducted {winning_amount} points and released placeholder for {winner_tag}")
+
+            # Release placeholder points for ALL other bidders (they didn't win)
+            if bid_data.get("bids"):
+                for bid in bid_data["bids"]:
+                    if bid["clan_tag"] != winner_tag:
+                        await safe_adjust_placeholder_points(mongo_client, bid["clan_tag"], -bid["amount"])
+                        print(f"[INFO] Released {bid['amount']} placeholder points for losing bidder {bid['clan_tag']}")
+        else:
+            print(f"[INFO] Bidding was finalized - points already deducted by timer")
+            # Points already deducted when auction ended normally
+            # Placeholder points already released
+
         # Update recruit record
         await mongo_client.new_recruits.update_one(
             {"_id": recruit["_id"]},
@@ -458,9 +488,6 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
                 }
             }
         )
-        
-        # Note: Points should already be deducted when auction ended
-        # Just need to clear placeholder_points (handled in auction end)
         
         # Send success notification to recruitment log
         if db_clan:
@@ -509,17 +536,34 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
     else:
         # They didn't join the winning clan
         print(f"[WARN] {recruit['player_name']} did not join winning clan. Winner: {winner_tag}, Joined: {player_clan['tag'] if player_clan else 'None'}")
-        
-        # Refund points to the winning clan
+
+        # Import safe_adjust_placeholder_points for cleanup
+        from extensions.commands.recruit.bidding import safe_adjust_placeholder_points
+
+        # Handle point refund/cleanup based on finalization status
         if winner_tag:
             winning_clan = await mongo_client.clans.find_one({"tag": winner_tag})
             if winning_clan:
-                # Refund the points
-                await mongo_client.clans.update_one(
-                    {"tag": winner_tag},
-                    {"$inc": {"points": winning_amount}}
-                )
-                print(f"[INFO] Refunded {winning_amount} points to {winning_clan['name']}")
+                if is_finalized:
+                    # Bidding completed normally - points were already deducted
+                    # Refund them since recruit didn't join
+                    await mongo_client.clans.update_one(
+                        {"tag": winner_tag},
+                        {"$inc": {"points": winning_amount}}
+                    )
+                    print(f"[INFO] Refunded {winning_amount} points to {winning_clan['name']} (bidding was finalized)")
+                else:
+                    # Bidding never completed - points were never deducted
+                    # Just release placeholder points
+                    await safe_adjust_placeholder_points(mongo_client, winner_tag, -winning_amount)
+                    print(f"[INFO] Released {winning_amount} placeholder points for {winning_clan['name']} (bidding not finalized)")
+
+                    # Release placeholder points for ALL other bidders too
+                    if bid_data.get("bids"):
+                        for bid in bid_data["bids"]:
+                            if bid["clan_tag"] != winner_tag:
+                                await safe_adjust_placeholder_points(mongo_client, bid["clan_tag"], -bid["amount"])
+                                print(f"[INFO] Released {bid['amount']} placeholder points for bidder {bid['clan_tag']}")
         
         # Send failed recruitment notification
         failure_components = [
