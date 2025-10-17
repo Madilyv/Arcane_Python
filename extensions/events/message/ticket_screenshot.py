@@ -404,23 +404,45 @@ async def check_pending_screenshot_tickets():
             "step_data.screenshot.uploaded": False
         }).to_list(length=None)
 
+        active_count = 0
+        closed_count = 0
+
         for ticket in pending_tickets:
             channel_id = ticket["ticket_info"]["channel_id"]
 
-            # Check if channel still exists
+            # Check if channel still exists and is not closed
             try:
-                channel = bot_instance.cache.get_guild_channel(int(channel_id)) or \
-                          await bot_instance.rest.fetch_channel(int(channel_id))
-                if not channel:
+                channel = await bot_instance.rest.fetch_channel(int(channel_id))
+
+                # Check if channel is archived or otherwise closed
+                if hasattr(channel, 'is_archived') and channel.is_archived:
+                    # Clean up archived ticket
+                    await mongo_client.ticket_automation_state.update_one(
+                        {"_id": str(channel_id)},
+                        {"$set": {"automation_state.status": "closed"}}
+                    )
+                    closed_count += 1
                     continue
-            except:
-                continue
 
-            # Add to completed if already uploaded
-            if ticket["step_data"]["screenshot"]["uploaded"]:
-                completed_screenshots.add(str(channel_id))
+                # Add to completed if already uploaded (shouldn't happen, but safety check)
+                if ticket["step_data"]["screenshot"]["uploaded"]:
+                    completed_screenshots.add(str(channel_id))
 
-        print(f"Loaded {len(pending_tickets)} pending screenshot tickets")
+                active_count += 1
+
+            except hikari.NotFoundError:
+                # Channel doesn't exist - mark ticket as closed
+                await mongo_client.ticket_automation_state.update_one(
+                    {"_id": str(channel_id)},
+                    {"$set": {"automation_state.status": "closed"}}
+                )
+                closed_count += 1
+            except Exception as e:
+                print(f"[Screenshot] Error checking channel {channel_id}: {e}")
+
+        if closed_count > 0:
+            print(f"[Screenshot] Cleaned up {closed_count} closed/archived tickets")
+        print(f"[Screenshot] Loaded {active_count} pending screenshot tickets")
 
     except Exception as e:
         print(f"Error checking pending tickets: {e}")

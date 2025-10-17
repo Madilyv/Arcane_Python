@@ -2702,14 +2702,16 @@ async def on_bot_started(
     coc_client = coc_api
     mongo_client = mongo
 
-    # Initialize APScheduler
-    scheduler = AsyncIOScheduler(timezone="UTC")
-    scheduler.start()
+    # Initialize APScheduler only if not already initialized
+    if scheduler is None:
+        scheduler = AsyncIOScheduler(timezone="UTC")
+        scheduler.start()
+        print("[LazyCWL AutoPing] Scheduler initialized")
 
-    print("[LazyCWL AutoPing] Scheduler initialized")
-
-    # Restore any active auto-ping jobs from MongoDB
-    await restore_autopings()
+        # Restore any active auto-ping jobs from MongoDB
+        await restore_autopings()
+    else:
+        print("[LazyCWL AutoPing] Scheduler already initialized, skipping")
 
 
 # Register the commands with the loader
