@@ -145,6 +145,19 @@ class LazyCwlSnapshot(
         # Get FWA clans from database
         fwa_clans = await mongo.clans.find({"type": "FWA"}).to_list(length=None)
 
+        if not fwa_clans:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No FWA Clans Found"),
+                        Text(content="No FWA clans are configured in the database."),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, ephemeral=True)
+            return
+
         action_id = str(uuid.uuid4())
         data = {
             "_id": action_id,
@@ -153,7 +166,49 @@ class LazyCwlSnapshot(
         }
         await mongo.button_store.insert_one(data)
 
-        components = await create_clan_selector_components(fwa_clans, "lazycwl_snapshot_select", action_id)
+        # Build dropdown options with ALL option
+        options = [
+            SelectOption(
+                label="🌍 ALL FWA CLANS",
+                value="ALL",
+                description=f"Create snapshots for all {len(fwa_clans)} FWA clans",
+                emoji="🌍"
+            )
+        ]
+
+        # Add individual clan options
+        for clan_data in fwa_clans:
+            clan = Clan(data=clan_data)
+            kwargs = {
+                "label": clan.name,
+                "value": clan.tag,
+                "description": clan.tag
+            }
+            if getattr(clan, "partial_emoji", None):
+                kwargs["emoji"] = clan.partial_emoji
+            options.append(SelectOption(**kwargs))
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content="## 📊 Select FWA Clan"),
+                    Text(content="Choose which FWA clan(s) to snapshot for CWL tracking:"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_snapshot_select:{action_id}",
+                                placeholder="Select an FWA clan...",
+                                max_values=1,
+                                options=options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
         await ctx.respond(components=components, ephemeral=True)
 
 
@@ -812,25 +867,36 @@ class LazyCwlRemovePlayer(
 
 # ======================== COMPONENT HANDLERS ========================
 
-@register_action("lazycwl_snapshot_select", no_return=True)
-@lightbulb.di.with_di
-async def handle_snapshot_select(
-    ctx,
-    action_id: str,
+async def process_single_clan_snapshot(
+    clan_tag: str,
     user_id: int,
-    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **kwargs
-) -> None:
-    """Handle clan selection for snapshot creation."""
-    clan_tag = ctx.interaction.values[0]
-
+    bot: hikari.GatewayBot,
+    coc_client: coc.Client,
+    mongo: MongoClient
+) -> dict:
+    """
+    Process a single clan snapshot creation.
+    Returns dict with results: {
+        'success': bool,
+        'clan_name': str,
+        'clan_tag': str,
+        'player_count': int,
+        'discord_coverage': int,
+        'coverage_percent': float,
+        'already_exists': bool (if snapshot already exists),
+        'error': str (if failed)
+    }
+    """
     try:
         # Fetch clan from CoC API
         clan = await coc_client.get_clan(clan_tag)
         if not clan:
-            raise Exception(f"Clan {clan_tag} not found")
+            return {
+                'success': False,
+                'clan_name': 'Unknown',
+                'clan_tag': clan_tag,
+                'error': f"Clan {clan_tag} not found in CoC API"
+            }
 
         # Prepare player tags for ClashKing API
         player_tags = [member.tag for member in clan.members]
@@ -846,70 +912,195 @@ async def handle_snapshot_select(
         })
 
         if existing:
-            components = [
-                Container(
-                    accent_color=RED_ACCENT,
-                    components=[
-                        Text(content="## ⚠️ Snapshot Already Exists"),
-                        Text(content=f"An active snapshot for **{clan.name}** `{clan_tag}` already exists."),
-                        Text(content=f"Created: {existing['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')}"),
-                        Text(content="Use `/lazycwl-reset` to clear existing snapshots first."),
-                    ]
-                )
-            ]
-        else:
-            # Create player data
-            players = []
-            discord_coverage = 0
-
-            for member in clan.members:
-                discord_id = discord_mapping.get(member.tag)
-                if discord_id:
-                    discord_coverage += 1
-
-                players.append({
-                    "tag": member.tag,
-                    "name": member.name,
-                    "th_level": member.town_hall,
-                    "discord_id": discord_id,
-                    "in_home_clan": True
-                })
-
-            # Create snapshot document
-            snapshot = {
-                "_id": str(uuid.uuid4()),
-                "clan_tag": clan_tag,
-                "clan_name": clan.name,
-                "snapshot_date": datetime.now(timezone.utc),
-                "month": current_month,
-                "players": players,
-                "active": True,
-                "created_by": str(user_id)
+            return {
+                'success': False,
+                'clan_name': clan.name,
+                'clan_tag': clan_tag,
+                'already_exists': True,
+                'error': f"Active snapshot already exists (created {existing['snapshot_date'].strftime('%m/%d/%Y %I:%M%p UTC')})"
             }
 
-            # Insert into database
-            await mongo.lazy_cwl_snapshots.insert_one(snapshot)
+        # Create player data
+        players = []
+        discord_coverage = 0
 
-            # Success response
-            coverage_percent = (discord_coverage / len(players) * 100) if players else 0
-            components = [
-                Container(
-                    accent_color=GREEN_ACCENT,
-                    components=[
-                        Text(content="## ✅ Snapshot Created Successfully"),
-                        Separator(),
-                        Text(content=(
-                            f"**Clan:** {clan.name} `{clan_tag}`\n"
-                            f"**Players Tracked:** {len(players)}\n"
-                            f"**Discord Coverage:** {discord_coverage}/{len(players)} ({coverage_percent:.1f}%)\n"
-                            f"**Month:** {current_month}\n"
-                            f"**Created:** {snapshot['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')}"
-                        )),
-                        Separator(),
-                        Text(content="✅ Players tracked for FWA. Use `/lazycwl-ping` to remind players to return for sync."),
-                    ]
-                )
+        for member in clan.members:
+            discord_id = discord_mapping.get(member.tag)
+            if discord_id:
+                discord_coverage += 1
+
+            players.append({
+                "tag": member.tag,
+                "name": member.name,
+                "th_level": member.town_hall,
+                "discord_id": discord_id,
+                "in_home_clan": True
+            })
+
+        # Create snapshot document
+        snapshot = {
+            "_id": str(uuid.uuid4()),
+            "clan_tag": clan_tag,
+            "clan_name": clan.name,
+            "snapshot_date": datetime.now(timezone.utc),
+            "month": current_month,
+            "players": players,
+            "active": True,
+            "created_by": str(user_id)
+        }
+
+        # Insert into database
+        await mongo.lazy_cwl_snapshots.insert_one(snapshot)
+
+        # Success response
+        coverage_percent = (discord_coverage / len(players) * 100) if players else 0
+        return {
+            'success': True,
+            'clan_name': clan.name,
+            'clan_tag': clan_tag,
+            'player_count': len(players),
+            'discord_coverage': discord_coverage,
+            'coverage_percent': coverage_percent,
+            'already_exists': False
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'clan_name': 'Unknown',
+            'clan_tag': clan_tag,
+            'error': str(e)
+        }
+
+
+@register_action("lazycwl_snapshot_select", no_return=True)
+@lightbulb.di.with_di
+async def handle_snapshot_select(
+    ctx,
+    action_id: str,
+    user_id: int,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle clan selection for snapshot creation."""
+    selection = ctx.interaction.values[0]
+
+    try:
+        if selection == "ALL":
+            # Process all FWA clans
+            fwa_clans = await mongo.clans.find({"type": "FWA"}).to_list(length=None)
+
+            if not fwa_clans:
+                components = [
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ No FWA Clans Found"),
+                            Text(content="No FWA clans found in database."),
+                        ]
+                    )
+                ]
+                await ctx.interaction.edit_initial_response(components=components)
+                return
+
+            # Process each clan
+            results = []
+            for clan_data in fwa_clans:
+                clan = Clan(data=clan_data)
+                result = await process_single_clan_snapshot(clan.tag, user_id, bot, coc_client, mongo)
+                results.append(result)
+
+            # Build summary response
+            total_clans = len(results)
+            successful = sum(1 for r in results if r['success'])
+            failed = sum(1 for r in results if not r['success'])
+            already_existed = sum(1 for r in results if r.get('already_exists', False))
+            total_players = sum(r.get('player_count', 0) for r in results if r['success'])
+
+            summary_parts = [
+                Text(content="## 📸 All Clans Snapshot Complete"),
+                Separator(),
+                Text(content=(
+                    f"**Total Clans Processed:** {total_clans}\n"
+                    f"**Successful:** {successful}\n"
+                    f"**Already Existed:** {already_existed}\n"
+                    f"**Failed:** {failed}\n"
+                    f"**Total Players Tracked:** {total_players}"
+                )),
+                Separator(),
+                Text(content="**Clan Details:**")
             ]
+
+            for result in results:
+                if result['success']:
+                    summary_parts.append(
+                        Text(content=(
+                            f"✅ **{result['clan_name']}**: {result['player_count']} players tracked "
+                            f"({result['discord_coverage']} Discord linked, {result['coverage_percent']:.1f}%)"
+                        ))
+                    )
+                elif result.get('already_exists'):
+                    summary_parts.append(
+                        Text(content=f"⚠️ **{result['clan_name']}**: {result.get('error', 'Already exists')}")
+                    )
+                else:
+                    summary_parts.append(
+                        Text(content=f"❌ **{result['clan_name']}**: {result.get('error', 'Unknown error')}")
+                    )
+
+            components = [Container(accent_color=BLUE_ACCENT, components=summary_parts)]
+
+        else:
+            # Process single clan (using helper function)
+            result = await process_single_clan_snapshot(selection, user_id, bot, coc_client, mongo)
+
+            if not result['success']:
+                if result.get('already_exists'):
+                    components = [
+                        Container(
+                            accent_color=RED_ACCENT,
+                            components=[
+                                Text(content="## ⚠️ Snapshot Already Exists"),
+                                Text(content=f"An active snapshot for **{result['clan_name']}** `{result['clan_tag']}` already exists."),
+                                Text(content=f"{result.get('error', '')}"),
+                                Text(content="Use `/lazycwl-reset` to clear existing snapshots first."),
+                            ]
+                        )
+                    ]
+                else:
+                    components = [
+                        Container(
+                            accent_color=RED_ACCENT,
+                            components=[
+                                Text(content="## ❌ Snapshot Creation Failed"),
+                                Text(content=f"Failed to create snapshot for **{result['clan_name']}** `{result['clan_tag']}`:"),
+                                Text(content=f"```{result.get('error', 'Unknown error')}```"),
+                                Text(content="Please try again or contact support if the issue persists."),
+                            ]
+                        )
+                    ]
+            else:
+                # Success response
+                current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+                components = [
+                    Container(
+                        accent_color=GREEN_ACCENT,
+                        components=[
+                            Text(content="## ✅ Snapshot Created Successfully"),
+                            Separator(),
+                            Text(content=(
+                                f"**Clan:** {result['clan_name']} `{result['clan_tag']}`\n"
+                                f"**Players Tracked:** {result['player_count']}\n"
+                                f"**Discord Coverage:** {result['discord_coverage']}/{result['player_count']} ({result['coverage_percent']:.1f}%)\n"
+                                f"**Month:** {current_month}"
+                            )),
+                            Separator(),
+                            Text(content="✅ Players tracked for FWA. Use `/lazycwl-ping` to remind players to return for sync."),
+                        ]
+                    )
+                ]
 
     except Exception as e:
         components = [
@@ -917,7 +1108,7 @@ async def handle_snapshot_select(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content="## ❌ Snapshot Creation Failed"),
-                    Text(content=f"Failed to create snapshot for {clan_tag}:"),
+                    Text(content=f"Failed to process snapshot request:"),
                     Text(content=f"```{str(e)}```"),
                     Text(content="Please try again or contact support if the issue persists."),
                 ]
