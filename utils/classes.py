@@ -76,6 +76,8 @@ class FWA:
     def __init__(self, data):
         self._data = data
         self.fwa_base_links = BaseLinks(data.get("fwa_base_links", {}))
+        self.base_information = data.get("base_information", {})
+        self.base_upgrade_notes = data.get("base_upgrade_notes", {})
 
 
 class NewRecruit:

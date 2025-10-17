@@ -17,7 +17,7 @@ CLOUDINARY_WAR_BASE_FOLDER = "fwa/war_bases"
 CLOUDINARY_ACTIVE_BASE_FOLDER = "fwa/active_bases"
 
 # TH levels we support
-FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th17"]
+FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th16_new", "th17", "th17_new"]
 
 
 @fwa.register()

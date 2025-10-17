@@ -705,9 +705,19 @@ async def fwa_questions(
                                         value="th17"
                                     ),
                                     SelectOption(
+                                        emoji=emojis.TH17.partial_emoji,
+                                        label="TH17 New",
+                                        value="th17_new"
+                                    ),
+                                    SelectOption(
                                         emoji=emojis.TH16.partial_emoji,
                                         label="TH16",
                                         value="th16"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH16.partial_emoji,
+                                        label="TH16 New",
+                                        value="th16_new"
                                     ),
                                     SelectOption(
                                         emoji=emojis.TH15.partial_emoji,
@@ -798,18 +808,42 @@ async def th_select(
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
     fwa = await get_fwa_base_object(mongo)
-    th_number = choice.lstrip('th')
 
-    base_link = getattr(fwa.fwa_base_links, choice)
+    # Format display name properly for _new variants
+    if choice.endswith('_new'):
+        base_th = choice.replace('_new', '')
+        th_number = base_th.lstrip('th')
+        display_name = f"TH{th_number} New"
+        friendly_name = f"Town Hall {th_number} New"
+    else:
+        th_number = choice.lstrip('th')
+        display_name = f"TH{th_number}"
+        friendly_name = f"Town Hall {th_number}"
+
+    base_link = getattr(fwa.fwa_base_links, choice, "")
+
+    if not base_link:
+        print(f"[Recruit Questions] ERROR: No base link found for {choice}")
+        await ctx.respond(f"No base link found for {choice}!", ephemeral=True)
+        return
+
+    # Get base information for this TH level
+    base_info = fwa.base_information.get(choice, "")
+    if not base_info:
+        base_info = (
+            "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
+            "Once you have made the switch, please send us a screenshot like below to confirm the update."
+        )
+
     components = [
         Text(content=f"{user.mention}"),
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content=f"## Town Hall {th_number}"),
+                Text(content=f"## {friendly_name}"),
                 Media(
                     items=[
-                        MediaItem(media=FWA_WAR_BASE[choice]),
+                        MediaItem(media=FWA_WAR_BASE.get(choice, "")),
                     ]
                 ),
                 ActionRow(
@@ -825,14 +859,11 @@ async def th_select(
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content="### FWA Base"),
-                Text(content=(
-                    "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
-                    "Once you have made the switch, please send us a screenshot like below to confirm the update.\n"
-                )),
+                Text(content=f"### TH{th_number} FWA War Status and Base Layout"),
+                Text(content=base_info),
                 Media(
                     items=[
-                        MediaItem(media=FWA_ACTIVE_WAR_BASE[choice]),
+                        MediaItem(media=FWA_ACTIVE_WAR_BASE.get(choice, "")),
                     ]
                 ),
                 Text(content=f"-# Requested by {ctx.member.mention}"),
