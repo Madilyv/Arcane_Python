@@ -420,7 +420,7 @@ HARD_MODE_QUESTIONS = [
         "options": {
             "A": "Only for high TH players",
             "B": "Within 24 hours",
-            "C": "Immediately after any recruit interview",
+            "C": "Immediately after eligible recruit interviews (TH14+, non-FWA)",
             "D": "After leadership review"
         },
         "correct": "C"
