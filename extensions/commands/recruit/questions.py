@@ -809,6 +809,16 @@ async def th_select(
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
     fwa = await get_fwa_base_object(mongo)
 
+    # Check if FWA data exists
+    if not fwa:
+        await ctx.respond(
+            "❌ **FWA Data Not Found**\n\n"
+            "The FWA data is not in the database yet. "
+            "Please use the `/clan dashboard` command to add all FWA data first.",
+            ephemeral=True
+        )
+        return
+
     # Format display name properly for _new variants
     if choice.endswith('_new'):
         base_th = choice.replace('_new', '')
@@ -820,11 +830,37 @@ async def th_select(
         display_name = f"TH{th_number}"
         friendly_name = f"Town Hall {th_number}"
 
-    base_link = getattr(fwa.fwa_base_links, choice, "")
+    base_link = getattr(fwa.fwa_base_links, choice, None)
 
+    # Get base information for this TH level
+    base_info = fwa.base_information.get(choice, "")
+    if not base_info:
+        base_info = (
+            "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
+            "Once you have made the switch, please send us a screenshot like below to confirm the update."
+        )
+
+    # Check if base_link exists
     if not base_link:
-        print(f"[Recruit Questions] ERROR: No base link found for {choice}")
-        await ctx.respond(f"No base link found for {choice}!", ephemeral=True)
+        await ctx.respond(
+            f"❌ **FWA Base Link Not Found**\n\n"
+            f"The FWA base link for {display_name} is not configured in the database. "
+            "Please use the `/clan dashboard` command to add all FWA base links.",
+            ephemeral=True
+        )
+        return
+
+    # Check if media URLs exist
+    war_base_media = FWA_WAR_BASE.get(choice)
+    active_war_base_media = FWA_ACTIVE_WAR_BASE.get(choice)
+
+    if not war_base_media or not active_war_base_media:
+        await ctx.respond(
+            f"❌ **FWA Base Images Not Found**\n\n"
+            f"The FWA base images for {display_name} are not configured. "
+            "Please contact an administrator to add the FWA base images.",
+            ephemeral=True
+        )
         return
 
     # Get base information for this TH level
