@@ -21,6 +21,10 @@ from .ticket_automation.handlers import (
     discord_skills as discord_skills_handler
 )
 from .ticket_automation.core.state_manager import is_awaiting_text_response
+from .ticket_automation.helpers.quick_explanations import (
+    send_fwa_quick_explanation,
+    send_zen_quick_explanation
+)
 
 # Global instances - will be initialized from bot_data
 mongo_client: Optional[MongoClient] = None
@@ -93,6 +97,17 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
 
     # From here on, we're only dealing with user messages
     print(f"[Message Events] User message in channel {event.channel_id} from {event.author.username}")
+
+    # Check for quick explanation requests (What is FWA/Zen)
+    message_lower = event.content.lower().strip() if event.content else ""
+    if message_lower == "what is fwa":
+        print("[Message Events] Sending FWA quick explanation")
+        await send_fwa_quick_explanation(bot_instance, event.channel_id)
+        return
+    elif message_lower == "what is zen":
+        print("[Message Events] Sending Zen quick explanation")
+        await send_zen_quick_explanation(bot_instance, event.channel_id)
+        return
 
     # Check for FWA text responses FIRST (before questionnaire check)
     if await handle_fwa_text_response(event, ticket_state):
