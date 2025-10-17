@@ -451,7 +451,7 @@ class LazyCwlRoster(
 class LazyCwlReset(
     lightbulb.SlashCommand,
     name="lazycwl-reset",
-    description="Deactivate all FWA LazyCWL snapshots (use after wars complete)"
+    description="Deactivate FWA LazyCWL snapshots (use after wars complete)"
 ):
     @lightbulb.invoke
     @lightbulb.di.with_di
@@ -462,11 +462,12 @@ class LazyCwlReset(
     ) -> None:
         await ctx.defer(ephemeral=True)
 
-        active_count = await mongo.lazy_cwl_snapshots.count_documents({
+        # Get all active snapshots
+        snapshots = await mongo.lazy_cwl_snapshots.find({
             "active": True
-        })
+        }).sort("snapshot_date", -1).to_list(length=None)
 
-        if active_count == 0:
+        if not snapshots:
             components = [
                 Container(
                     accent_color=RED_ACCENT,
@@ -487,28 +488,44 @@ class LazyCwlReset(
         }
         await mongo.button_store.insert_one(data)
 
+        # Build dropdown options with ALL option
+        options = [
+            SelectOption(
+                label="🌍 ALL SNAPSHOTS",
+                value="ALL",
+                description=f"Reset all {len(snapshots)} active snapshots",
+                emoji="🌍"
+            )
+        ]
+
+        # Add individual snapshot options
+        for snapshot in snapshots:
+            player_count = len(snapshot.get("players", []))
+            autopings_status = " 🔔" if snapshot.get("auto_ping_enabled") else ""
+            options.append(
+                SelectOption(
+                    label=snapshot["clan_name"],
+                    value=snapshot["_id"],
+                    description=f"{snapshot['clan_tag']} • {player_count} players • {snapshot['snapshot_date'].strftime('%m/%d/%Y')}{autopings_status}",
+                    emoji=emojis.FWA.partial_emoji
+                )
+            )
+
         components = [
             Container(
                 accent_color=RED_ACCENT,
                 components=[
-                    Text(content="## ⚠️ Confirm Reset"),
-                    Text(content=f"This will deactivate **{active_count}** active LazyCWL snapshot(s)."),
-                    Text(content="**This action cannot be undone.**"),
+                    Text(content="## 🗑️ Select Snapshot(s) to Reset"),
+                    Text(content="Choose which snapshot(s) to deactivate:"),
                     Separator(),
                     ActionRow(
                         components=[
-                            Button(
-                                style=hikari.ButtonStyle.DANGER,
-                                custom_id=f"lazycwl_confirm_reset:{action_id}",
-                                label="Confirm Reset",
-                                emoji="🗑️"
-                            ),
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                custom_id=f"lazycwl_cancel_reset:{action_id}",
-                                label="Cancel",
-                                emoji="❌"
-                            ),
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_reset_select:{action_id}",
+                                placeholder="Select a snapshot...",
+                                max_values=1,
+                                options=options
+                            )
                         ]
                     )
                 ]
@@ -969,6 +986,74 @@ async def process_single_clan_snapshot(
             'success': False,
             'clan_name': 'Unknown',
             'clan_tag': clan_tag,
+            'error': str(e)
+        }
+
+
+async def process_single_snapshot_reset(
+    snapshot_id: str,
+    mongo: MongoClient,
+    scheduler_instance=None
+) -> dict:
+    """
+    Process a single snapshot reset.
+    Returns dict with results: {
+        'success': bool,
+        'clan_name': str,
+        'clan_tag': str,
+        'autopings_cancelled': bool,
+        'error': str (if failed)
+    }
+    """
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            return {
+                'success': False,
+                'clan_name': 'Unknown',
+                'clan_tag': 'Unknown',
+                'error': "Snapshot not found"
+            }
+
+        clan_name = snapshot.get('clan_name', 'Unknown')
+        clan_tag = snapshot.get('clan_tag', 'Unknown')
+
+        # Cancel auto-ping if enabled
+        autopings_cancelled = False
+        if snapshot.get("auto_ping_enabled") and scheduler_instance:
+            try:
+                scheduler_instance.remove_job(f"autopings_{snapshot_id}")
+                autopings_cancelled = True
+            except Exception:
+                pass  # Job might not exist
+
+        # Deactivate snapshot
+        result = await mongo.lazy_cwl_snapshots.update_one(
+            {"_id": snapshot_id},
+            {"$set": {"active": False}}
+        )
+
+        if result.modified_count == 0:
+            return {
+                'success': False,
+                'clan_name': clan_name,
+                'clan_tag': clan_tag,
+                'error': "Snapshot was already inactive"
+            }
+
+        return {
+            'success': True,
+            'clan_name': clan_name,
+            'clan_tag': clan_tag,
+            'autopings_cancelled': autopings_cancelled
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'clan_name': 'Unknown',
+            'clan_tag': 'Unknown',
             'error': str(e)
         }
 
@@ -1645,6 +1730,132 @@ async def handle_roster_select(
                 components=[
                     Text(content="## ❌ Failed to Load Roster"),
                     Text(content=f"Failed to load snapshot roster:"),
+                    Text(content=f"```{str(e)}```"),
+                ]
+            )
+        ]
+
+    await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_reset_select", no_return=True)
+@lightbulb.di.with_di
+async def handle_reset_select(
+    ctx,
+    action_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle snapshot selection for reset."""
+    global scheduler
+    selection = ctx.interaction.values[0]
+
+    try:
+        if selection == "ALL":
+            # Process all active snapshots
+            snapshots = await mongo.lazy_cwl_snapshots.find({"active": True}).to_list(length=None)
+
+            if not snapshots:
+                components = [
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ No Active Snapshots"),
+                            Text(content="No active snapshots found to reset."),
+                        ]
+                    )
+                ]
+                await ctx.interaction.edit_initial_response(components=components)
+                return
+
+            # Process each snapshot
+            results = []
+            for snapshot in snapshots:
+                result = await process_single_snapshot_reset(snapshot["_id"], mongo, scheduler)
+                results.append(result)
+
+            # Build summary response
+            total_snapshots = len(results)
+            successful = sum(1 for r in results if r['success'])
+            failed = sum(1 for r in results if not r['success'])
+            autopings_cancelled = sum(1 for r in results if r.get('autopings_cancelled', False))
+
+            summary_parts = [
+                Text(content="## 🗑️ All Snapshots Reset Complete"),
+                Separator(),
+                Text(content=(
+                    f"**Total Snapshots Processed:** {total_snapshots}\n"
+                    f"**Successfully Deactivated:** {successful}\n"
+                    f"**Failed:** {failed}\n"
+                    f"**Auto-Pings Cancelled:** {autopings_cancelled}"
+                )),
+                Separator(),
+                Text(content="**Snapshot Details:**")
+            ]
+
+            for result in results:
+                autopings_status = " (🔔 Auto-ping cancelled)" if result.get('autopings_cancelled') else ""
+                if result['success']:
+                    summary_parts.append(
+                        Text(content=f"✅ **{result['clan_name']}** `{result['clan_tag']}`{autopings_status}")
+                    )
+                else:
+                    summary_parts.append(
+                        Text(content=f"❌ **{result['clan_name']}**: {result.get('error', 'Unknown error')}")
+                    )
+
+            summary_parts.extend([
+                Separator(),
+                Text(content="✅ You can now create new snapshots for the next LazyCWL season.")
+            ])
+
+            components = [Container(accent_color=GREEN_ACCENT, components=summary_parts)]
+
+        else:
+            # Process single snapshot
+            result = await process_single_snapshot_reset(selection, mongo, scheduler)
+
+            if not result['success']:
+                components = [
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ Reset Failed"),
+                            Text(content=f"Failed to reset snapshot for **{result['clan_name']}** `{result['clan_tag']}`:"),
+                            Text(content=f"```{result.get('error', 'Unknown error')}```"),
+                        ]
+                    )
+                ]
+            else:
+                # Success response
+                autopings_text = ""
+                if result.get('autopings_cancelled'):
+                    autopings_text = "\n**Auto-Ping:** Cancelled"
+
+                components = [
+                    Container(
+                        accent_color=GREEN_ACCENT,
+                        components=[
+                            Text(content="## ✅ Snapshot Reset Successfully"),
+                            Separator(),
+                            Text(content=(
+                                f"**Clan:** {result['clan_name']} `{result['clan_tag']}`\n"
+                                f"**Status:** Snapshot deactivated{autopings_text}"
+                            )),
+                            Separator(),
+                            Text(content="✅ You can now create a new snapshot for this clan."),
+                        ]
+                    )
+                ]
+
+    except Exception as e:
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Reset Failed"),
+                    Text(content=f"Failed to process reset request:"),
                     Text(content=f"```{str(e)}```"),
                 ]
             )
