@@ -8,6 +8,7 @@ utilities = lightbulb.Group("utilities", "Utility commands for server management
 from . import clone_category
 from . import purge_category
 from . import process_reddit_post
+from . import reboot
 
 # Add the group to the loader
 loader.command(utilities)

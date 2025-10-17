@@ -23,8 +23,6 @@ from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 from extensions.components import register_action
 
-loader = lightbulb.Loader()
-
 # Authorized role IDs that can run this quiz
 AUTHORIZED_ROLES = [
     1039311270614142977,  # Role 1
@@ -1120,6 +1118,3 @@ async def build_results_screen(quiz_state: dict, user: hikari.User, bot: hikari.
         )
 
     return components
-
-
-loader.command(recruit)

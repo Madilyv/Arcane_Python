@@ -1541,8 +1541,3 @@ def cleanup_tasks():
             task.cancel()
     bidding_tasks.clear()
     active_bidding_sessions.clear()
-
-
-# Create the loader
-loader = lightbulb.Loader()
-loader.command(recruit)

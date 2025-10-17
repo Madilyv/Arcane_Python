@@ -536,6 +536,3 @@ async def on_clan_back_to_list(
             )
         ]
     )
-
-
-loader.command(clan)

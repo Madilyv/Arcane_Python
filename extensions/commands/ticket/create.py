@@ -528,6 +528,3 @@ async def handle_manual_ticket_modal(
         except:
             # If edit fails, try to respond
             await ctx.respond(components=error_components, ephemeral=True)
-
-
-loader.command(ticket)

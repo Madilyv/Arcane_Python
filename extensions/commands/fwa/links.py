@@ -8,7 +8,7 @@ import lightbulb
 import uuid
 from typing import List
 
-from extensions.commands.fwa import loader, fwa
+from extensions.commands.fwa import fwa
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.classes import Clan
@@ -210,8 +210,5 @@ async def on_war_weights(
             components=container_components
         )
     ]
-    
+
     await ctx.respond(components=components, ephemeral=True)
-
-
-loader.command(fwa)

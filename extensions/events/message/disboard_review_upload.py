@@ -61,6 +61,10 @@ async def on_disboard_review_upload(
         show_disboard_review_in_channel
     )
 
+    # Early exit if no active sessions - prevents log spam
+    if not image_collection_sessions:
+        return
+
     # Find session by user ID and channel
     session_key = None
     session_data = None

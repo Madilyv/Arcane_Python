@@ -194,6 +194,3 @@ class AddToTicketCommand(
                 "✅ Done",
                 ephemeral=True
             )
-
-
-loader.command(ticket)

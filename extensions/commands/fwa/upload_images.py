@@ -8,7 +8,7 @@ import os
 import hikari
 import lightbulb
 
-from extensions.commands.fwa import loader, fwa
+from extensions.commands.fwa import fwa
 from utils.cloudinary_client import CloudinaryClient
 from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 
@@ -190,6 +190,3 @@ class UploadImages(
             )
 
             await ctx.respond(embed=error_embed, ephemeral=True)
-
-
-loader.command(fwa)

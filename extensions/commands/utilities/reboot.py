@@ -203,7 +203,3 @@ async def handle_reboot_cancel(
 
     # Clean up stored data
     await mongo.button_store.delete_one({"_id": action_id})
-
-
-# Register with loader
-loader.command(utilities)

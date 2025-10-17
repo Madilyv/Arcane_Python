@@ -258,6 +258,3 @@ class UploadImages(
                 )
 
             await ctx.respond(embed=error_embed, ephemeral=True)
-
-
-loader.command(clan)

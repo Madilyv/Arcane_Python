@@ -2712,7 +2712,3 @@ async def on_bot_started(
         await restore_autopings()
     else:
         print("[LazyCWL AutoPing] Scheduler already initialized, skipping")
-
-
-# Register the commands with the loader
-loader.command(fwa)

@@ -22,8 +22,6 @@ from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT, BLUE_ACCENT, GOLD_ACCENT
 
-loader = lightbulb.Loader()
-
 # Check if debug commands are enabled
 ENABLE_DEBUG_COMMANDS = os.getenv("ENABLE_DEBUG_COMMANDS", "false").lower() == "true"
 
@@ -253,11 +251,5 @@ if ENABLE_DEBUG_COMMANDS:
                 ]
             )
         ]
-        
+
         await ctx.respond(components=components)
-
-    loader.command(recruit)
-
-else:
-    # If debug commands are disabled, still load the loader but without the command
-    pass

@@ -89,6 +89,13 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.clan_info_updater",
         "extensions.tasks.bidding_recovery",
         "extensions.events.message.ticket_account_collection",
+        "extensions.commands.recruit",
+        "extensions.commands.fwa",
+        "extensions.commands.ticket",
+        "extensions.commands.utilities",
+        "extensions.commands.clan",
+        "extensions.commands.player",
+        "extensions.commands.poll",
     ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)

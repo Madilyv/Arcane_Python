@@ -225,6 +225,3 @@ class CloseTicketCommand(
                 ],
                 ephemeral=True
             )
-
-
-loader.command(ticket)

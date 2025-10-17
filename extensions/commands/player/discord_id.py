@@ -175,7 +175,3 @@ class PlayerDiscordId(
 
         await ctx.respond(components=components, ephemeral=True)
         print(f"[Player Discord ID] Found Discord ID {discord_id} for {player_tag}")
-
-
-# Register with loader
-loader.command(player)

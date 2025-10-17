@@ -23,8 +23,6 @@ from extensions.commands.recruit import recruit
 from extensions.components import register_action
 from utils.constants import RED_ACCENT
 
-loader = lightbulb.Loader()
-
 @recruit.register()
 class RecruitDeny(
     lightbulb.SlashCommand,

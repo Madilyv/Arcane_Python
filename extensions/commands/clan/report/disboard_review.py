@@ -230,6 +230,21 @@ async def dr_select_clan(
         "session_key": session_key
     })
 
+    # Start timeout timer - cleanup session if no upload within 2 minutes
+    async def cleanup_stale_session():
+        await asyncio.sleep(120)  # 2 minutes as promised in UI
+        if session_key in image_collection_sessions:
+            # Session still exists = user never uploaded
+            del image_collection_sessions[session_key]
+            print(f"[Disboard Review] Cleaned up stale session {session_key} (no upload)")
+            # Also cleanup MongoDB storage
+            try:
+                await mongo.button_store.delete_one({"_id": f"dr_upload_{session_key}"})
+            except:
+                pass
+
+    asyncio.create_task(cleanup_stale_session())
+
 
 # ╔══════════════════════════════════════════════════════════╗
 # ║              Review Screen Functions                     ║

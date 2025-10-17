@@ -1,7 +1,7 @@
 import lightbulb
 import hikari
 
-from extensions.commands.fwa import loader, fwa
+from extensions.commands.fwa import fwa
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.emoji import emojis
 
@@ -172,6 +172,3 @@ class ChocolateCommand(
 
         # Delete the ephemeral "thinking" message
         await ctx.interaction.delete_initial_response()
-
-
-loader.command(fwa)

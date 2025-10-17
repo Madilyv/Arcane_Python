@@ -9,7 +9,7 @@ import lightbulb
 from datetime import datetime
 from typing import Optional, Dict, List
 
-from extensions.commands.fwa import loader, fwa
+from extensions.commands.fwa import fwa
 from extensions.components import register_action
 from extensions.autocomplete import fwa_clans
 
@@ -202,6 +202,3 @@ class WarPlans(
                 )
             ]
             await ctx.respond(components=error_components, ephemeral=True)
-
-
-loader.command(fwa)

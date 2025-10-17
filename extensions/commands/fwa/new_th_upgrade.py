@@ -4,7 +4,7 @@ import lightbulb
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
-from extensions.commands.fwa import loader, fwa
+from extensions.commands.fwa import fwa
 from .helpers import get_fwa_base_object
 from utils.emoji import emojis
 
@@ -253,6 +253,3 @@ async def fwa_new_th_upgrade_th_select(
         user_mentions=[user.id],
         role_mentions=True,
     )
-
-
-loader.command(fwa)

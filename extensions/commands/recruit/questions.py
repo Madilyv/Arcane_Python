@@ -34,13 +34,6 @@ from utils.emoji import emojis
 from utils.mongo import MongoClient
 from extensions.components import register_action
 
-loader = lightbulb.Loader()
-group = lightbulb.Group(
-    name="recruit",
-    description="Recruit questions description",
-    default_member_permissions=hikari.Permissions.MANAGE_GUILD
-)
-
 @recruit.register()
 class RecruitQuestions(
     lightbulb.SlashCommand,
@@ -1438,6 +1431,3 @@ async def recruit_questions_page(
         ]
 
     return components
-
-
-loader.command(recruit)
