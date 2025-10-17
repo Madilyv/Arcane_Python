@@ -460,6 +460,10 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
             # Points already deducted when auction ended normally
             # Placeholder points already released
 
+        # Fetch updated clan data to show remaining points in log
+        winning_clan_updated = await mongo_client.clans.find_one({"tag": winner_tag})
+        remaining_points = winning_clan_updated.get("points", 0) if winning_clan_updated else 0
+
         # Update recruit record
         await mongo_client.new_recruits.update_one(
             {"_id": recruit["_id"]},
@@ -504,7 +508,8 @@ async def process_with_bids_recruitment(recruit: Dict, bid_data: Dict, player_cl
                         Text(content=(
                             f"{db_clan.get('name', 'Unknown')} successfully recruited {recruit.get('player_name', 'Unknown')} "
                             f"through the bidding system.\n\n"
-                            f"**Winning Bid:** {winning_amount} points"
+                            f"**Winning Bid:** {winning_amount} points\n"
+                            f"• Clan now has **{remaining_points:.1f}** points remaining."
                         )),
                         Separator(divider=True),
                         Text(content="### Player Details"),
