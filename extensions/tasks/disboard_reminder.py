@@ -1,7 +1,7 @@
 # extensions/tasks/disboard_reminder.py
 """
-Scheduled task to send Disboard bump reminders every 12 hours.
-Checks if 12+ hours have passed since last bump and sends reminder to bump channel.
+Scheduled task to send Disboard bump reminders every 6 hours.
+Checks if 6+ hours have passed since last bump and sends reminder to bump channel.
 """
 
 import asyncio
@@ -32,7 +32,7 @@ loader = lightbulb.Loader()
 
 # Configuration
 CHECK_INTERVAL = 3600  # Check every hour (3600 seconds)
-BUMP_COOLDOWN_HOURS = 12  # Remind after 12 hours
+BUMP_COOLDOWN_HOURS = 6  # Remind after 6 hours
 
 # Global variables
 reminder_task = None
@@ -126,7 +126,7 @@ async def send_bump_reminder(first_time: bool = False):
         title = "## ⏰ Bump Reminder!"
         intro_text = (
             f"{role_mention}\n\n"
-            f"It's been 12 hours since our last bump! Help Kings Alliance grow by "
+            f"It's been 6 hours since our last bump! Help Kings Alliance grow by "
             f"bumping the server.\n\n"
             f"Use the command </bump:947088344167366698> to bump now!"
         )

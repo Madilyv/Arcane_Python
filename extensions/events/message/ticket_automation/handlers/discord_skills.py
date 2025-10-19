@@ -257,13 +257,12 @@ async def check_reaction_completion(channel_id: int, user_id: int, message_id: i
     if user_id == bot_instance.get_me().id:
         return
 
-    print(f"[DiscordSkills] Checking reaction: channel={channel_id}, user={user_id}, msg={message_id}")
-
-    # Get ticket state
+    # Get ticket state - check BEFORE logging to prevent spam
     ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
     if not ticket_state:
-        print(f"[DiscordSkills] No ticket state found")
         return
+
+    print(f"[DiscordSkills] Checking reaction: channel={channel_id}, user={user_id}, msg={message_id}")
 
     # Check if this is the Discord skills message
     skills_msg_id = ticket_state.get("step_data", {}).get("questionnaire", {}).get("discord_skills_message_id")
