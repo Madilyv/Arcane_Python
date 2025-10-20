@@ -108,6 +108,85 @@ PERMISSION_CATEGORIES = {
 }
 
 
+def build_basic_permissions_screen(stored_data: dict, action_id: str) -> List[Container]:
+    """
+    Build the first permission selection screen UI (Basic + Message permissions)
+
+    Args:
+        stored_data: MongoDB document containing category/role info
+        action_id: UUID for this interaction session
+
+    Returns:
+        List of Container components for the first screen
+    """
+    # Create permission selection UI
+    # Due to Discord's 25 option limit, we combine into one menu with most common permissions
+    combined_options = []
+
+    # Add Basic permissions
+    for perm_id, perm_label, _ in PERMISSION_OPTIONS_BASIC:
+        combined_options.append(
+            SelectOption(label=perm_label, value=perm_id, description="Basic")
+        )
+
+    # Add Message permissions (most commonly used)
+    for perm_id, perm_label, _ in PERMISSION_OPTIONS_MESSAGE:
+        combined_options.append(
+            SelectOption(label=perm_label, value=perm_id, description="Message")
+        )
+
+    # Limit to 25 options (Discord limit)
+    combined_options = combined_options[:25]
+
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=(
+                    f"## 🔐 Add Permissions\n\n"
+                    f"**Category:** {stored_data['category_name']}\n"
+                    f"**Role:** <@&{stored_data['role_id']}>\n"
+                    f"**Channels Affected:** {stored_data['child_channel_count'] + 1} (category + {stored_data['child_channel_count']} channels)\n\n"
+                    f"Select the permissions you want to ADD to this role:\n"
+                    f"*These permissions will be added without affecting other roles*"
+                )),
+                Separator(divider=True),
+                Text(content="### Select Permissions (Basic + Message)"),
+                ActionRow(
+                    components=[
+                        TextSelectMenu(
+                            custom_id=f"add_perms_select_basic:{action_id}",
+                            placeholder="Select permissions to add...",
+                            min_values=1,
+                            max_values=len(combined_options),
+                            options=combined_options
+                        )
+                    ]
+                ),
+                Separator(divider=True),
+                Text(content="*💡 Voice and thread permissions available on next screen*"),
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.PRIMARY,
+                            label="Show More Permissions",
+                            custom_id=f"add_perms_show_more:{action_id}"
+                        ),
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            label="Cancel",
+                            custom_id=f"add_perms_cancel:{action_id}"
+                        )
+                    ]
+                ),
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+
+    return components
+
+
 @utilities.register()
 class AddPerms(
     lightbulb.SlashCommand,
@@ -182,7 +261,7 @@ class AddPerms(
         action_id = str(uuid.uuid4())
 
         # Store data
-        await mongo.button_store.insert_one({
+        stored_data = {
             "_id": action_id,
             "category_id": str(category_id),
             "category_name": source_category.name,
@@ -190,73 +269,11 @@ class AddPerms(
             "role_name": role.name,
             "user_id": ctx.user.id,
             "child_channel_count": len(child_channels)
-        })
+        }
+        await mongo.button_store.insert_one(stored_data)
 
-        # Create permission selection UI
-        # Due to Discord's 25 option limit, we combine into one menu with most common permissions
-        combined_options = []
-
-        # Add Basic permissions
-        for perm_id, perm_label, _ in PERMISSION_OPTIONS_BASIC:
-            combined_options.append(
-                SelectOption(label=perm_label, value=perm_id, description="Basic")
-            )
-
-        # Add Message permissions (most commonly used)
-        for perm_id, perm_label, _ in PERMISSION_OPTIONS_MESSAGE:
-            combined_options.append(
-                SelectOption(label=perm_label, value=perm_id, description="Message")
-            )
-
-        # Limit to 25 options (Discord limit)
-        combined_options = combined_options[:25]
-
-        components = [
-            Container(
-                accent_color=BLUE_ACCENT,
-                components=[
-                    Text(content=(
-                        f"## 🔐 Add Permissions\n\n"
-                        f"**Category:** {source_category.name}\n"
-                        f"**Role:** {role.mention}\n"
-                        f"**Channels Affected:** {len(child_channels) + 1} (category + {len(child_channels)} channels)\n\n"
-                        f"Select the permissions you want to ADD to this role:\n"
-                        f"*These permissions will be added without affecting other roles*"
-                    )),
-                    Separator(divider=True),
-                    Text(content="### Select Permissions (Basic + Message)"),
-                    ActionRow(
-                        components=[
-                            TextSelectMenu(
-                                custom_id=f"add_perms_select_basic:{action_id}",
-                                placeholder="Select permissions to add...",
-                                min_values=1,
-                                max_values=len(combined_options),
-                                options=combined_options
-                            )
-                        ]
-                    ),
-                    Separator(divider=True),
-                    Text(content="*💡 Voice and thread permissions available on next screen*"),
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.PRIMARY,
-                                label="Show More Permissions",
-                                custom_id=f"add_perms_show_more:{action_id}"
-                            ),
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                label="Cancel",
-                                custom_id=f"add_perms_cancel:{action_id}"
-                            )
-                        ]
-                    ),
-                    Media(items=[MediaItem(media="assets/Blue_Footer.png")])
-                ]
-            )
-        ]
-
+        # Build and show the first permission selection screen
+        components = build_basic_permissions_screen(stored_data, action_id)
         await ctx.respond(components=components, flags=hikari.MessageFlag.EPHEMERAL)
 
 
@@ -634,7 +651,7 @@ async def update_channel_permissions(
     )
 
 
-@register_action("add_perms_back", ephemeral=True)
+@register_action("add_perms_back", no_return=True)
 @lightbulb.di.with_di
 async def go_back(
     ctx: lightbulb.components.MenuContext,
@@ -644,16 +661,19 @@ async def go_back(
     **kwargs
 ):
     """Go back to basic permissions screen"""
-    # Implementation would recreate the initial permission selection screen
-    components = [
-        Container(
-            accent_color=BLUE_ACCENT,
-            components=[
-                Text(content="## ℹ️ Going Back\n\nPlease re-run the command to start over."),
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
-            ]
-        )
-    ]
+    # Get stored data
+    stored_data = await mongo.button_store.find_one({"_id": action_id})
+    if not stored_data:
+        return await ctx.respond("❌ Session expired. Please run the command again.")
+
+    # Clear any previously selected additional permissions (keep basic perms if already selected)
+    await mongo.button_store.update_one(
+        {"_id": action_id},
+        {"$unset": {"selected_additional_perms": ""}}
+    )
+
+    # Recreate the first permission selection screen
+    components = build_basic_permissions_screen(stored_data, action_id)
     await ctx.respond(components=components, edit=True)
 
 
