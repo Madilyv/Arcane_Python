@@ -645,7 +645,16 @@ async def go_back(
 ):
     """Go back to basic permissions screen"""
     # Implementation would recreate the initial permission selection screen
-    await ctx.respond("Going back... (re-run command to start over)", edit=True)
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content="## ℹ️ Going Back\n\nPlease re-run the command to start over."),
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+    await ctx.respond(components=components, edit=True)
 
 
 @register_action("add_perms_cancel", no_return=True)
