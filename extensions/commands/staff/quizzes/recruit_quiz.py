@@ -780,12 +780,12 @@ HARD_MODE_QUESTIONS = [
 @staff.register()
 class StaffQuiz(
     lightbulb.SlashCommand,
-    name="staff-quiz",
+    name="recruit-quiz",
     description="Administer the recruitment staff quiz to a new recruit"
 ):
     user = lightbulb.user(
-        "recruit",
-        "Select the recruit to take the quiz"
+        "recruiter",
+        "Select the recruiter to take the quiz"
     )
 
     difficulty = lightbulb.string(
