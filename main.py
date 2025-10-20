@@ -90,6 +90,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.bidding_recovery",
         "extensions.events.message.ticket_account_collection",
         "extensions.commands.recruit",
+        "extensions.commands.staff",
         "extensions.commands.fwa",
         "extensions.commands.ticket",
         "extensions.commands.utilities",

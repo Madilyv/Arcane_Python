@@ -5,7 +5,7 @@ loader = lightbulb.Loader()
 staff = lightbulb.Group("staff", "All Staff-related commands")
 
 # Import subcommands
-from .quizzes import recruit_quiz
+from . import quizzes
 
 # Register the group
 loader.command(staff)
