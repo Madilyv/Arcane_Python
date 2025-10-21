@@ -23,3 +23,4 @@ class MongoClient(AsyncMongoClient):
         self.lazy_cwl_snapshots = self.__settings.get_collection("lazy_cwl_snapshots")
         self.disboard_bump = self.__settings.get_collection("disboard_bump")
         self.staff_quiz_results = self.__settings.get_collection("staff_quiz_results")
+        self.staff_mod_quiz_results = self.__settings.get_collection("staff_mod_quiz_results")
