@@ -87,9 +87,10 @@ async def check_and_send_reminder():
                 time_since_reminder = now - last_reminder_time
                 hours_since_reminder = time_since_reminder.total_seconds() / 3600
 
-                # Only send reminder if it's been at least 1 hour since last reminder
-                if hours_since_reminder < 1:
-                    print(f"[Disboard Reminder] Already sent reminder recently ({hours_since_reminder:.2f} hours ago)")
+                # Only send reminder if it's been at least BUMP_COOLDOWN_HOURS since last reminder
+                # This prevents spam - only ONE reminder per 6-hour cycle
+                if hours_since_reminder < BUMP_COOLDOWN_HOURS:
+                    print(f"[Disboard Reminder] Still in cooldown period ({hours_since_reminder:.2f} hours since last reminder)")
                     return
 
             print("[Disboard Reminder] Sending bump reminder")
@@ -111,6 +112,32 @@ async def check_and_send_reminder():
 
 async def send_bump_reminder(first_time: bool = False):
     """Send a bump reminder message to the bump channel"""
+
+    # Delete previous reminder message if it exists
+    try:
+        bump_data = await mongo_client.disboard_bump.find_one({})
+
+        if bump_data and bump_data.get("last_reminder_message_id"):
+            old_reminder_id = bump_data["last_reminder_message_id"]
+
+            try:
+                await bot_instance.rest.delete_message(
+                    BUMP_CHANNEL_ID,
+                    int(old_reminder_id)
+                )
+                print(f"[Disboard Reminder] Deleted old reminder message: {old_reminder_id}")
+            except hikari.NotFoundError:
+                print(f"[Disboard Reminder] Old reminder message already deleted or not found")
+            except Exception as e:
+                print(f"[Disboard Reminder] Error deleting old reminder message: {e}")
+
+            # Clear the old reminder message ID from database
+            await mongo_client.disboard_bump.update_one(
+                {},
+                {"$unset": {"last_reminder_message_id": ""}}
+            )
+    except Exception as e:
+        print(f"[Disboard Reminder] Error checking for old reminder message: {e}")
 
     # Build the reminder message
     role_mention = f"<@&{BUMP_ROLE_ID}>"
