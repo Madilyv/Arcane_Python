@@ -6,6 +6,7 @@ staff = lightbulb.Group("staff", "All Staff-related commands")
 
 # Import subcommands
 from . import quizzes
+from . import dashboard
 
 # Register the group
 loader.command(staff)

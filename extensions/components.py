@@ -23,7 +23,8 @@ def register_action(
         no_return: bool = False,
         is_modal: bool = False,
         ephemeral: bool = False,
-        opens_modal: bool = False,  # NEW PARAMETER
+        opens_modal: bool = False,
+        defer_update: bool = False,  # NEW PARAMETER - use DEFERRED_MESSAGE_UPDATE for component navigation
         group: str | None = None
 ):
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -49,10 +50,10 @@ def register_action(
 
         nonlocal name, group
         if group:
-            registered_functions[group] = (None, None, None, None, None, None, True)
+            registered_functions[group] = (None, None, None, None, None, None, None, True)
 
-        # Add opens_modal to the tuple
-        registered_functions[name] = (wrapper, user_only, no_return, is_modal, ephemeral, opens_modal, group)
+        # Add defer_update to the tuple
+        registered_functions[name] = (wrapper, user_only, no_return, is_modal, ephemeral, opens_modal, defer_update, group)
 
         return wrapper
 
@@ -75,13 +76,23 @@ async def component_handler(
     parts = ctx.interaction.custom_id.split(":", 1)
     command_name = parts[0]
     action_id = parts[1] if len(parts) > 1 else ""
-    
-    function, owner_only, no_return, is_modal, ephemeral, opens_modal, group = registered_functions.get(command_name)
+
+    # Get registered function with defensive check
+    result = registered_functions.get(command_name)
+    if result is None:
+        print(f"[Component Handler] WARNING: Unregistered component '{command_name}' triggered")
+        await ctx.respond(
+            "⚠️ This component is no longer valid. Please use the command again.",
+            ephemeral=True
+        )
+        return
+
+    function, owner_only, no_return, is_modal, ephemeral, opens_modal, defer_update, group = result
 
     if group:
         if not ctx.interaction.values:
             return
-        function, owner_only, no_return, is_modal, ephemeral, opens_modal, group = registered_functions.get(ctx.interaction.values[0])
+        function, owner_only, no_return, is_modal, ephemeral, opens_modal, defer_update, group = registered_functions.get(ctx.interaction.values[0])
 
     # Only defer if not a modal AND not opening a modal
     if not is_modal and not opens_modal:
@@ -95,7 +106,10 @@ async def component_handler(
     components = await function(**kw)
 
     if not no_return:
-        await ctx.respond(components=components, edit=True, ephemeral=ephemeral)
+        if is_modal:
+            await ctx.respond(components=components, ephemeral=ephemeral)
+        else:
+            await ctx.respond(components=components, edit=True, ephemeral=ephemeral)
 
 
 

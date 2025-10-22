@@ -140,6 +140,10 @@ async def handle_fwa_text_response(event: hikari.GuildMessageCreateEvent, ticket
     channel_id = event.channel_id
     user_id = event.author_id
 
+    # Check if message has text content
+    if not event.content:
+        return False
+
     # Route to appropriate handler based on current step
     content = event.content.strip().lower()
 
