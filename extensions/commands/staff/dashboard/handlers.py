@@ -1200,34 +1200,64 @@ async def handle_add_position_submit(
         print(f"  - Expected role ID: {role_id}")
         print(f"  - Member's role IDs: {member.role_ids}")
 
-    # Add to additional_positions array and log to position_history
-    await mongo.staff_logs.update_one(
-        {"user_id": user_id},
-        {
-            "$push": {
-                "additional_positions": {
-                    "team": new_team,
-                    "position": new_position,
-                    "assigned_date": datetime.now(timezone.utc),
-                    "assigned_by_id": str(ctx.user.id),
-                    "assigned_by_name": str(ctx.user),
-                    "notes": notes
+    # Check if primary position is empty - if so, set as primary instead of adding as additional
+    current_team = log.get('current_team', '')
+    current_position = log.get('current_position', '')
+
+    if not current_team or not current_position:
+        # Primary position is empty - set this as the primary position
+        await mongo.staff_logs.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "current_team": new_team,
+                    "current_position": new_position,
+                    "metadata.last_updated": datetime.now(timezone.utc)
                 },
-                "position_history": {
-                    "action": "added",
-                    "team": new_team,
-                    "position": new_position,
-                    "date": datetime.now(timezone.utc),
-                    "changed_by_id": str(ctx.user.id),
-                    "changed_by_name": str(ctx.user),
-                    "notes": notes
+                "$push": {
+                    "position_history": {
+                        "action": "assigned",
+                        "team": new_team,
+                        "position": new_position,
+                        "date": datetime.now(timezone.utc),
+                        "changed_by_id": str(ctx.user.id),
+                        "changed_by_name": str(ctx.user),
+                        "notes": notes
+                    }
                 }
-            },
-            "$set": {
-                "metadata.last_updated": datetime.now(timezone.utc)
             }
-        }
-    )
+        )
+        print(f"[Staff Dashboard] Set as primary position (no primary exists): {new_team} - {new_position}")
+    else:
+        # Primary position exists - add to additional_positions array
+        await mongo.staff_logs.update_one(
+            {"user_id": user_id},
+            {
+                "$push": {
+                    "additional_positions": {
+                        "team": new_team,
+                        "position": new_position,
+                        "assigned_date": datetime.now(timezone.utc),
+                        "assigned_by_id": str(ctx.user.id),
+                        "assigned_by_name": str(ctx.user),
+                        "notes": notes
+                    },
+                    "position_history": {
+                        "action": "added",
+                        "team": new_team,
+                        "position": new_position,
+                        "date": datetime.now(timezone.utc),
+                        "changed_by_id": str(ctx.user.id),
+                        "changed_by_name": str(ctx.user),
+                        "notes": notes
+                    }
+                },
+                "$set": {
+                    "metadata.last_updated": datetime.now(timezone.utc)
+                }
+            }
+        )
+        print(f"[Staff Dashboard] Added as additional position: {new_team} - {new_position}")
 
     # Update forum log
     await update_forum_log(bot, mongo, user_id, ctx.guild_id)
