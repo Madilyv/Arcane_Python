@@ -94,7 +94,6 @@ STAFF_ROLES = {
             {"name": "Family Lead", "role_id": 1345174718944383027},
             {"name": "Hand of the King", "role_id": 1350830317937627136},
             {"name": "High Steward", "role_id": 1345183673288228935},
-            {"name": "Admin Perms", "role_id": 1060318031575793694},
             {"name": "High Court", "role_id": 1344514130228285450},
         ]
     }

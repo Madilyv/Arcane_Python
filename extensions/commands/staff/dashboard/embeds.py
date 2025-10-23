@@ -87,6 +87,7 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
     team = log_data.get('current_team', 'N/A')
     position = log_data.get('current_position', 'N/A')
     position_history = log_data.get('position_history', [])
+    admin_privileges = log_data.get('admin_privileges', {})
     admin_changes = log_data.get('admin_changes', [])
     staff_cases = log_data.get('staff_cases', [])
     last_updated = log_data.get('metadata', {}).get('last_updated')
@@ -158,10 +159,10 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
 
     # Smart limiting: Only truncate if exceeds Discord's limit
     total_position_entries = len(position_history)
-    if len(position_text) > 3500 and total_position_entries > 15:
-        # Rebuild with only last 15 entries
-        position_text = build_position_text(reversed_history[:15])
-        position_text += f"\n-# ⚠️ Showing 15 of {total_position_entries} position changes (character limit reached)"
+    if len(position_text) > 1800 and total_position_entries > 10:
+        # Rebuild with only last 10 entries
+        position_text = build_position_text(reversed_history[:10])
+        position_text += f"\n-# ⚠️ Showing 10 of {total_position_entries} position changes (character limit reached)"
 
     # Build admin changes text with smart limiting
     def build_admin_text(changes):
@@ -182,10 +183,10 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
 
     # Smart limiting: Only truncate if exceeds Discord's limit
     total_admin_entries = len(admin_changes)
-    if len(admin_text) > 3500 and total_admin_entries > 10:
-        # Rebuild with only last 10 entries
-        admin_text = build_admin_text(reversed_admin[:10])
-        admin_text += f"\n-# ⚠️ Showing 10 of {total_admin_entries} admin changes (character limit reached)"
+    if len(admin_text) > 1200 and total_admin_entries > 6:
+        # Rebuild with only last 6 entries
+        admin_text = build_admin_text(reversed_admin[:6])
+        admin_text += f"\n-# ⚠️ Showing 6 of {total_admin_entries} admin changes (character limit reached)"
 
     # Build staff cases text (show only last 5 to prevent forum post from getting too long)
     case_lines = []
@@ -245,6 +246,19 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
         Text(content=f"**Join Date:** {format_discord_timestamp(join_date, 'D')}"),
         Text(content=f"**Hire Date:** {format_discord_timestamp(hire_date, 'D')}"),
         Text(content=f"**Employment Status:** {get_status_emoji(status)} {status}"),
+    ]
+
+    # Conditionally add admin privileges if active
+    if admin_privileges.get('has_admin', False):
+        granted_date = admin_privileges.get('granted_date')
+        granted_by_name = admin_privileges.get('granted_by_name', 'Unknown')
+        date_str = format_discord_timestamp(granted_date, 'd') if granted_date else 'Unknown'
+        component_list.append(
+            Text(content=f"**🔑 Admin Privileges:** ✅ Active • Granted: {date_str} (by {granted_by_name})")
+        )
+
+    # Continue with current positions
+    component_list.extend([
         Separator(divider=False, spacing=hikari.SpacingType.SMALL),
         Text(content="**Current Positions:**"),
         *position_components,
@@ -254,7 +268,7 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
         # Position Changes
         Text(content="### 📋 Position Changes"),
         Text(content=position_text),
-    ]
+    ])
 
     # Conditionally add admin changes section if any
     if admin_changes:
@@ -271,6 +285,106 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
     # Add footer
     component_list.append(Separator(divider=False, spacing=hikari.SpacingType.SMALL))
     component_list.append(Text(content=f"-# Last Update • {format_discord_timestamp(last_updated, 'F')}"))
+
+    # Calculate total text size from all Text components
+    def calculate_total_text_size(comp_list):
+        """Calculate total displayable text size from all Text components"""
+        total = 0
+        for comp in comp_list:
+            if isinstance(comp, Text):
+                total += len(comp.content)
+            elif hasattr(comp, 'components'):  # Section with nested components
+                for nested in comp.components:
+                    if isinstance(nested, Text):
+                        total += len(nested.content)
+        return total
+
+    total_size = calculate_total_text_size(component_list)
+
+    # Progressive trimming if total exceeds safe limit (3800 chars, leaving 200 buffer)
+    if total_size > 3800:
+        print(f"[Staff Dashboard] Forum log too large ({total_size} chars), applying progressive trimming...")
+
+        # Level 1: Reduce position history to 5 entries
+        if total_position_entries > 5:
+            position_text = build_position_text(reversed_history[:5])
+            position_text += f"\n-# ⚠️ Showing 5 of {total_position_entries} position changes (character limit reached)"
+
+        # Level 2: Reduce admin changes to 3 entries
+        if total_admin_entries > 3:
+            admin_text = build_admin_text(reversed_admin[:3])
+            admin_text += f"\n-# ⚠️ Showing 3 of {total_admin_entries} admin changes (character limit reached)"
+
+        # Level 3: Reduce staff cases to 3 entries
+        if total_cases > 3:
+            case_lines = []
+            recent_cases = list(reversed(staff_cases))[:3]
+            for case in recent_cases:
+                case_type = case.get('type', 'Unknown')
+                case_id = case.get('case_id', 0)
+                date_str = format_discord_timestamp(case.get('date'), "D")
+                reason = case.get('reason', 'No reason provided')
+                issued_by = case.get('issued_by_name', 'Unknown')
+                case_emoji = case_emojis.get(case_type, "📋")
+                case_lines.append(f"{case_emoji} {case_type} – Case ID: {case_id}")
+                case_lines.append(f"   └ Issued by: {issued_by} • {date_str}")
+                case_lines.append(f"   └ Reason: {reason}")
+                case_lines.append("")
+            cases_text = "\n".join(case_lines) if case_lines else ""
+            cases_text += f"\n-# Showing 3 of {total_cases} cases - View full history in staff dashboard"
+
+        # Rebuild component_list with trimmed sections
+        component_list = [
+            Section(
+                accessory=Thumbnail(media=user.avatar_url or user.default_avatar_url),
+                components=[
+                    Text(content=f"## {username} Staff Log"),
+                    Text(content=f"**User:** <@{user.id}>"),
+                ]
+            ),
+            Separator(divider=True),
+            Text(content=f"**Join Date:** {format_discord_timestamp(join_date, 'D')}"),
+            Text(content=f"**Hire Date:** {format_discord_timestamp(hire_date, 'D')}"),
+            Text(content=f"**Employment Status:** {get_status_emoji(status)} {status}"),
+        ]
+
+        # Re-add admin privileges if active
+        if admin_privileges.get('has_admin', False):
+            granted_date = admin_privileges.get('granted_date')
+            granted_by_name = admin_privileges.get('granted_by_name', 'Unknown')
+            date_str = format_discord_timestamp(granted_date, 'd') if granted_date else 'Unknown'
+            component_list.append(
+                Text(content=f"**🔑 Admin Privileges:** ✅ Active • Granted: {date_str} (by {granted_by_name})")
+            )
+
+        # Re-add current positions and remaining sections
+        component_list.extend([
+            Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+            Text(content="**Current Positions:**"),
+            *position_components,
+            Separator(divider=True),
+            Text(content="### 📋 Position Changes"),
+            Text(content=position_text),
+        ])
+
+        # Re-add admin changes if any
+        if admin_changes:
+            component_list.append(Separator(divider=True))
+            component_list.append(Text(content="### 🔑 Admin Changes"))
+            component_list.append(Text(content=admin_text))
+
+        # Re-add staff cases if any
+        if staff_cases:
+            component_list.append(Separator(divider=True))
+            component_list.append(Text(content="### ⚠️ Staff Cases"))
+            component_list.append(Text(content=cases_text))
+
+        # Re-add footer
+        component_list.append(Separator(divider=False, spacing=hikari.SpacingType.SMALL))
+        component_list.append(Text(content=f"-# Last Update • {format_discord_timestamp(last_updated, 'F')}"))
+
+        new_total_size = calculate_total_text_size(component_list)
+        print(f"[Staff Dashboard] Trimmed forum log to {new_total_size} chars")
 
     # Build final Container with complete component list
     components = [
@@ -445,6 +559,7 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
     team = log.get('current_team', 'N/A')
     position = log.get('current_position', 'N/A')
     position_history = log.get('position_history', [])
+    admin_privileges = log.get('admin_privileges', {})
     admin_changes = log.get('admin_changes', [])
     staff_cases = log.get('staff_cases', [])
     thread_id = log.get('forum_thread_id')
@@ -477,19 +592,29 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
         pos_date_str = f" • Assigned: {format_discord_timestamp(pos_date, 'd')}" if pos_date else ""
         position_components.append(Text(content=f"• {pos_team} - {pos_position}{pos_date_str}"))
 
-    components = [
-        Container(
-            accent_color=accent_color,
-            components=[
-                Section(
-                    accessory=Thumbnail(media=user.avatar_url or user.default_avatar_url),
-                    components=[Text(content=f"## 👤 {username} - Staff Log")]
-                ),
-                Separator(divider=True),
+    # Build component list FIRST (before Container instantiation)
+    component_list = [
+        Section(
+            accessory=Thumbnail(media=user.avatar_url or user.default_avatar_url),
+            components=[Text(content=f"## 👤 {username} - Staff Log")]
+        ),
+        Separator(divider=True),
 
-                # Basic info (consolidated)
-                Text(content=f"**📅 Join Date:** {format_discord_timestamp(join_date, 'D')}\n**📅 Hire Date:** {format_discord_timestamp(hire_date, 'D')}\n**📊 Status:** {get_status_emoji(status)} {status}"),
+        # Basic info (consolidated)
+        Text(content=f"**📅 Join Date:** {format_discord_timestamp(join_date, 'D')}\n**📅 Hire Date:** {format_discord_timestamp(hire_date, 'D')}\n**📊 Status:** {get_status_emoji(status)} {status}"),
+    ]
 
+    # Conditionally add admin privileges if active
+    if admin_privileges.get('has_admin', False):
+        granted_date = admin_privileges.get('granted_date')
+        granted_by_name = admin_privileges.get('granted_by_name', 'Unknown')
+        date_str = format_discord_timestamp(granted_date, 'd') if granted_date else 'Unknown'
+        component_list.append(
+            Text(content=f"**🔑 Admin Privileges:** ✅ Active • Granted: {date_str} (by {granted_by_name})")
+        )
+
+    # Continue adding rest of components
+    component_list.extend([
                 Separator(divider=True),
 
                 # Current positions (primary + additional)
@@ -631,7 +756,13 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
                 ]),
 
                 Media(items=[MediaItem(media="assets/Blue_Footer.png")])
-            ]
+    ])
+
+    # Wrap component_list in Container
+    components = [
+        Container(
+            accent_color=accent_color,
+            components=component_list
         )
     ]
 
@@ -1332,6 +1463,73 @@ def build_case_type_selection(guild_id: int, user_id: str, username: str) -> lis
                         custom_id=f"staff_dash_select_case_type:{user_id}",
                         placeholder="Choose case type...",
                         options=case_type_options
+                    )
+                ]),
+
+                Separator(divider=True),
+
+                ActionRow(components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        label="Back",
+                        custom_id=f"staff_dash_view_record:{user_id}",
+                        emoji="◀"
+                    )
+                ]),
+
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+
+    return components
+
+
+def build_admin_change_selection(guild_id: int, user_id: str, username: str, log: dict) -> list:
+    """
+    Builds the admin change selection view
+    Shows current admin status and Add/Remove buttons (one disabled based on status)
+    """
+    # Get current admin status
+    admin_privileges = log.get('admin_privileges', {})
+    has_admin = admin_privileges.get('has_admin', False)
+
+    # Build status text
+    if has_admin:
+        granted_date = admin_privileges.get('granted_date')
+        granted_by_name = admin_privileges.get('granted_by_name', 'Unknown')
+        date_str = format_discord_timestamp(granted_date, 'd') if granted_date else 'Unknown'
+        status_text = f"**Current Status:** ✅ Has Admin Privileges\n**Granted:** {date_str} (by {granted_by_name})"
+    else:
+        status_text = "**Current Status:** ❌ No Admin Privileges"
+
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=f"## 🔑 Admin Privileges for {username}"),
+                Separator(divider=True),
+
+                Text(content=status_text),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+
+                Text(content="**Select action:**"),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+
+                ActionRow(components=[
+                    Button(
+                        style=hikari.ButtonStyle.SUCCESS,
+                        label="Add Admin Privileges",
+                        custom_id=f"staff_dash_admin_add:{user_id}",
+                        emoji="✅",
+                        is_disabled=has_admin  # Disable if already has admin
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.DANGER,
+                        label="Remove Admin Privileges",
+                        custom_id=f"staff_dash_admin_remove:{user_id}",
+                        emoji="❌",
+                        is_disabled=not has_admin  # Disable if no admin
                     )
                 ]),
 

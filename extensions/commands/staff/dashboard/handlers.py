@@ -30,11 +30,11 @@ from .utils import (
     generate_next_case_id,
     format_discord_timestamp
 )
-from .embeds import build_main_dashboard, build_staff_record_view, build_filter_view, build_user_selection_for_creation, build_team_position_selection, build_staff_select_menu, build_update_position_selection, build_add_position_selection, build_remove_position_selection, build_which_position_to_update_selection, build_case_type_selection, build_remove_case_selection, build_view_cases_menu, build_all_cases_view, build_user_cases_view, build_edit_dates_selection
+from .embeds import build_main_dashboard, build_staff_record_view, build_filter_view, build_user_selection_for_creation, build_team_position_selection, build_staff_select_menu, build_update_position_selection, build_add_position_selection, build_remove_position_selection, build_which_position_to_update_selection, build_case_type_selection, build_remove_case_selection, build_view_cases_menu, build_all_cases_view, build_user_cases_view, build_edit_dates_selection, build_admin_change_selection
 from .modals import (
     build_create_log_modal,
     build_position_modal,
-    build_admin_modal,
+    build_admin_reason_modal,
     build_case_modal,
     build_status_modal,
     build_delete_confirmation_modal,
@@ -1571,17 +1571,64 @@ async def handle_position_date_submit(
 
 # ========== ADMIN CHANGE ==========
 
-@register_action("staff_dash_admin", no_return=True, opens_modal=True, ephemeral=True)
+@register_action("staff_dash_admin", no_return=True, defer_update=True, ephemeral=True)
 @lightbulb.di.with_di
 async def handle_admin_button(
     action_id: str,
     ctx: lightbulb.components.MenuContext,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
-    """Handle 'Admin Change' button - opens modal"""
+    """Handle 'Admin Change' button - shows Add/Remove selection view"""
     user_id = action_id
 
-    modal = build_admin_modal(user_id)
+    # Get user's log
+    log = await get_staff_log(mongo, user_id)
+    if not log:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("Staff log not found.")
+        )
+        return
+
+    # Get user
+    user = await bot.rest.fetch_user(int(user_id))
+
+    # Build admin change selection view
+    components = build_admin_change_selection(ctx.guild_id, user_id, user.username, log)
+    await ctx.interaction.edit_initial_response(components=components)
+    print(f"[Staff Dashboard] Admin change selection opened for {user.username}")
+
+
+@register_action("staff_dash_admin_add", no_return=True, opens_modal=True, ephemeral=True)
+@lightbulb.di.with_di
+async def handle_admin_add_button(
+    action_id: str,
+    ctx: lightbulb.components.MenuContext,
+    **kwargs
+):
+    """Handle 'Add Admin Privileges' button - opens modal for reason"""
+    user_id = action_id
+
+    modal = build_admin_reason_modal(user_id, "Add")
+    await ctx.interaction.create_modal_response(
+        title=modal.title,
+        custom_id=modal.custom_id,
+        components=modal.components
+    )
+
+
+@register_action("staff_dash_admin_remove", no_return=True, opens_modal=True, ephemeral=True)
+@lightbulb.di.with_di
+async def handle_admin_remove_button(
+    action_id: str,
+    ctx: lightbulb.components.MenuContext,
+    **kwargs
+):
+    """Handle 'Remove Admin Privileges' button - opens modal for reason"""
+    user_id = action_id
+
+    modal = build_admin_reason_modal(user_id, "Remove")
     await ctx.interaction.create_modal_response(
         title=modal.title,
         custom_id=modal.custom_id,
@@ -1604,36 +1651,58 @@ async def handle_admin_submit(
         hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
     )
 
-    user_id = action_id
+    # Parse action_id: format is "user_id:action"
+    parts = action_id.split(":")
+    user_id = parts[0]
+    action = parts[1]  # "Add" or "Remove"
 
-    # Get values from modal
-    action = ctx.interaction.components[0].components[0].value
-    reason = ctx.interaction.components[1].components[0].value
+    # Get reason from modal (only field)
+    reason = ctx.interaction.components[0].components[0].value
 
     # Validate action
     if action not in ["Add", "Remove"]:
         await ctx.interaction.edit_initial_response(
-            components=build_error_message("Action must be 'Add' or 'Remove'")
+            components=build_error_message("Invalid action")
         )
         return
+
+    # Prepare database updates
+    current_time = datetime.now(timezone.utc)
+    update_operations = {
+        "$set": {
+            "metadata.last_updated": current_time
+        },
+        "$push": {
+            "admin_changes": {
+                "action": action,
+                "date": current_time,
+                "reason": reason,
+                "changed_by_id": str(ctx.user.id),
+                "changed_by_name": str(ctx.user)
+            }
+        }
+    }
+
+    # Update admin_privileges based on action
+    if action == "Add":
+        update_operations["$set"]["admin_privileges"] = {
+            "has_admin": True,
+            "granted_date": current_time,
+            "granted_by_id": str(ctx.user.id),
+            "granted_by_name": str(ctx.user)
+        }
+    else:  # Remove
+        update_operations["$set"]["admin_privileges"] = {
+            "has_admin": False,
+            "granted_date": None,
+            "granted_by_id": None,
+            "granted_by_name": None
+        }
 
     # Update database
     await mongo.staff_logs.update_one(
         {"user_id": user_id},
-        {
-            "$set": {
-                "metadata.last_updated": datetime.now(timezone.utc)
-            },
-            "$push": {
-                "admin_changes": {
-                    "action": action,
-                    "date": datetime.now(timezone.utc),
-                    "reason": reason,
-                    "changed_by_id": str(ctx.user.id),
-                    "changed_by_name": str(ctx.user)
-                }
-            }
-        }
+        update_operations
     )
 
     # Update forum log

@@ -79,26 +79,18 @@ def build_position_modal(user_id: str, current_team: str, current_position: str)
     )
 
 
-def build_admin_modal(user_id: str) -> hikari.impl.InteractionModalBuilder:
+def build_admin_reason_modal(user_id: str, action: str) -> hikari.impl.InteractionModalBuilder:
     """
-    Modal for tracking admin changes
+    Modal for tracking admin changes (reason only, action determined by button)
+    action: "Add" or "Remove"
     """
+    title = f"{action} Admin Privileges"
+    placeholder_text = f"Reason for {action.lower()}ing admin privileges..."
+
     return (
         hikari.impl.InteractionModalBuilder(
-            title="Admin Rights Change",
-            custom_id=f"staff_dash_admin_submit:{user_id}",
-        )
-        .add_component(
-            hikari.impl.MessageActionRowBuilder()
-            .add_component(
-                hikari.impl.TextInputBuilder(
-                    custom_id="action",
-                    label="Action (Add or Remove)",
-                    style=hikari.TextInputStyle.SHORT,
-                    placeholder="Add",
-                    required=True,
-                )
-            )
+            title=title,
+            custom_id=f"staff_dash_admin_submit:{user_id}:{action}",
         )
         .add_component(
             hikari.impl.MessageActionRowBuilder()
@@ -107,7 +99,7 @@ def build_admin_modal(user_id: str) -> hikari.impl.InteractionModalBuilder:
                     custom_id="reason",
                     label="Reason",
                     style=hikari.TextInputStyle.PARAGRAPH,
-                    placeholder="Reason for admin change...",
+                    placeholder=placeholder_text,
                     required=True,
                 )
             )
