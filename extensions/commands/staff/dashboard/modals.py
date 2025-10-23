@@ -224,3 +224,81 @@ def build_delete_confirmation_modal(user_id: str) -> hikari.impl.InteractionModa
             )
         )
     )
+
+
+def build_edit_hire_date_modal(user_id: str, current_hire_date_str: str) -> hikari.impl.InteractionModalBuilder:
+    """
+    Modal for editing hire date only
+    """
+    return (
+        hikari.impl.InteractionModalBuilder(
+            title="Edit Hire Date",
+            custom_id=f"staff_dash_edit_hire_date_submit:{user_id}",
+        )
+        .add_component(
+            hikari.impl.MessageActionRowBuilder()
+            .add_component(
+                hikari.impl.TextInputBuilder(
+                    custom_id="hire_date",
+                    label="Hire Date (YYYY-MM-DD)",
+                    style=hikari.TextInputStyle.SHORT,
+                    value=current_hire_date_str,
+                    placeholder="2024-01-15",
+                    required=True,
+                )
+            )
+        )
+    )
+
+
+def build_edit_join_date_modal(user_id: str, current_join_date_str: str) -> hikari.impl.InteractionModalBuilder:
+    """
+    Modal for editing join date only
+    """
+    return (
+        hikari.impl.InteractionModalBuilder(
+            title="Edit Server Join Date",
+            custom_id=f"staff_dash_edit_join_date_submit:{user_id}",
+        )
+        .add_component(
+            hikari.impl.MessageActionRowBuilder()
+            .add_component(
+                hikari.impl.TextInputBuilder(
+                    custom_id="join_date",
+                    label="Server Join Date (YYYY-MM-DD)",
+                    style=hikari.TextInputStyle.SHORT,
+                    value=current_join_date_str,
+                    placeholder="2024-01-15",
+                    required=True,
+                )
+            )
+        )
+    )
+
+
+def build_edit_position_date_modal(user_id: str, position_identifier: str, current_date_str: str, position_display: str) -> hikari.impl.InteractionModalBuilder:
+    """
+    Modal for editing a position's assigned date
+    position_identifier: "primary" or "secondary_X"
+    current_date_str: Current date in YYYY-MM-DD format
+    position_display: Display name like "Community - Moderator"
+    """
+    return (
+        hikari.impl.InteractionModalBuilder(
+            title=f"Edit Date: {position_display[:40]}",  # Truncate if too long
+            custom_id=f"staff_dash_edit_position_date_submit:{user_id}:{position_identifier}",
+        )
+        .add_component(
+            hikari.impl.MessageActionRowBuilder()
+            .add_component(
+                hikari.impl.TextInputBuilder(
+                    custom_id="position_date",
+                    label="Position Assigned Date (YYYY-MM-DD)",
+                    style=hikari.TextInputStyle.SHORT,
+                    value=current_date_str,
+                    placeholder="2024-01-15",
+                    required=True,
+                )
+            )
+        )
+    )

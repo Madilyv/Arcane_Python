@@ -493,9 +493,9 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
                     ),
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
-                        label="Edit Info",
-                        custom_id=f"staff_dash_edit:{user_id}",
-                        emoji="📝"
+                        label="Edit Dates",
+                        custom_id=f"staff_dash_edit_dates:{user_id}",
+                        emoji="📅"
                     )
                 ]),
 
@@ -1510,6 +1510,221 @@ def build_filter_view(guild_id: int, filter_type: str, filtered_logs: list, all_
                         label="Close",
                         custom_id="staff_dash_back",
                         emoji="✖️"
+                    )
+                ]),
+
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+
+    return components
+
+
+def build_edit_dates_selection(guild_id: int, user_id: str, log: dict) -> list:
+    """
+    Builds the date editing selection view
+    Shows options to edit hire date, join date, or position dates
+    """
+    username = log.get('username', 'Unknown')
+    hire_date = log.get('hire_date')
+    join_date = log.get('join_date')
+    current_team = log.get('current_team', 'Unknown')
+    current_position = log.get('current_position', 'Unknown')
+    additional_positions = log.get('additional_positions', [])
+    position_history = log.get('position_history', [])
+
+    # Find the date for the primary position (most recent entry with matching team+position)
+    primary_date = None
+    for entry in reversed(position_history):
+        if entry.get('team') == current_team and entry.get('position') == current_position:
+            primary_date = entry.get('date')
+            break
+
+    # Build position options for dropdown
+    position_options = []
+
+    # Add primary position
+    position_options.append(
+        hikari.impl.SelectOptionBuilder(
+            label=f"{current_team} - {current_position}",
+            value="primary",
+            description=f"Assigned: {format_discord_timestamp(primary_date, 'd') if primary_date else 'Unknown'}",
+            emoji="⭐"
+        )
+    )
+
+    # Add secondary positions
+    for idx, pos in enumerate(additional_positions):
+        pos_team = pos.get('team', 'N/A')
+        pos_position = pos.get('position', 'N/A')
+
+        # Find the date for this secondary position
+        pos_date = None
+        for entry in reversed(position_history):
+            if entry.get('team') == pos_team and entry.get('position') == pos_position:
+                pos_date = entry.get('date')
+                break
+
+        position_options.append(
+            hikari.impl.SelectOptionBuilder(
+                label=f"{pos_team} - {pos_position}",
+                value=f"secondary_{idx}",
+                description=f"Assigned: {format_discord_timestamp(pos_date, 'd') if pos_date else 'Unknown'}",
+                emoji="📋"
+            )
+        )
+
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=f"## 📅 Edit Dates for {username}"),
+                Separator(divider=True),
+
+                Text(content="**Choose what to edit:**"),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+
+                # Edit basic dates section
+                Text(content="**Staff Record Dates:**"),
+                Text(content=f"• **Hire Date:** {format_discord_timestamp(hire_date, 'F') if hire_date else 'Unknown'}"),
+                Text(content=f"• **Join Date:** {format_discord_timestamp(join_date, 'F') if join_date else 'Unknown'}"),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+
+                ActionRow(components=[
+                    Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        label="Edit Hire Date",
+                        custom_id=f"staff_dash_edit_hire_date:{user_id}",
+                        emoji="📅"
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        label="Edit Join Date",
+                        custom_id=f"staff_dash_edit_join_date:{user_id}",
+                        emoji="📅"
+                    )
+                ]),
+
+                Separator(divider=True),
+
+                # Edit position dates section
+                Text(content="**Position Assignment Dates:**"),
+                Text(content="Select a position to edit its assigned date:"),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+
+                ActionRow(components=[
+                    TextSelectMenu(
+                        custom_id=f"staff_dash_select_position_date:{user_id}",
+                        placeholder="Choose position to edit date...",
+                        options=position_options
+                    )
+                ]),
+
+                Separator(divider=True),
+
+                Text(content="-# 💡 Useful for updating dates when audit logs don't have historical data."),
+
+                ActionRow(components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        label="Back",
+                        custom_id=f"staff_dash_view_record:{user_id}",
+                        emoji="◀"
+                    )
+                ]),
+
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+
+    return components
+
+
+def build_edit_position_date_selection(guild_id: int, user_id: str, log: dict) -> list:
+    """
+    Builds the position selection view for editing position dates
+    Shows current positions (primary + additional) with their assigned dates
+    """
+    current_team = log.get('current_team', 'Unknown')
+    current_position = log.get('current_position', 'Unknown')
+    additional_positions = log.get('additional_positions', [])
+    position_history = log.get('position_history', [])
+    username = log.get('username', 'Unknown')
+
+    # Find the date for the primary position (most recent entry with matching team+position)
+    primary_date = None
+    for entry in reversed(position_history):
+        if entry.get('team') == current_team and entry.get('position') == current_position:
+            primary_date = entry.get('date')
+            break
+
+    # Build position options for dropdown
+    position_options = []
+
+    # Add primary position
+    date_str = format_discord_timestamp(primary_date, "F") if primary_date else "Unknown"
+    position_options.append(
+        hikari.impl.SelectOptionBuilder(
+            label=f"{current_team} - {current_position}",
+            value="primary",
+            description=f"Assigned: {format_discord_timestamp(primary_date, 'd') if primary_date else 'Unknown'}",
+            emoji="⭐"
+        )
+    )
+
+    # Add secondary positions
+    for idx, pos in enumerate(additional_positions):
+        pos_team = pos.get('team', 'N/A')
+        pos_position = pos.get('position', 'N/A')
+
+        # Find the date for this secondary position
+        pos_date = None
+        for entry in reversed(position_history):
+            if entry.get('team') == pos_team and entry.get('position') == pos_position:
+                pos_date = entry.get('date')
+                break
+
+        position_options.append(
+            hikari.impl.SelectOptionBuilder(
+                label=f"{pos_team} - {pos_position}",
+                value=f"secondary_{idx}",
+                description=f"Assigned: {format_discord_timestamp(pos_date, 'd') if pos_date else 'Unknown'}",
+                emoji="📋"
+            )
+        )
+
+    # Show position selection
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=f"## 📅 Edit Position Date for {username}"),
+                Separator(divider=True),
+
+                Text(content="**Select which position date to edit:**"),
+                Text(content="Choose the position whose assignment date you want to update."),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+
+                ActionRow(components=[
+                    TextSelectMenu(
+                        custom_id=f"staff_dash_select_position_date:{user_id}",
+                        placeholder="Choose position to edit date...",
+                        options=position_options
+                    )
+                ]),
+
+                Separator(divider=True),
+
+                Text(content="-# 💡 This is useful for updating dates when audit logs don't have historical data."),
+
+                ActionRow(components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        label="Back",
+                        custom_id=f"staff_dash_view_record:{user_id}",
+                        emoji="◀"
                     )
                 ]),
 

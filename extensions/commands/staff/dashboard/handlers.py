@@ -30,15 +30,17 @@ from .utils import (
     generate_next_case_id,
     format_discord_timestamp
 )
-from .embeds import build_main_dashboard, build_staff_record_view, build_filter_view, build_user_selection_for_creation, build_team_position_selection, build_staff_select_menu, build_update_position_selection, build_add_position_selection, build_remove_position_selection, build_which_position_to_update_selection, build_case_type_selection, build_remove_case_selection, build_view_cases_menu, build_all_cases_view
+from .embeds import build_main_dashboard, build_staff_record_view, build_filter_view, build_user_selection_for_creation, build_team_position_selection, build_staff_select_menu, build_update_position_selection, build_add_position_selection, build_remove_position_selection, build_which_position_to_update_selection, build_case_type_selection, build_remove_case_selection, build_view_cases_menu, build_all_cases_view, build_edit_dates_selection
 from .modals import (
     build_create_log_modal,
     build_position_modal,
     build_admin_modal,
     build_case_modal,
     build_status_modal,
-    build_edit_modal,
-    build_delete_confirmation_modal
+    build_delete_confirmation_modal,
+    build_edit_hire_date_modal,
+    build_edit_join_date_modal,
+    build_edit_position_date_modal
 )
 
 print("[Staff Dashboard Handlers] Module loaded - registering actions...")
@@ -1378,6 +1380,195 @@ async def handle_remove_position_submit(
     print(f"[Staff Dashboard] Position removal complete for {user.username}")
 
 
+# ========== EDIT POSITION DATE ==========
+
+@register_action("staff_dash_select_position_date", ephemeral=True, no_return=True, opens_modal=True)
+@lightbulb.di.with_di
+async def handle_position_date_select(
+    action_id: str,
+    ctx: lightbulb.components.MenuContext,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+):
+    """Handle position selection from dropdown - opens modal with current date"""
+    user_id = action_id
+    position_identifier = ctx.interaction.values[0]  # "primary" or "secondary_X"
+
+    # Get staff log
+    log = await get_staff_log(mongo, user_id)
+    if not log:
+        await ctx.respond(
+            components=build_error_message("Staff log not found."),
+            flags=hikari.MessageFlag.EPHEMERAL
+        )
+        return
+
+    current_team = log.get('current_team')
+    current_position = log.get('current_position')
+    additional_positions = log.get('additional_positions', [])
+    position_history = log.get('position_history', [])
+
+    # Determine which position was selected
+    if position_identifier == "primary":
+        target_team = current_team
+        target_position = current_position
+        position_display = f"{target_team} - {target_position}"
+    else:
+        # Parse "secondary_X"
+        idx = int(position_identifier.split('_')[1])
+        if idx >= len(additional_positions):
+            await ctx.respond(
+                components=build_error_message("Invalid position selection."),
+                flags=hikari.MessageFlag.EPHEMERAL
+            )
+            return
+        target_team = additional_positions[idx].get('team')
+        target_position = additional_positions[idx].get('position')
+        position_display = f"{target_team} - {target_position}"
+
+    # Find current date for this position from position_history
+    current_date = None
+    for entry in reversed(position_history):
+        if entry.get('team') == target_team and entry.get('position') == target_position:
+            current_date = entry.get('date')
+            break
+
+    # Format date as string
+    if current_date:
+        if isinstance(current_date, str):
+            current_date_str = current_date[:10]  # Take YYYY-MM-DD part
+        else:
+            current_date_str = current_date.strftime('%Y-%m-%d')
+    else:
+        current_date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+    # Build and show modal
+    modal = build_edit_position_date_modal(user_id, position_identifier, current_date_str, position_display)
+    await ctx.interaction.create_modal_response(
+        title=modal.title,
+        custom_id=modal.custom_id,
+        components=modal.components
+    )
+
+
+@register_action("staff_dash_edit_position_date_submit", ephemeral=True, is_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def handle_position_date_submit(
+    action_id: str,
+    ctx: lightbulb.components.MenuContext,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **kwargs
+):
+    """Process position date update from modal"""
+    # Defer immediately to prevent timeout
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+
+    # Parse action_id format: user_id:position_identifier
+    parts = action_id.split(':', 2)
+    if len(parts) < 2:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("Missing position data.")
+        )
+        return
+
+    user_id = parts[0]
+    position_identifier = parts[1]
+
+    # Get new date from modal
+    new_date_str = ctx.interaction.components[0].components[0].value.strip()
+
+    # Parse date
+    try:
+        new_date = datetime.strptime(new_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+    except ValueError:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("Invalid date format. Please use YYYY-MM-DD.")
+        )
+        return
+
+    # Get current log
+    log = await get_staff_log(mongo, user_id)
+    if not log:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("Staff log not found.")
+        )
+        return
+
+    current_team = log.get('current_team')
+    current_position = log.get('current_position')
+    additional_positions = log.get('additional_positions', [])
+    position_history = log.get('position_history', [])
+
+    # Determine which position to update
+    if position_identifier == "primary":
+        target_team = current_team
+        target_position = current_position
+    else:
+        # Parse "secondary_X"
+        idx = int(position_identifier.split('_')[1])
+        if idx >= len(additional_positions):
+            await ctx.interaction.edit_initial_response(
+                components=build_error_message("Invalid position selection.")
+            )
+            return
+        target_team = additional_positions[idx].get('team')
+        target_position = additional_positions[idx].get('position')
+
+    # Find the position_history entry to update (most recent one with matching team+position)
+    history_index_to_update = None
+    for idx, entry in enumerate(reversed(position_history)):
+        if entry.get('team') == target_team and entry.get('position') == target_position:
+            # Found the entry - convert to actual index in original array
+            history_index_to_update = len(position_history) - 1 - idx
+            break
+
+    if history_index_to_update is None:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message(f"No history entry found for {target_team} - {target_position}.")
+        )
+        return
+
+    # Update the date in the position_history entry
+    await mongo.staff_logs.update_one(
+        {"user_id": user_id},
+        {
+            "$set": {
+                f"position_history.{history_index_to_update}.date": new_date,
+                "metadata.last_updated": datetime.now(timezone.utc)
+            }
+        }
+    )
+
+    # If this is the primary position's initial hire date (oldest entry), also update top-level hire_date
+    # Check if this is the first (oldest) position_history entry
+    if history_index_to_update == 0:
+        await mongo.staff_logs.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "hire_date": new_date
+                }
+            }
+        )
+        print(f"[Staff Dashboard] Updated hire_date for user {user_id} to {new_date_str}")
+
+    print(f"[Staff Dashboard] Updated position date for {target_team} - {target_position} to {new_date_str}")
+
+    # Update forum log
+    await update_forum_log(bot, mongo, user_id)
+
+    # Get updated log and return to record view
+    log = await get_staff_log(mongo, user_id)
+    user = await bot.rest.fetch_user(int(user_id))
+    components = build_staff_record_view(log, user, ctx.guild_id)
+
+    await ctx.interaction.edit_initial_response(components=components)
+    print(f"[Staff Dashboard] Position date update complete for {user.username}")
+
+
 # ========== ADMIN CHANGE ==========
 
 @register_action("staff_dash_admin", no_return=True, opens_modal=True, ephemeral=True)
@@ -1893,31 +2084,56 @@ async def handle_status_select(
 
 # ========== EDIT INFO ==========
 
-@register_action("staff_dash_edit", no_return=True, opens_modal=True, ephemeral=True)
+@register_action("staff_dash_edit_dates", ephemeral=True, no_return=True, defer_update=True)
 @lightbulb.di.with_di
-async def handle_edit_button(
+async def handle_edit_dates_button(
     action_id: str,
     ctx: lightbulb.components.MenuContext,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
-    """Handle 'Edit Info' button - opens modal"""
+    """Handle 'Edit Dates' button - shows date selection view"""
+    user_id = action_id
+
+    # Get staff log
+    log = await get_staff_log(mongo, user_id)
+    if not log:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("Staff log not found.")
+        )
+        return
+
+    # Build date selection view
+    components = build_edit_dates_selection(ctx.guild_id, user_id, log)
+    await ctx.interaction.edit_initial_response(components=components)
+    print(f"[Staff Dashboard] Edit dates menu opened for user {user_id}")
+
+
+@register_action("staff_dash_edit_hire_date", no_return=True, opens_modal=True, ephemeral=True)
+@lightbulb.di.with_di
+async def handle_edit_hire_date_button(
+    action_id: str,
+    ctx: lightbulb.components.MenuContext,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+):
+    """Handle 'Edit Hire Date' button - opens modal with hire date field"""
     user_id = action_id
 
     # Get current log
     log = await get_staff_log(mongo, user_id)
     if not log:
-        await ctx.respond("❌ Staff log not found.", ephemeral=True)
+        await ctx.respond(
+            components=build_error_message("Staff log not found."),
+            flags=hikari.MessageFlag.EPHEMERAL
+        )
         return
 
-    # Format dates for modal
+    # Format hire date for modal
     hire_date = log.get('hire_date')
-    join_date = log.get('join_date')
-
     hire_date_str = hire_date.strftime("%Y-%m-%d") if hire_date else ""
-    join_date_str = join_date.strftime("%Y-%m-%d") if join_date else ""
 
-    modal = build_edit_modal(user_id, hire_date_str, join_date_str)
+    modal = build_edit_hire_date_modal(user_id, hire_date_str)
     await ctx.interaction.create_modal_response(
         title=modal.title,
         custom_id=modal.custom_id,
@@ -1925,16 +2141,48 @@ async def handle_edit_button(
     )
 
 
-@register_action("staff_dash_edit_submit", ephemeral=True, is_modal=True, no_return=True)
+@register_action("staff_dash_edit_join_date", no_return=True, opens_modal=True, ephemeral=True)
 @lightbulb.di.with_di
-async def handle_edit_submit(
+async def handle_edit_join_date_button(
+    action_id: str,
+    ctx: lightbulb.components.MenuContext,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+):
+    """Handle 'Edit Join Date' button - opens modal with join date field"""
+    user_id = action_id
+
+    # Get current log
+    log = await get_staff_log(mongo, user_id)
+    if not log:
+        await ctx.respond(
+            components=build_error_message("Staff log not found."),
+            flags=hikari.MessageFlag.EPHEMERAL
+        )
+        return
+
+    # Format join date for modal
+    join_date = log.get('join_date')
+    join_date_str = join_date.strftime("%Y-%m-%d") if join_date else ""
+
+    modal = build_edit_join_date_modal(user_id, join_date_str)
+    await ctx.interaction.create_modal_response(
+        title=modal.title,
+        custom_id=modal.custom_id,
+        components=modal.components
+    )
+
+
+@register_action("staff_dash_edit_hire_date_submit", ephemeral=True, is_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def handle_edit_hire_date_submit(
     action_id: str,
     ctx: lightbulb.components.MenuContext,
     mongo: MongoClient = lightbulb.di.INJECTED,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **kwargs
 ):
-    """Process edit from modal"""
+    """Process hire date edit from modal"""
     # Defer immediately to prevent timeout
     await ctx.interaction.create_initial_response(
         hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
@@ -1942,14 +2190,12 @@ async def handle_edit_submit(
 
     user_id = action_id
 
-    # Get values from modal
-    hire_date_str = ctx.interaction.components[0].components[0].value
-    join_date_str = ctx.interaction.components[1].components[0].value
+    # Get value from modal
+    hire_date_str = ctx.interaction.components[0].components[0].value.strip()
 
-    # Parse dates
+    # Parse date
     try:
         hire_date = datetime.strptime(hire_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        join_date = datetime.strptime(join_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except ValueError:
         await ctx.interaction.edit_initial_response(
             components=build_error_message("Invalid date format. Use YYYY-MM-DD")
@@ -1962,6 +2208,57 @@ async def handle_edit_submit(
         {
             "$set": {
                 "hire_date": hire_date,
+                "metadata.last_updated": datetime.now(timezone.utc)
+            }
+        }
+    )
+
+    # Update forum log
+    await update_forum_log(bot, mongo, user_id)
+
+    # Get updated log and return to record view
+    log = await get_staff_log(mongo, user_id)
+    user = await bot.rest.fetch_user(int(user_id))
+    components = build_staff_record_view(log, user, ctx.guild_id)
+
+    await ctx.interaction.edit_initial_response(components=components)
+    print(f"[Staff Dashboard] Hire date updated for {user.username} to {hire_date_str}")
+
+
+@register_action("staff_dash_edit_join_date_submit", ephemeral=True, is_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def handle_edit_join_date_submit(
+    action_id: str,
+    ctx: lightbulb.components.MenuContext,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **kwargs
+):
+    """Process join date edit from modal"""
+    # Defer immediately to prevent timeout
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+
+    user_id = action_id
+
+    # Get value from modal
+    join_date_str = ctx.interaction.components[0].components[0].value.strip()
+
+    # Parse date
+    try:
+        join_date = datetime.strptime(join_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("Invalid date format. Use YYYY-MM-DD")
+        )
+        return
+
+    # Update database
+    await mongo.staff_logs.update_one(
+        {"user_id": user_id},
+        {
+            "$set": {
                 "join_date": join_date,
                 "metadata.last_updated": datetime.now(timezone.utc)
             }
@@ -1977,7 +2274,7 @@ async def handle_edit_submit(
     components = build_staff_record_view(log, user, ctx.guild_id)
 
     await ctx.interaction.edit_initial_response(components=components)
-    print(f"[Staff Dashboard] Dates updated for {user.username}")
+    print(f"[Staff Dashboard] Join date updated for {user.username} to {join_date_str}")
 
 
 # ========== BACK TO DASHBOARD ==========
