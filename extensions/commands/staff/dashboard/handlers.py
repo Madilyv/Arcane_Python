@@ -13,6 +13,7 @@ from hikari.impl import (
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
     SelectMenuBuilder as SelectMenu,
+    TextSelectMenuBuilder as TextSelectMenu,
     InteractiveButtonBuilder as Button,
     MessageActionRowBuilder as ActionRow,
 )
@@ -86,7 +87,7 @@ def build_success_message(title: str, details: list[str], footer_text: str = Non
 
 # ========== USER SELECTION ==========
 
-@register_action("staff_dash_select_user", no_return=True, ephemeral=True)
+@register_action("staff_dash_select_user", no_return=True, ephemeral=True, opens_modal=True)
 @lightbulb.di.with_di
 async def handle_user_select(
     action_id: str,
@@ -95,15 +96,32 @@ async def handle_user_select(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **kwargs
 ):
-    """Handle user selection from dropdown - creates NEW ephemeral message"""
+    """Handle user selection from dropdown - behavior depends on context"""
+    # Check if we're in team selection flow
+    in_team_flow = action_id.startswith("team_") if action_id else False
+
+    # Only defer for team flow (which updates existing message)
+    if in_team_flow:
+        await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+
     # Permission check
     if not is_leadership(ctx.member):
-        await ctx.respond("❌ Only leadership can view staff logs.", ephemeral=True)
+        if in_team_flow:
+            await ctx.interaction.edit_initial_response(
+                components=build_error_message("❌ Only leadership can view staff logs.")
+            )
+        else:
+            await ctx.respond("❌ Only leadership can view staff logs.", flags=hikari.MessageFlag.EPHEMERAL)
         return
 
     # Get selected user from TEXT_SELECT_MENU
     if not ctx.interaction.values:
-        await ctx.respond("❌ No user selected.", ephemeral=True)
+        if in_team_flow:
+            await ctx.interaction.edit_initial_response(
+                components=build_error_message("❌ No user selected.")
+            )
+        else:
+            await ctx.respond("❌ No user selected.", flags=hikari.MessageFlag.EPHEMERAL)
         return
 
     selected_user_id = ctx.interaction.values[0]  # user_id string from select menu
@@ -112,35 +130,50 @@ async def handle_user_select(
     try:
         user = await bot.rest.fetch_user(int(selected_user_id))
     except hikari.NotFoundError:
-        await ctx.respond("❌ User not found.", ephemeral=True)
+        if in_team_flow:
+            await ctx.interaction.edit_initial_response(
+                components=build_error_message("❌ User not found.")
+            )
+        else:
+            await ctx.respond("❌ User not found.", flags=hikari.MessageFlag.EPHEMERAL)
         return
 
     # Fetch staff log
     log = await get_staff_log(mongo, str(selected_user_id))
 
     if not log:
-        await ctx.respond(
-            f"❌ No staff log found for {user.mention}.\n\nUse the **Create New Staff Log** button to create one.",
-            ephemeral=True
-        )
+        if in_team_flow:
+            await ctx.interaction.edit_initial_response(
+                components=build_error_message(f"No staff log found for {user.mention}.\n\nUse the **Create New Staff Log** button to create one.")
+            )
+        else:
+            await ctx.respond(
+                f"❌ No staff log found for {user.mention}.\n\nUse the **Create New Staff Log** button to create one.",
+                flags=hikari.MessageFlag.EPHEMERAL
+            )
         return
 
     # Build staff record view
-    components = build_staff_record_view(log, user, ctx.guild_id)
+    components = build_staff_record_view(log, user, ctx.guild_id, from_team_flow=in_team_flow)
 
-    # Create NEW ephemeral message
-    await ctx.respond(components=components, ephemeral=True)
-    print(f"[Staff Dashboard] Viewing log for {user.username}")
+    if in_team_flow:
+        # UPDATE existing message (team flow navigation)
+        await ctx.interaction.edit_initial_response(components=components)
+        print(f"[Staff Dashboard] Viewing log for {user.username} (team flow)")
+    else:
+        # CREATE new ephemeral message (main dashboard behavior)
+        await ctx.respond(components=components, flags=hikari.MessageFlag.EPHEMERAL)
+        print(f"[Staff Dashboard] Viewing log for {user.username} (new ephemeral)")
 
-    # Auto-refresh the main dashboard to reset dropdown
-    all_logs = await get_all_staff_logs(mongo)
-    stats = {
-        'active': sum(1 for log in all_logs if log.get('employment_status') == 'Active'),
-        'on_leave': sum(1 for log in all_logs if log.get('employment_status') == 'On Leave'),
-        'inactive': sum(1 for log in all_logs if log.get('employment_status') in ['Inactive', 'Terminated'])
-    }
-    dashboard_components = build_main_dashboard(ctx.guild_id, stats, all_logs)
-    await ctx.interaction.edit_message(ctx.interaction.message, components=dashboard_components)
+        # Auto-refresh the main dashboard to reset dropdown
+        all_logs_refresh = await get_all_staff_logs(mongo)
+        stats = {
+            'active': sum(1 for log in all_logs_refresh if log.get('employment_status') == 'Active'),
+            'on_leave': sum(1 for log in all_logs_refresh if log.get('employment_status') == 'On Leave'),
+            'inactive': sum(1 for log in all_logs_refresh if log.get('employment_status') in ['Inactive', 'Terminated'])
+        }
+        dashboard_components = build_main_dashboard(ctx.guild_id, stats, all_logs_refresh)
+        await ctx.interaction.edit_message(ctx.interaction.message, components=dashboard_components)
 
 
 @register_action("staff_dash_view_record", ephemeral=True, no_return=True, defer_update=True)
@@ -2133,7 +2166,9 @@ async def handle_filter_role(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
-    """Handle 'Filter by Role' button - shows staff grouped by role/position"""
+    """Handle 'By Team' button - shows team selection dropdown"""
+    from utils.constants import STAFF_ROLES
+
     # Get all logs
     all_logs = await get_all_staff_logs(mongo)
 
@@ -2141,42 +2176,33 @@ async def handle_filter_role(
         await ctx.respond("❌ No staff logs found.", ephemeral=True)
         return
 
-    # Get unique positions
-    positions = {}
-    for log in all_logs:
-        position = log.get('current_position', 'N/A')
-        if position not in positions:
-            positions[position] = []
-        positions[position].append(log)
-
-    # Sort by position name
-    sorted_positions = sorted(positions.items())
-
-    # Build grouped view
-    import time
-    unique_id = str(int(time.time() * 1000))
-
-    role_sections = []
-    for position, staff_list in sorted_positions:
-        staff_mentions = [f"• <@{log.get('user_id')}> - {log.get('current_team', 'N/A')}" for log in staff_list]
-        staff_text = "\n".join(staff_mentions)
-
-        role_sections.append(Text(content=f"**🎯 {position}** ({len(staff_list)} members)"))
-        role_sections.append(Text(content=staff_text))
-        role_sections.append(Separator(divider=False, spacing=hikari.SpacingType.SMALL))
+    # Build team selection dropdown
+    team_options = []
+    for team_name in STAFF_ROLES.keys():
+        team_options.append(
+            hikari.impl.SelectOptionBuilder(
+                label=team_name,
+                value=team_name,
+                description=f"View {team_name} team hierarchy"
+            )
+        )
 
     components = [
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content="## 🎯 Staff by Role/Position"),
+                Text(content="## 👥 Select Team to View"),
                 Separator(divider=True),
-                *role_sections,
-                Separator(divider=True),
-                Text(content="Select a staff member to view their record:"),
+                Text(content="Choose a team to see their positions and staff members:"),
                 Separator(divider=False, spacing=hikari.SpacingType.SMALL),
                 ActionRow(components=[
-                    build_staff_select_menu(all_logs, unique_id)
+                    TextSelectMenu(
+                        custom_id="staff_dash_select_team",
+                        placeholder="Select a team...",
+                        options=team_options,
+                        min_values=1,
+                        max_values=1
+                    )
                 ]),
                 Separator(divider=True),
                 ActionRow(components=[
@@ -2192,9 +2218,198 @@ async def handle_filter_role(
         )
     ]
 
-    # Create NEW ephemeral message (not edit)
     await ctx.respond(components=components, ephemeral=True)
-    print(f"[Staff Dashboard] Filter by Role - {len(positions)} roles found")
+    print(f"[Staff Dashboard] Team selection view shown")
+
+
+@register_action("staff_dash_return_team_selection", no_return=True, ephemeral=True, defer_update=True)
+@lightbulb.di.with_di
+async def handle_return_team_selection(
+    action_id: str,
+    ctx: lightbulb.components.MenuContext,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+):
+    """Handle 'Back to Team Selection' button - returns to team selection dropdown"""
+    from utils.constants import STAFF_ROLES
+
+    # Get all logs
+    all_logs = await get_all_staff_logs(mongo)
+
+    if not all_logs:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("No staff logs found.")
+        )
+        return
+
+    # Build team selection dropdown
+    team_options = []
+    for team_name in STAFF_ROLES.keys():
+        team_options.append(
+            hikari.impl.SelectOptionBuilder(
+                label=team_name,
+                value=team_name,
+                description=f"View {team_name} team hierarchy"
+            )
+        )
+
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content="## 👥 Select Team to View"),
+                Separator(divider=True),
+                Text(content="Choose a team to see their positions and staff members:"),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+                ActionRow(components=[
+                    TextSelectMenu(
+                        custom_id="staff_dash_select_team",
+                        placeholder="Select a team...",
+                        options=team_options,
+                        min_values=1,
+                        max_values=1
+                    )
+                ]),
+                Separator(divider=True),
+                ActionRow(components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        label="Close",
+                        custom_id="staff_dash_back",
+                        emoji="✖️"
+                    )
+                ]),
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+
+    await ctx.interaction.edit_initial_response(components=components)
+    print(f"[Staff Dashboard] Returned to team selection")
+
+
+@register_action("staff_dash_select_team", no_return=True, ephemeral=True, defer_update=True)
+@lightbulb.di.with_di
+async def handle_team_selected(
+    action_id: str,
+    ctx: lightbulb.components.MenuContext,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+):
+    """Handle team selection - shows staff hierarchy for selected team"""
+    from utils.constants import STAFF_ROLES
+
+    # Get selected team
+    if not ctx.interaction.values:
+        await ctx.respond("❌ No team selected.", ephemeral=True)
+        return
+
+    selected_team = ctx.interaction.values[0]
+
+    # Get all logs
+    all_logs = await get_all_staff_logs(mongo)
+
+    if not all_logs:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("No staff logs found.")
+        )
+        return
+
+    # Build hierarchy for ONLY the selected team
+    import time
+    unique_id = f"team_{int(time.time() * 1000)}"  # Prefix with "team_" to track context
+
+    role_sections = []
+    team_data = STAFF_ROLES.get(selected_team)
+
+    if not team_data:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message(f"Team '{selected_team}' not found in configuration.")
+        )
+        return
+
+    team_positions = {}  # position_name: list of (log, is_primary)
+
+    # For each position in the selected team
+    for role_info in team_data["roles"]:
+        position_name = role_info["name"]
+        staff_in_position = []
+
+        # Find all staff who hold this position
+        for log in all_logs:
+            # Check if it's their primary position
+            if log.get('current_team') == selected_team and log.get('current_position') == position_name:
+                staff_in_position.append((log, True))  # True = primary
+            # Check if it's in their additional positions
+            else:
+                additional_positions = log.get('additional_positions', [])
+                for add_pos in additional_positions:
+                    if add_pos.get('team') == selected_team and add_pos.get('position') == position_name:
+                        staff_in_position.append((log, False))  # False = additional
+                        break
+
+        # Only add if there are staff in this position
+        if staff_in_position:
+            team_positions[position_name] = staff_in_position
+
+    # Build the team section
+    # Team header
+    role_sections.append(Text(content=f"### 📋 {selected_team} Team"))
+    role_sections.append(Separator(divider=False, spacing=hikari.SpacingType.SMALL))
+
+    if not team_positions:
+        role_sections.append(Text(content="*No staff members found in this team.*"))
+    else:
+        # Add each position within this team
+        for position_name, staff_list in team_positions.items():
+            member_count = len(staff_list)
+            role_sections.append(Text(content=f"**🎯 {position_name}** ({member_count} member{'s' if member_count != 1 else ''})"))
+
+            # Build staff mentions with indicators
+            staff_lines = []
+            for log, is_primary in staff_list:
+                user_id = log.get('user_id')
+                if is_primary:
+                    staff_lines.append(f"   • <@{user_id}> (Primary)")
+                else:
+                    primary_team = log.get('current_team', 'Unknown')
+                    primary_pos = log.get('current_position', 'Unknown')
+                    staff_lines.append(f"   • <@{user_id}> (Additional - Primary: {primary_pos})")
+
+            staff_text = "\n".join(staff_lines)
+            role_sections.append(Text(content=staff_text))
+            role_sections.append(Separator(divider=False, spacing=hikari.SpacingType.SMALL))
+
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=f"## 📋 {selected_team} Team Hierarchy"),
+                Separator(divider=True),
+                *role_sections,
+                Separator(divider=True),
+                Text(content="Select a staff member to view their record:"),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+                ActionRow(components=[
+                    build_staff_select_menu(all_logs, unique_id)
+                ]),
+                Separator(divider=True),
+                ActionRow(components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        label="Back",
+                        custom_id="staff_dash_return_team_selection",
+                        emoji="◀️"
+                    )
+                ]),
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+
+    # Update existing message
+    await ctx.interaction.edit_initial_response(components=components)
+    print(f"[Staff Dashboard] Showing {selected_team} team hierarchy")
 
 
 @register_action("staff_dash_filter_recent", no_return=True, ephemeral=True)

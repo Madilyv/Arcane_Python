@@ -354,7 +354,7 @@ def build_main_dashboard(guild_id: int, stats: dict, all_logs: list) -> list:
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         label="By Team",
-                        custom_id="staff_dash_filter_team",
+                        custom_id="staff_dash_filter_role",
                         emoji="👥"
                     ),
                     Button(
@@ -362,14 +362,6 @@ def build_main_dashboard(guild_id: int, stats: dict, all_logs: list) -> list:
                         label="By Status",
                         custom_id="staff_dash_filter_status",
                         emoji="📊"
-                    )
-                ]),
-                ActionRow(components=[
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        label="By Role",
-                        custom_id="staff_dash_filter_role",
-                        emoji="🎯"
                     ),
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
@@ -406,9 +398,10 @@ def build_main_dashboard(guild_id: int, stats: dict, all_logs: list) -> list:
     return components
 
 
-def build_staff_record_view(log: dict, user: hikari.User, guild_id: int) -> list:
+def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_team_flow: bool = False) -> list:
     """
     Builds the staff record view with action buttons
+    from_team_flow: If True, back button returns to team selection instead of closing
     """
     user_id = log.get('user_id')
     username = log.get('username', str(user))
@@ -464,16 +457,16 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int) -> list
                 # Position Management Section
                 ActionRow(components=[
                     Button(
-                        style=hikari.ButtonStyle.PRIMARY,
-                        label="Update Position",
-                        custom_id=f"staff_dash_position:{user_id}",
-                        emoji="🔄"
-                    ),
-                    Button(
                         style=hikari.ButtonStyle.SUCCESS,
                         label="Add Position",
                         custom_id=f"staff_dash_add_position:{user_id}",
                         emoji="➕"
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        label="Update Position",
+                        custom_id=f"staff_dash_position:{user_id}",
+                        emoji="🔄"
                     ),
                     Button(
                         style=hikari.ButtonStyle.DANGER,
@@ -546,13 +539,13 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int) -> list
 
                 Separator(divider=True),
 
-                # Close button
+                # Close/Back button
                 ActionRow(components=[
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
-                        label="Close",
-                        custom_id="staff_dash_back",
-                        emoji="✖️"
+                        label="Back to Team Selection" if from_team_flow else "Close",
+                        custom_id="staff_dash_return_team_selection" if from_team_flow else "staff_dash_back",
+                        emoji="◀️" if from_team_flow else "✖️"
                     )
                 ]),
 
