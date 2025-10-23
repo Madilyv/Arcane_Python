@@ -80,6 +80,15 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
     staff_cases = log_data.get('staff_cases', [])
     last_updated = log_data.get('metadata', {}).get('last_updated')
 
+    # Determine accent color based on status
+    accent_color = {
+        "Active": GREEN_ACCENT,
+        "On Leave": GOLD_ACCENT,
+        "Inactive": hikari.Color.from_hex_code("#808080"),
+        "Terminated": RED_ACCENT,
+        "Staff Banned": hikari.Color.from_hex_code("#8B0000")
+    }.get(status, BLUE_ACCENT)
+
     # Case type emoji mapping (matches dropdown emojis)
     case_emojis = {
         "Warning": "⚠️",
@@ -208,7 +217,7 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
         # Basic Info
         Text(content=f"**Join Date:** {format_discord_timestamp(join_date, 'F')}"),
         Text(content=f"**Hire Date:** {format_discord_timestamp(hire_date, 'F')}"),
-        Text(content=f"**Employment Status:** {status}"),
+        Text(content=f"**Employment Status:** {get_status_emoji(status)} {status}"),
         Separator(divider=False, spacing=hikari.SpacingType.SMALL),
         Text(content="**Current Positions:**"),
         Text(content=f"• {team} - {position} (Primary)"),
@@ -241,7 +250,7 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
     # Build final Container with complete component list
     components = [
         Container(
-            accent_color=DARK_GRAY_ACCENT,
+            accent_color=accent_color,
             components=component_list
         )
     ]
@@ -419,8 +428,9 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
     accent_color = {
         "Active": GREEN_ACCENT,
         "On Leave": GOLD_ACCENT,
-        "Inactive": "#808080",
-        "Terminated": RED_ACCENT
+        "Inactive": hikari.Color.from_hex_code("#808080"),
+        "Terminated": RED_ACCENT,
+        "Staff Banned": hikari.Color.from_hex_code("#8B0000")
     }.get(status, BLUE_ACCENT)
 
     # Get forum thread URL
@@ -483,12 +493,6 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
                     ),
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
-                        label="Change Status",
-                        custom_id=f"staff_dash_status:{user_id}",
-                        emoji="📊"
-                    ),
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
                         label="Edit Info",
                         custom_id=f"staff_dash_edit:{user_id}",
                         emoji="📝"
@@ -522,6 +526,44 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
                         label="View Cases",
                         custom_id=f"staff_dash_view_cases:{user_id}",
                         emoji="📋"
+                    )
+                ]),
+                ActionRow(components=[
+                    TextSelectMenu(
+                        custom_id=f"staff_dash_status_select:{user_id}",
+                        placeholder="Change Employment Status",
+                        options=[
+                            hikari.impl.SelectOptionBuilder(
+                                label="Active",
+                                value="Active",
+                                emoji="🟢",
+                                description="Currently active staff member"
+                            ),
+                            hikari.impl.SelectOptionBuilder(
+                                label="On Leave",
+                                value="On Leave",
+                                emoji="🟡",
+                                description="Staff member on temporary leave"
+                            ),
+                            hikari.impl.SelectOptionBuilder(
+                                label="Inactive",
+                                value="Inactive",
+                                emoji="⚪",
+                                description="Inactive staff member"
+                            ),
+                            hikari.impl.SelectOptionBuilder(
+                                label="Terminated",
+                                value="Terminated",
+                                emoji="🔴",
+                                description="Employment terminated"
+                            ),
+                            hikari.impl.SelectOptionBuilder(
+                                label="Staff Banned",
+                                value="Staff Banned",
+                                emoji="🚫",
+                                description="Banned from staff positions"
+                            )
+                        ]
                     )
                 ]),
 

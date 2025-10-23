@@ -53,7 +53,7 @@ class StaffDashboard(
         stats = {
             'active': sum(1 for log in all_logs if log.get('employment_status') == 'Active'),
             'on_leave': sum(1 for log in all_logs if log.get('employment_status') == 'On Leave'),
-            'inactive': sum(1 for log in all_logs if log.get('employment_status') in ['Inactive', 'Terminated'])
+            'inactive': sum(1 for log in all_logs if log.get('employment_status') in ['Inactive', 'Terminated', 'Staff Banned'])
         }
 
         # Build main dashboard with categorized sections

@@ -214,7 +214,8 @@ def get_status_emoji(status: str) -> str:
         "Active": "🟢",
         "On Leave": "🟡",
         "Inactive": "⚪",
-        "Terminated": "🔴"
+        "Terminated": "🔴",
+        "Staff Banned": "🚫"
     }
     return status_emojis.get(status, "⚪")
 

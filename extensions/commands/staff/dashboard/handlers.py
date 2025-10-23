@@ -170,7 +170,7 @@ async def handle_user_select(
         stats = {
             'active': sum(1 for log in all_logs_refresh if log.get('employment_status') == 'Active'),
             'on_leave': sum(1 for log in all_logs_refresh if log.get('employment_status') == 'On Leave'),
-            'inactive': sum(1 for log in all_logs_refresh if log.get('employment_status') in ['Inactive', 'Terminated'])
+            'inactive': sum(1 for log in all_logs_refresh if log.get('employment_status') in ['Inactive', 'Terminated', 'Staff Banned'])
         }
         dashboard_components = build_main_dashboard(ctx.guild_id, stats, all_logs_refresh)
         await ctx.interaction.edit_message(ctx.interaction.message, components=dashboard_components)
@@ -1788,60 +1788,26 @@ async def handle_search_case_submit(
 
 # ========== CHANGE STATUS ==========
 
-@register_action("staff_dash_status", no_return=True, opens_modal=True, ephemeral=True)
+@register_action("staff_dash_status_select", no_return=True, ephemeral=True, defer_update=True)
 @lightbulb.di.with_di
-async def handle_status_button(
-    action_id: str,
-    ctx: lightbulb.components.MenuContext,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **kwargs
-):
-    """Handle 'Change Status' button - opens modal"""
-    user_id = action_id
-
-    # Get current status
-    log = await get_staff_log(mongo, user_id)
-    if not log:
-        await ctx.respond("❌ Staff log not found.", ephemeral=True)
-        return
-
-    current_status = log.get('employment_status', 'Active')
-
-    modal = build_status_modal(user_id, current_status)
-    await ctx.interaction.create_modal_response(
-        title=modal.title,
-        custom_id=modal.custom_id,
-        components=modal.components
-    )
-
-
-@register_action("staff_dash_status_submit", ephemeral=True, is_modal=True, no_return=True)
-@lightbulb.di.with_di
-async def handle_status_submit(
+async def handle_status_select(
     action_id: str,
     ctx: lightbulb.components.MenuContext,
     mongo: MongoClient = lightbulb.di.INJECTED,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **kwargs
 ):
-    """Process status change from modal"""
-    # Defer immediately to prevent timeout
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
-
+    """Process status change from dropdown selection"""
     user_id = action_id
 
-    # Get value from modal
-    new_status = ctx.interaction.components[0].components[0].value
-
-    # Validate status
-    valid_statuses = ["Active", "On Leave", "Inactive", "Terminated"]
-    if new_status not in valid_statuses:
+    # Get selected value from dropdown
+    if not ctx.interaction.values:
         await ctx.interaction.edit_initial_response(
-            content=f"❌ Invalid status. Must be one of: {', '.join(valid_statuses)}"
+            components=build_error_message("❌ No status selected.")
         )
         return
+
+    new_status = ctx.interaction.values[0]
 
     # Update database
     await mongo.staff_logs.update_one(
@@ -1988,7 +1954,7 @@ async def handle_refresh(
     stats = {
         'active': sum(1 for log in all_logs if log.get('employment_status') == 'Active'),
         'on_leave': sum(1 for log in all_logs if log.get('employment_status') == 'On Leave'),
-        'inactive': sum(1 for log in all_logs if log.get('employment_status') in ['Inactive', 'Terminated'])
+        'inactive': sum(1 for log in all_logs if log.get('employment_status') in ['Inactive', 'Terminated', 'Staff Banned'])
     }
 
     # Rebuild main dashboard with fresh unique_id to reset dropdown
@@ -2101,7 +2067,8 @@ async def handle_filter_status(
         "Active": [log for log in all_logs if log.get('employment_status') == 'Active'],
         "On Leave": [log for log in all_logs if log.get('employment_status') == 'On Leave'],
         "Inactive": [log for log in all_logs if log.get('employment_status') == 'Inactive'],
-        "Terminated": [log for log in all_logs if log.get('employment_status') == 'Terminated']
+        "Terminated": [log for log in all_logs if log.get('employment_status') == 'Terminated'],
+        "Staff Banned": [log for log in all_logs if log.get('employment_status') == 'Staff Banned']
     }
 
     # Build grouped view
@@ -2112,7 +2079,8 @@ async def handle_filter_status(
         "Active": "✅",
         "On Leave": "🏖️",
         "Inactive": "💤",
-        "Terminated": "❌"
+        "Terminated": "❌",
+        "Staff Banned": "🚫"
     }
 
     status_sections = []
