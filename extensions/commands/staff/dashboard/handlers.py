@@ -19,7 +19,7 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
-from utils.constants import BLUE_ACCENT, GREEN_ACCENT, GOLD_ACCENT, RED_ACCENT
+from utils.constants import BLUE_ACCENT, GREEN_ACCENT, GOLD_ACCENT, RED_ACCENT, validate_user_has_role
 from utils.mongo import MongoClient
 from .utils import (
     is_leadership,
@@ -417,7 +417,6 @@ async def handle_create_submit(
         return
 
     # Validate role match (warn but allow)
-    from utils.constants import validate_user_has_role
     has_role = validate_user_has_role(member, team, position)
     role_warning = ""
     if not has_role:
@@ -814,6 +813,27 @@ async def handle_update_position_submit(
         )
         return
 
+    # Fetch member for role validation
+    try:
+        member = await bot.rest.fetch_member(ctx.guild_id, int(user_id))
+    except hikari.NotFoundError:
+        member = None
+
+    # Validate role match (warn but allow)
+    has_role = validate_user_has_role(member, new_team, new_position) if member else True
+
+    # DEBUG LOGGING
+    print(f"[Staff Dashboard DEBUG] Role validation (Update Position):")
+    print(f"  - Member: {member}")
+    print(f"  - Team: {new_team}")
+    print(f"  - Position: {new_position}")
+    print(f"  - Has role: {has_role}")
+    if member:
+        from utils.constants import get_role_id_for_position
+        role_id = get_role_id_for_position(new_team, new_position)
+        print(f"  - Expected role ID: {role_id}")
+        print(f"  - Member's role IDs: {member.role_ids}")
+
     # Update database based on position_identifier
     if position_identifier == "primary":
         # Get old primary position values
@@ -901,6 +921,15 @@ async def handle_update_position_submit(
 
     await ctx.interaction.edit_initial_response(components=components)
     print(f"[Staff Dashboard] Position updated: {new_team} - {new_position}")
+
+    # Send separate ephemeral warning if role doesn't match
+    if not has_role:
+        await bot.rest.execute_webhook(
+            webhook=ctx.interaction.application_id,
+            token=ctx.interaction.token,
+            content=f"⚠️ **Warning**: <@{user_id}> does not currently have the **{new_position}** role for this position.",
+            flags=hikari.MessageFlag.EPHEMERAL
+        )
 
 
 # ========== ADD POSITION (for multiple roles) ==========
@@ -1074,6 +1103,27 @@ async def handle_add_position_submit(
     # Get notes from modal
     notes = ctx.interaction.components[0].components[0].value if ctx.interaction.components[0].components[0].value else ""
 
+    # Fetch member for role validation
+    try:
+        member = await bot.rest.fetch_member(ctx.guild_id, int(user_id))
+    except hikari.NotFoundError:
+        member = None
+
+    # Validate role match (warn but allow)
+    has_role = validate_user_has_role(member, new_team, new_position) if member else True
+
+    # DEBUG LOGGING
+    print(f"[Staff Dashboard DEBUG] Role validation (Add Position):")
+    print(f"  - Member: {member}")
+    print(f"  - Team: {new_team}")
+    print(f"  - Position: {new_position}")
+    print(f"  - Has role: {has_role}")
+    if member:
+        from utils.constants import get_role_id_for_position
+        role_id = get_role_id_for_position(new_team, new_position)
+        print(f"  - Expected role ID: {role_id}")
+        print(f"  - Member's role IDs: {member.role_ids}")
+
     # Add to additional_positions array and log to position_history
     await mongo.staff_logs.update_one(
         {"user_id": user_id},
@@ -1113,6 +1163,15 @@ async def handle_add_position_submit(
 
     await ctx.interaction.edit_initial_response(components=components)
     print(f"[Staff Dashboard] Position added for {user.username}: {new_team} - {new_position}")
+
+    # Send separate ephemeral warning if role doesn't match
+    if not has_role:
+        await bot.rest.execute_webhook(
+            webhook=ctx.interaction.application_id,
+            token=ctx.interaction.token,
+            content=f"⚠️ **Warning**: <@{user_id}> does not currently have the **{new_position}** role for this position.",
+            flags=hikari.MessageFlag.EPHEMERAL
+        )
 
 
 # ========== REMOVE POSITION ==========
