@@ -914,7 +914,7 @@ async def handle_update_position_submit(
         print(f"[Staff Dashboard] Secondary position {idx} updated for user {user_id}: {old_team} - {old_position} → {new_team} - {new_position}")
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)
@@ -1156,7 +1156,7 @@ async def handle_add_position_submit(
     )
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)
@@ -1369,7 +1369,7 @@ async def handle_remove_position_submit(
         print(f"[Staff Dashboard] Secondary position removed for user {user_id}: {removed_team} - {removed_pos}")
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)
@@ -1558,7 +1558,7 @@ async def handle_position_date_submit(
     print(f"[Staff Dashboard] Updated position date for {target_team} - {target_position} to {new_date_str}")
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)
@@ -1706,7 +1706,7 @@ async def handle_admin_submit(
     )
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)
@@ -1854,7 +1854,7 @@ async def handle_case_submit(
     )
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)
@@ -1923,7 +1923,7 @@ async def handle_select_case_remove(
     )
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)
@@ -2150,7 +2150,7 @@ async def handle_status_select(
     )
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)
@@ -2293,7 +2293,7 @@ async def handle_edit_hire_date_submit(
     )
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)
@@ -2345,7 +2345,7 @@ async def handle_edit_join_date_submit(
     )
 
     # Update forum log
-    await update_forum_log(bot, mongo, user_id)
+    await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
     # Get updated log and return to record view
     log = await get_staff_log(mongo, user_id)

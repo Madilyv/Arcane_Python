@@ -86,6 +86,7 @@ async def create_staff_log_thread(
     log_data = {
         "user_id": str(user.id),
         "username": str(user),
+        "display_name": member.display_name,  # Store display name for thread title
         "forum_thread_id": "",  # Will be set after thread creation
         "forum_message_id": "",  # Will be set after thread creation
         "join_date": member.joined_at,
@@ -114,10 +115,10 @@ async def create_staff_log_thread(
     # Build components
     components = build_forum_embed(user, log_data)
 
-    # Create forum post with components
+    # Create forum post with components (just display name, no suffix)
     thread = await bot.rest.create_forum_post(
         STAFF_LOG_FORUM_ID,
-        f"{user.username} - Staff Log",
+        member.display_name,
         components=components
     )
 
@@ -146,11 +147,13 @@ async def create_staff_log_thread(
 async def update_forum_log(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
-    user_id: str
+    user_id: str,
+    guild_id: int
 ) -> None:
     """
     Fetches log from DB, rebuilds embed, edits forum message
     Called after every update operation
+    Also checks and updates thread title if display name changed
     """
     from .embeds import build_forum_embed
 
@@ -161,12 +164,35 @@ async def update_forum_log(
         print(f"[Staff Dashboard] No log found for user {user_id}")
         return
 
-    # Fetch user
+    # Fetch member (not just user) to get display_name
     try:
-        user = await bot.rest.fetch_user(int(user_id))
+        member = await bot.rest.fetch_member(guild_id, int(user_id))
+        user = member.user  # Get user object from member
+        current_display_name = member.display_name
     except hikari.NotFoundError:
-        print(f"[Staff Dashboard] User {user_id} not found")
+        print(f"[Staff Dashboard] Member {user_id} not found in guild")
         return
+
+    # Check if display name changed and update thread title if needed
+    stored_display_name = log.get('display_name', '')
+    if current_display_name != stored_display_name:
+        try:
+            await bot.rest.edit_channel(
+                int(log['forum_thread_id']),
+                name=current_display_name,
+                reason="Display name changed"
+            )
+            print(f"[Staff Dashboard] Updated thread title: '{stored_display_name}' → '{current_display_name}'")
+
+            # Update stored display name in database
+            await mongo.staff_logs.update_one(
+                {"user_id": user_id},
+                {"$set": {"display_name": current_display_name}}
+            )
+        except hikari.RateLimitTooLongError:
+            print(f"[Staff Dashboard] Rate limited - couldn't update thread title for {current_display_name}")
+        except Exception as e:
+            print(f"[Staff Dashboard] Error updating thread title: {e}")
 
     # Build embed
     components = build_forum_embed(user, log)
