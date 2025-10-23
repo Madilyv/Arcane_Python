@@ -55,11 +55,17 @@ def build_staff_select_menu(all_logs: list, unique_id: str = "") -> TextSelectMe
         # Add status emoji
         status_emoji = get_status_emoji(status)
 
+        # Build description: show team-position if exists, otherwise show status
+        if team and position:
+            description = f"{team} - {position}"
+        else:
+            description = status
+
         options.append(
             hikari.impl.SelectOptionBuilder(
                 label=f"{status_emoji} {username}",
                 value=user_id,
-                description=f"{team} - {position}"
+                description=description
             )
         )
 
@@ -217,10 +223,11 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
     # Build current positions list with assignment dates
     position_components = []
 
-    # Primary position
-    primary_date = get_position_assigned_date(position_history, team, position)
-    primary_date_str = f" • Assigned: {format_discord_timestamp(primary_date, 'd')}" if primary_date else ""
-    position_components.append(Text(content=f"• {team} - {position} (Primary){primary_date_str}"))
+    # Primary position (only if exists)
+    if team and position:
+        primary_date = get_position_assigned_date(position_history, team, position)
+        primary_date_str = f" • Assigned: {format_discord_timestamp(primary_date, 'd')}" if primary_date else ""
+        position_components.append(Text(content=f"• {team} - {position} (Primary){primary_date_str}"))
 
     # Additional positions
     for pos in log_data.get('additional_positions', []):
@@ -229,6 +236,10 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
         pos_date = get_position_assigned_date(position_history, pos_team, pos_position)
         pos_date_str = f" • Assigned: {format_discord_timestamp(pos_date, 'd')}" if pos_date else ""
         position_components.append(Text(content=f"• {pos_team} - {pos_position}{pos_date_str}"))
+
+    # If no positions at all, show message
+    if not position_components:
+        position_components.append(Text(content="No positions assigned at this time"))
 
     # Build component list FIRST (before Container instantiation)
     component_list = [
@@ -579,10 +590,11 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
     # Build current positions list with assignment dates
     position_components = []
 
-    # Primary position
-    primary_date = get_position_assigned_date(position_history, team, position)
-    primary_date_str = f" • Assigned: {format_discord_timestamp(primary_date, 'd')}" if primary_date else ""
-    position_components.append(Text(content=f"• {team} - {position} (Primary){primary_date_str}"))
+    # Primary position (only if exists)
+    if team and position:
+        primary_date = get_position_assigned_date(position_history, team, position)
+        primary_date_str = f" • Assigned: {format_discord_timestamp(primary_date, 'd')}" if primary_date else ""
+        position_components.append(Text(content=f"• {team} - {position} (Primary){primary_date_str}"))
 
     # Additional positions
     for pos in log.get('additional_positions', []):
@@ -591,6 +603,10 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
         pos_date = get_position_assigned_date(position_history, pos_team, pos_position)
         pos_date_str = f" • Assigned: {format_discord_timestamp(pos_date, 'd')}" if pos_date else ""
         position_components.append(Text(content=f"• {pos_team} - {pos_position}{pos_date_str}"))
+
+    # If no positions at all, show message
+    if not position_components:
+        position_components.append(Text(content="No positions assigned at this time"))
 
     # Build component list FIRST (before Container instantiation)
     component_list = [
@@ -1045,9 +1061,21 @@ def build_add_position_selection(guild_id: int, user_id: str, log: dict, selecte
     username = log.get('username', 'Unknown')
 
     # Build current positions text
-    positions_text = f"• {current_team} - {current_position} (Primary)"
+    positions_list = []
+
+    # Add primary position if exists
+    if current_team and current_position:
+        positions_list.append(f"• {current_team} - {current_position} (Primary)")
+
+    # Add additional positions
     for pos in additional_positions:
-        positions_text += f"\n• {pos.get('team', 'N/A')} - {pos.get('position', 'N/A')}"
+        positions_list.append(f"• {pos.get('team', 'N/A')} - {pos.get('position', 'N/A')}")
+
+    # Join or show no positions message
+    if positions_list:
+        positions_text = "\n".join(positions_list)
+    else:
+        positions_text = "No positions assigned at this time"
 
     # Get all teams
     teams = get_all_teams()

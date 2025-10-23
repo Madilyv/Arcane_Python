@@ -815,6 +815,39 @@ async def handle_update_position_submit(
         )
         return
 
+    # Check employment status for auto-reactivation
+    current_status = log.get('employment_status', 'Active')
+    should_reactivate = False
+
+    if current_status in ["Terminated", "Staff Banned"]:
+        if current_status == "Staff Banned":
+            # Only specific user can add positions to Staff Banned members
+            authorized_user_id = 505227988229554179
+            if ctx.user.id != authorized_user_id:
+                await ctx.interaction.edit_initial_response(
+                    components=build_error_message("❌ Only authorized leadership can add positions to Staff Banned members.")
+                )
+                print(f"[Staff Dashboard] Blocked {ctx.user} from adding position to Staff Banned member {user_id}")
+                return
+            print(f"[Staff Dashboard] Authorized user {ctx.user} adding position to Staff Banned member - will reactivate")
+            should_reactivate = True
+        else:  # Terminated
+            print(f"[Staff Dashboard] Adding position to Terminated member - will reactivate to Active")
+            should_reactivate = True
+
+    # If reactivating, update status first
+    if should_reactivate:
+        await mongo.staff_logs.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "employment_status": "Active",
+                    "metadata.last_updated": datetime.now(timezone.utc)
+                }
+            }
+        )
+        print(f"[Staff Dashboard] Status updated from {current_status} to Active for user {user_id}")
+
     # Fetch member for role validation
     try:
         member = await bot.rest.fetch_member(ctx.guild_id, int(user_id))
@@ -1104,6 +1137,47 @@ async def handle_add_position_submit(
 
     # Get notes from modal
     notes = ctx.interaction.components[0].components[0].value if ctx.interaction.components[0].components[0].value else ""
+
+    # Fetch current log to check employment status
+    log = await get_staff_log(mongo, user_id)
+    if not log:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("Staff log not found.")
+        )
+        return
+
+    # Check employment status for auto-reactivation
+    current_status = log.get('employment_status', 'Active')
+    should_reactivate = False
+
+    if current_status in ["Terminated", "Staff Banned"]:
+        if current_status == "Staff Banned":
+            # Only specific user can add positions to Staff Banned members
+            authorized_user_id = 505227988229554179
+            if ctx.user.id != authorized_user_id:
+                await ctx.interaction.edit_initial_response(
+                    components=build_error_message("❌ Only authorized leadership can add positions to Staff Banned members.")
+                )
+                print(f"[Staff Dashboard] Blocked {ctx.user} from adding position to Staff Banned member {user_id}")
+                return
+            print(f"[Staff Dashboard] Authorized user {ctx.user} adding position to Staff Banned member - will reactivate")
+            should_reactivate = True
+        else:  # Terminated
+            print(f"[Staff Dashboard] Adding position to Terminated member - will reactivate to Active")
+            should_reactivate = True
+
+    # If reactivating, update status first
+    if should_reactivate:
+        await mongo.staff_logs.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "employment_status": "Active",
+                    "metadata.last_updated": datetime.now(timezone.utc)
+                }
+            }
+        )
+        print(f"[Staff Dashboard] Status updated from {current_status} to Active for user {user_id}")
 
     # Fetch member for role validation
     try:
@@ -1853,6 +1927,85 @@ async def handle_case_submit(
         }
     )
 
+    # Check if case type is Termination or Staff Ban - auto-update status and remove positions
+    if case_type in ["Termination", "Staff Ban"]:
+        # Determine new status based on case type
+        if case_type == "Termination":
+            new_status = "Terminated"
+        else:  # Staff Ban
+            new_status = "Staff Banned"
+
+        # Update employment status
+        await mongo.staff_logs.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "employment_status": new_status,
+                    "metadata.last_updated": datetime.now(timezone.utc)
+                }
+            }
+        )
+
+        # Get updated log to see all positions (re-fetch after status update)
+        log = await get_staff_log(mongo, user_id)
+
+        if log:
+            current_team = log.get('current_team')
+            current_position = log.get('current_position')
+            additional_positions = log.get('additional_positions', [])
+
+            # Build reason based on case type and include case ID
+            reason_text = f"Automatically removed due to {case_type} case (#{case_id})"
+
+            # Collect all position removal entries for position_history
+            position_removals = []
+
+            # Add primary position removal if exists
+            if current_team and current_position:
+                position_removals.append({
+                    "action": "removed",
+                    "team": current_team,
+                    "position": current_position,
+                    "date": datetime.now(timezone.utc),
+                    "changed_by_id": str(ctx.user.id),
+                    "changed_by_name": str(ctx.user),
+                    "notes": reason_text
+                })
+
+            # Add additional position removals
+            for pos in additional_positions:
+                position_removals.append({
+                    "action": "removed",
+                    "team": pos.get('team'),
+                    "position": pos.get('position'),
+                    "date": datetime.now(timezone.utc),
+                    "changed_by_id": str(ctx.user.id),
+                    "changed_by_name": str(ctx.user),
+                    "notes": reason_text
+                })
+
+            # Update database - clear positions and add removal entries to history
+            if position_removals:
+                await mongo.staff_logs.update_one(
+                    {"user_id": user_id},
+                    {
+                        "$set": {
+                            "current_team": "",
+                            "current_position": "",
+                            "additional_positions": [],
+                            "metadata.last_updated": datetime.now(timezone.utc)
+                        },
+                        "$push": {
+                            "position_history": {"$each": position_removals}
+                        }
+                    }
+                )
+
+                total_removed = len(position_removals)
+                print(f"[Staff Dashboard] Auto-removed {total_removed} position(s) due to {case_type} case #{case_id} for user {user_id}")
+
+        print(f"[Staff Dashboard] Auto-updated status to {new_status} due to {case_type} case #{case_id}")
+
     # Update forum log
     await update_forum_log(bot, mongo, user_id, ctx.guild_id)
 
@@ -2148,6 +2301,66 @@ async def handle_status_select(
             }
         }
     )
+
+    # Check if new status is Terminated or Staff Banned - auto-remove all positions
+    if new_status in ["Terminated", "Staff Banned"]:
+        # Get current log to see all positions
+        log = await get_staff_log(mongo, user_id)
+
+        if log:
+            current_team = log.get('current_team')
+            current_position = log.get('current_position')
+            additional_positions = log.get('additional_positions', [])
+
+            # Build reason based on status
+            reason = f"Automatically removed due to {new_status}"
+
+            # Collect all position removal entries for position_history
+            position_removals = []
+
+            # Add primary position removal if exists
+            if current_team and current_position:
+                position_removals.append({
+                    "action": "removed",
+                    "team": current_team,
+                    "position": current_position,
+                    "date": datetime.now(timezone.utc),
+                    "changed_by_id": str(ctx.user.id),
+                    "changed_by_name": str(ctx.user),
+                    "notes": reason
+                })
+
+            # Add additional position removals
+            for pos in additional_positions:
+                position_removals.append({
+                    "action": "removed",
+                    "team": pos.get('team'),
+                    "position": pos.get('position'),
+                    "date": datetime.now(timezone.utc),
+                    "changed_by_id": str(ctx.user.id),
+                    "changed_by_name": str(ctx.user),
+                    "notes": reason
+                })
+
+            # Update database - clear positions and add removal entries to history
+            if position_removals:
+                await mongo.staff_logs.update_one(
+                    {"user_id": user_id},
+                    {
+                        "$set": {
+                            "current_team": "",
+                            "current_position": "",
+                            "additional_positions": [],
+                            "metadata.last_updated": datetime.now(timezone.utc)
+                        },
+                        "$push": {
+                            "position_history": {"$each": position_removals}
+                        }
+                    }
+                )
+
+                total_removed = len(position_removals)
+                print(f"[Staff Dashboard] Auto-removed {total_removed} position(s) due to {new_status} for user {user_id}")
 
     # Update forum log
     await update_forum_log(bot, mongo, user_id, ctx.guild_id)
@@ -2918,6 +3131,16 @@ async def handle_delete_log_button(
     """Show confirmation modal for deleting staff log"""
     user_id = action_id
 
+    # Authorization check - only specific user can delete staff records
+    authorized_user_id = 505227988229554179
+    if ctx.user.id != authorized_user_id:
+        await ctx.respond(
+            "❌ Only authorized leadership can delete staff records.",
+            flags=hikari.MessageFlag.EPHEMERAL
+        )
+        print(f"[Staff Dashboard] Blocked {ctx.user} from deleting staff record for user {user_id}")
+        return
+
     # Create confirmation modal
     modal = build_delete_confirmation_modal(user_id)
     await ctx.interaction.create_modal_response(
@@ -2944,6 +3167,25 @@ async def handle_delete_confirm_submit(
     )
 
     user_id = action_id
+
+    # Authorization check - only specific user can delete staff records
+    authorized_user_id = 505227988229554179
+    if ctx.user.id != authorized_user_id:
+        await ctx.interaction.edit_initial_response(
+            components=[
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ Unauthorized"),
+                        Separator(divider=True),
+                        Text(content="Only authorized leadership can delete staff records."),
+                        Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                    ]
+                )
+            ]
+        )
+        print(f"[Staff Dashboard] Blocked {ctx.user} from confirming deletion of staff record for user {user_id}")
+        return
 
     # Get confirmation text
     confirmation = ctx.interaction.components[0].components[0].value.strip().upper()
