@@ -1474,6 +1474,94 @@ def build_all_cases_view(guild_id: int, all_logs: list) -> list:
     return components
 
 
+def build_user_cases_view(guild_id: int, user_id: str, log: dict) -> list:
+    """
+    Builds a view showing all cases for a specific staff member
+    """
+    username = log.get('username', 'Unknown')
+    staff_cases = log.get('staff_cases', [])
+
+    # Sort cases by date (most recent first)
+    sorted_cases = sorted(staff_cases, key=lambda x: x.get('date', datetime.min), reverse=True)
+
+    # Case type emoji mapping
+    case_emojis = {
+        "Warning": "⚠️",
+        "Suspension": "⏸️",
+        "Termination": "🔴",
+        "Staff Ban": "🚫",
+        "Note": "📝"
+    }
+
+    # Build case display
+    case_lines = []
+    for case in sorted_cases:
+        case_id = case.get('case_id', 'Unknown')
+        case_type = case.get('type', 'Unknown')
+        date_str = format_discord_timestamp(case.get('date'), "D")
+        issued_by = case.get('issued_by_name', 'Unknown')
+        reason = case.get('reason', 'No reason provided')
+
+        # Get emoji for case type
+        case_emoji = case_emojis.get(case_type, "📋")
+
+        case_lines.append(f"{case_emoji} **[{case_id}]** {case_type}")
+        case_lines.append(f"   └ Date: {date_str}")
+        case_lines.append(f"   └ Issued by: {issued_by}")
+        case_lines.append(f"   └ Reason: {reason}")
+        case_lines.append("")  # Blank line
+
+    cases_text = "\n".join(case_lines) if case_lines else "No cases found for this staff member"
+
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=f"## 📋 Cases for {username}"),
+                Separator(divider=True),
+
+                Text(content=f"**Total Cases:** {len(staff_cases)}"),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+
+                Text(content=cases_text),
+
+                Separator(divider=True),
+
+                Text(content="**Additional Options:**"),
+                ActionRow(components=[
+                    Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        label="View All Staff Cases",
+                        custom_id="staff_dash_view_all_cases",
+                        emoji="📋"
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        label="Search by Case ID",
+                        custom_id="staff_dash_search_case_id",
+                        emoji="🔍"
+                    )
+                ]),
+
+                Separator(divider=True),
+
+                ActionRow(components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        label="Back to Profile",
+                        custom_id=f"staff_dash_view_record:{user_id}",
+                        emoji="◀"
+                    )
+                ]),
+
+                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            ]
+        )
+    ]
+
+    return components
+
+
 def build_filter_view(guild_id: int, filter_type: str, filtered_logs: list, all_logs: list, unique_id: str = "") -> list:
     """
     Builds a filtered view showing staff that match the filter criteria

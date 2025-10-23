@@ -30,7 +30,7 @@ from .utils import (
     generate_next_case_id,
     format_discord_timestamp
 )
-from .embeds import build_main_dashboard, build_staff_record_view, build_filter_view, build_user_selection_for_creation, build_team_position_selection, build_staff_select_menu, build_update_position_selection, build_add_position_selection, build_remove_position_selection, build_which_position_to_update_selection, build_case_type_selection, build_remove_case_selection, build_view_cases_menu, build_all_cases_view, build_edit_dates_selection
+from .embeds import build_main_dashboard, build_staff_record_view, build_filter_view, build_user_selection_for_creation, build_team_position_selection, build_staff_select_menu, build_update_position_selection, build_add_position_selection, build_remove_position_selection, build_which_position_to_update_selection, build_case_type_selection, build_remove_case_selection, build_view_cases_menu, build_all_cases_view, build_user_cases_view, build_edit_dates_selection
 from .modals import (
     build_create_log_modal,
     build_position_modal,
@@ -1868,18 +1868,28 @@ async def handle_select_case_remove(
 # ========== VIEW CASES ==========
 
 @register_action("staff_dash_view_cases", ephemeral=True, no_return=True, defer_update=True)
+@lightbulb.di.with_di
 async def handle_view_cases_button(
     action_id: str,
     ctx: lightbulb.components.MenuContext,
+    mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
-    """Handle 'View Cases' button - shows view options menu"""
+    """Handle 'View Cases' button - shows all cases for this user"""
     user_id = action_id
 
-    # Build view cases menu
-    components = build_view_cases_menu(ctx.guild_id, user_id)
+    # Get user's log
+    log = await get_staff_log(mongo, user_id)
+    if not log:
+        await ctx.interaction.edit_initial_response(
+            components=build_error_message("Staff log not found.")
+        )
+        return
+
+    # Build user cases view
+    components = build_user_cases_view(ctx.guild_id, user_id, log)
     await ctx.interaction.edit_initial_response(components=components)
-    print(f"[Staff Dashboard] Opened View Cases menu")
+    print(f"[Staff Dashboard] Showing cases for user {user_id}")
 
 
 @register_action("staff_dash_view_all_cases", ephemeral=True, no_return=True, defer_update=True)
