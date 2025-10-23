@@ -1972,7 +1972,7 @@ async def handle_search_case_submit(
     if found_case:
         case_type = found_case.get('type', 'Unknown')
         reason = found_case.get('reason', 'No reason provided')
-        date_str = format_discord_timestamp(found_case.get('date'), "F")
+        date_str = format_discord_timestamp(found_case.get('date'), "D")
         issued_by = found_case.get('issued_by_name', 'Unknown')
 
         result_text = f"**[{search_case_id}]** {case_type}\n\n"

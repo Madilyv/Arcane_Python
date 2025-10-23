@@ -25,6 +25,17 @@ from utils.constants import BLUE_ACCENT, GREEN_ACCENT, GOLD_ACCENT, RED_ACCENT, 
 from .utils import format_discord_timestamp, get_status_emoji, get_forum_thread_url
 
 
+def get_position_assigned_date(position_history: list, team: str, position: str):
+    """
+    Find the most recent date when a position was assigned
+    Searches position_history in reverse for matching team+position
+    """
+    for entry in reversed(position_history):
+        if entry.get('team') == team and entry.get('position') == position:
+            return entry.get('date')
+    return None
+
+
 def build_staff_select_menu(all_logs: list, unique_id: str = "") -> TextSelectMenu:
     """
     Builds a TextSelectMenu with current staff members
@@ -123,7 +134,7 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
             pos_name = entry.get('position', 'Unknown')
             changed_by = entry.get('changed_by_name', 'Unknown')
             notes = entry.get('notes', '')
-            date_str = format_discord_timestamp(entry.get('date'), "F")
+            date_str = format_discord_timestamp(entry.get('date'), "D")
 
             # Build entry
             lines.append(f"{action_label}: {team_name} - {pos_name}")
@@ -158,7 +169,7 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
         lines = []
         for change in changes:
             action = change.get('action', 'Unknown')
-            date_str = format_discord_timestamp(change.get('date'), "F")
+            date_str = format_discord_timestamp(change.get('date'), "D")
             reason = change.get('reason', 'No reason provided')
             lines.append(f"Admin {action}: {date_str}")
             lines.append(f"Reason: {reason}")
@@ -184,7 +195,7 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
     for case in recent_cases:
         case_type = case.get('type', 'Unknown')
         case_id = case.get('case_id', 0)
-        date_str = format_discord_timestamp(case.get('date'), "F")
+        date_str = format_discord_timestamp(case.get('date'), "D")
         reason = case.get('reason', 'No reason provided')
         issued_by = case.get('issued_by_name', 'Unknown')
 
@@ -202,6 +213,22 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
     if total_cases > 5:
         cases_text += f"\n-# Showing 5 of {total_cases} cases - View full history in staff dashboard"
 
+    # Build current positions list with assignment dates
+    position_components = []
+
+    # Primary position
+    primary_date = get_position_assigned_date(position_history, team, position)
+    primary_date_str = f" • Assigned: {format_discord_timestamp(primary_date, 'd')}" if primary_date else ""
+    position_components.append(Text(content=f"• {team} - {position} (Primary){primary_date_str}"))
+
+    # Additional positions
+    for pos in log_data.get('additional_positions', []):
+        pos_team = pos.get('team', 'N/A')
+        pos_position = pos.get('position', 'N/A')
+        pos_date = get_position_assigned_date(position_history, pos_team, pos_position)
+        pos_date_str = f" • Assigned: {format_discord_timestamp(pos_date, 'd')}" if pos_date else ""
+        position_components.append(Text(content=f"• {pos_team} - {pos_position}{pos_date_str}"))
+
     # Build component list FIRST (before Container instantiation)
     component_list = [
         # Header
@@ -215,14 +242,12 @@ def build_forum_embed(user: hikari.User, log_data: dict) -> list:
         Separator(divider=True),
 
         # Basic Info
-        Text(content=f"**Join Date:** {format_discord_timestamp(join_date, 'F')}"),
-        Text(content=f"**Hire Date:** {format_discord_timestamp(hire_date, 'F')}"),
+        Text(content=f"**Join Date:** {format_discord_timestamp(join_date, 'D')}"),
+        Text(content=f"**Hire Date:** {format_discord_timestamp(hire_date, 'D')}"),
         Text(content=f"**Employment Status:** {get_status_emoji(status)} {status}"),
         Separator(divider=False, spacing=hikari.SpacingType.SMALL),
         Text(content="**Current Positions:**"),
-        Text(content=f"• {team} - {position} (Primary)"),
-        *[Text(content=f"• {pos.get('team', 'N/A')} - {pos.get('position', 'N/A')}")
-          for pos in log_data.get('additional_positions', [])],
+        *position_components,
 
         Separator(divider=True),
 
@@ -436,6 +461,22 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
     # Get forum thread URL
     forum_url = get_forum_thread_url(guild_id, thread_id)
 
+    # Build current positions list with assignment dates
+    position_components = []
+
+    # Primary position
+    primary_date = get_position_assigned_date(position_history, team, position)
+    primary_date_str = f" • Assigned: {format_discord_timestamp(primary_date, 'd')}" if primary_date else ""
+    position_components.append(Text(content=f"• {team} - {position} (Primary){primary_date_str}"))
+
+    # Additional positions
+    for pos in log.get('additional_positions', []):
+        pos_team = pos.get('team', 'N/A')
+        pos_position = pos.get('position', 'N/A')
+        pos_date = get_position_assigned_date(position_history, pos_team, pos_position)
+        pos_date_str = f" • Assigned: {format_discord_timestamp(pos_date, 'd')}" if pos_date else ""
+        position_components.append(Text(content=f"• {pos_team} - {pos_position}{pos_date_str}"))
+
     components = [
         Container(
             accent_color=accent_color,
@@ -447,15 +488,13 @@ def build_staff_record_view(log: dict, user: hikari.User, guild_id: int, from_te
                 Separator(divider=True),
 
                 # Basic info (consolidated)
-                Text(content=f"**📅 Join Date:** {format_discord_timestamp(join_date, 'F')}\n**📅 Hire Date:** {format_discord_timestamp(hire_date, 'F')}\n**📊 Status:** {get_status_emoji(status)} {status}"),
+                Text(content=f"**📅 Join Date:** {format_discord_timestamp(join_date, 'D')}\n**📅 Hire Date:** {format_discord_timestamp(hire_date, 'D')}\n**📊 Status:** {get_status_emoji(status)} {status}"),
 
                 Separator(divider=True),
 
                 # Current positions (primary + additional)
                 Text(content="**Current Positions:**"),
-                Text(content=f"• {team} - {position} (Primary)"),
-                *[Text(content=f"• {pos.get('team', 'N/A')} - {pos.get('position', 'N/A')}")
-                  for pos in log.get('additional_positions', [])],
+                *position_components,
 
                 Separator(divider=True),
 
@@ -1394,7 +1433,7 @@ def build_all_cases_view(guild_id: int, all_logs: list) -> list:
         case_id = case.get('case_id', 'Unknown')
         case_type = case.get('type', 'Unknown')
         username = case.get('username', 'Unknown')
-        date_str = format_discord_timestamp(case.get('date'), "F")
+        date_str = format_discord_timestamp(case.get('date'), "D")
         issued_by = case.get('issued_by_name', 'Unknown')
 
         case_lines.append(f"**[{case_id}]** {case_type} - {username}")
@@ -1587,8 +1626,8 @@ def build_edit_dates_selection(guild_id: int, user_id: str, log: dict) -> list:
 
                 # Edit basic dates section
                 Text(content="**Staff Record Dates:**"),
-                Text(content=f"• **Hire Date:** {format_discord_timestamp(hire_date, 'F') if hire_date else 'Unknown'}"),
-                Text(content=f"• **Join Date:** {format_discord_timestamp(join_date, 'F') if join_date else 'Unknown'}"),
+                Text(content=f"• **Hire Date:** {format_discord_timestamp(hire_date, 'D') if hire_date else 'Unknown'}"),
+                Text(content=f"• **Join Date:** {format_discord_timestamp(join_date, 'D') if join_date else 'Unknown'}"),
                 Separator(divider=False, spacing=hikari.SpacingType.SMALL),
 
                 ActionRow(components=[
@@ -1664,7 +1703,6 @@ def build_edit_position_date_selection(guild_id: int, user_id: str, log: dict) -
     position_options = []
 
     # Add primary position
-    date_str = format_discord_timestamp(primary_date, "F") if primary_date else "Unknown"
     position_options.append(
         hikari.impl.SelectOptionBuilder(
             label=f"{current_team} - {current_position}",
