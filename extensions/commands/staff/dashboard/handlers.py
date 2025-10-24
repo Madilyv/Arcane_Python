@@ -452,6 +452,21 @@ async def handle_create_submit(
         )
         print(f"[Staff Dashboard] Created new staff log for {user.username}")
 
+        # Auto-refresh the main dashboard to show new staff member
+        try:
+            all_logs_refresh = await get_all_staff_logs(mongo)
+            stats = {
+                'active': sum(1 for log in all_logs_refresh if log.get('employment_status') == 'Active'),
+                'on_leave': sum(1 for log in all_logs_refresh if log.get('employment_status') == 'On Leave'),
+                'inactive': sum(1 for log in all_logs_refresh if log.get('employment_status') in ['Inactive', 'Terminated', 'Staff Banned'])
+            }
+            dashboard_components = build_main_dashboard(ctx.guild_id, stats, all_logs_refresh)
+
+            # Find and update the original dashboard message
+            await ctx.interaction.edit_message(ctx.interaction.message, components=dashboard_components)
+        except Exception as refresh_error:
+            print(f"[Staff Dashboard] Failed to refresh dashboard: {refresh_error}")
+
     except Exception as e:
         print(f"[Staff Dashboard] Error creating staff log: {e}")
         await ctx.interaction.edit_initial_response(

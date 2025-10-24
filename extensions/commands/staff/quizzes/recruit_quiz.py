@@ -36,7 +36,7 @@ QUIZ_QUESTIONS = [
     # Recruit Process (4 questions)
     {
         "category": "Recruit Process",
-        "question": "Where do recruits first appear after joining the server?",
+        "question": "Where do potential recruits first appear after joining the server?",
         "options": {
             "A": "<#1058426473377185792>",
             "B": "<#1020458939852271626>",
@@ -71,12 +71,12 @@ QUIZ_QUESTIONS = [
         "category": "Recruit Process",
         "question": "What must a recruit provide when opening a ticket?",
         "options": {
-            "A": "Their favorite troop",
-            "B": "Screenshot of their base and any alt account details",
-            "C": "Discord tag and clan name",
-            "D": "TH level and trophies"
+            "A": "Screenshot of their base.",
+            "B": "Their player tag only.",
+            "C": "Alt acct details",
+            "D": "A and C"
         },
-        "correct": "B"
+        "correct": "D"
     },
 
     # Bidding System (4 questions)
@@ -150,14 +150,14 @@ QUIZ_QUESTIONS = [
     },
     {
         "category": "Staff Roles & Hierarchy",
-        "question": "If you claim a recruit but realize you don't have time to complete their interview, what should you do?",
+        "question": "If you are interviewing a recruit but realize you don't have time to complete their interview, what should you do?",
         "options": {
-            "A": "Let them wait until you're available",
-            "B": "Notify Recruitment Leadership and request reassignment",
-            "C": "Rush through the interview quickly",
+            "A": "Rush through the interview quickly",
+            "B": "Let them wait until you're available",
+            "C": "Ping Recruitment Leadership and request reassignment",
             "D": "Close their ticket"
         },
-        "correct": "B"
+        "correct": "C"
     },
     {
         "category": "Staff Roles & Hierarchy",
@@ -212,7 +212,7 @@ HARD_MODE_QUESTIONS = [
     # Candidate Entry Process (8 questions)
     {
         "category": "Candidate Entry",
-        "question": "Where do recruits first appear after joining the server?",
+        "question": "Where do potential recruits first appear after joining the server?",
         "options": {
             "A": "<#1058426473377185792>",
             "B": "<#1020458939852271626>",
@@ -236,12 +236,12 @@ HARD_MODE_QUESTIONS = [
         "category": "Candidate Entry",
         "question": "What must a recruit provide when opening a ticket?",
         "options": {
-            "A": "Screenshot of their base and any alt account details",
-            "B": "Their player tag only",
-            "C": "Just their Town Hall level",
-            "D": "Clan preferences only"
+            "A": "Screenshot of their base.",
+            "B": "Their player tag only.",
+            "C": "Alt acct details",
+            "D": "A and C"
         },
-        "correct": "A"
+        "correct": "D"
     },
     {
         "category": "Candidate Entry",
@@ -258,12 +258,12 @@ HARD_MODE_QUESTIONS = [
         "category": "Candidate Entry",
         "question": "When does staff jump into an automated interview?",
         "options": {
-            "A": "If needed, recruit requests staff interview, or questions remain unanswered",
-            "B": "Only at the end",
-            "C": "Always at the start",
-            "D": "Never - it's fully automated"
+            "A": "Only at the end",
+            "B": "Always at the start",
+            "C": "Never - it's fully automated",
+            "D": "If needed, recruit requests staff interview, or questions remain unanswered"
         },
-        "correct": "A"
+        "correct": "D"
     },
     {
         "category": "Candidate Entry",
@@ -289,7 +289,7 @@ HARD_MODE_QUESTIONS = [
     },
     {
         "category": "Candidate Entry",
-        "question": "After a staff interview, who should the recruiter ping in the Recruits thread?",
+        "question": "After a \"Speak with Staff\" recruit interview, who should the recruiter ping in the private Recruits thread?",
         "options": {
             "A": "All clan leaders",
             "B": "Recruitment Chairman only",
@@ -302,12 +302,12 @@ HARD_MODE_QUESTIONS = [
     # One Recruiter Rule (5 questions)
     {
         "category": "One Recruiter Rule",
-        "question": "How many recruiters may interact with each applicant?",
+        "question": "If you are interviewing a recruit but realize you don't have time to complete their interview, what should you do?",
         "options": {
-            "A": "Up to three",
-            "B": "Two maximum",
-            "C": "Only one",
-            "D": "Unlimited"
+            "A": "Rush through the interview quickly",
+            "B": "Let them wait until you're available",
+            "C": "Ping Recruitment Leadership and request reassignment",
+            "D": "Close their ticket"
         },
         "correct": "C"
     },
@@ -324,14 +324,14 @@ HARD_MODE_QUESTIONS = [
     },
     {
         "category": "One Recruiter Rule",
-        "question": "If you claim a recruit but realize you don't have time to complete their interview, what should you do?",
+        "question": "How many recruiters may interact with each applicant?",
         "options": {
-            "A": "Notify Recruitment Leadership and request reassignment",
-            "B": "Rush through the interview quickly",
-            "C": "Let them wait until you're available",
-            "D": "Close their ticket"
+            "A": "Up to three",
+            "B": "Two maximum",
+            "C": "Only one, under normal circumstances",
+            "D": "Unlimited"
         },
-        "correct": "A"
+        "correct": "C"
     },
     {
         "category": "Clan Types",
