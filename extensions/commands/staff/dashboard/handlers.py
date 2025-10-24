@@ -3202,7 +3202,7 @@ async def handle_delete_confirm_submit(
 
     # Authorization check - only users with specific role(s) can delete staff records
     member = ctx.member
-    if (member is None) or (not (set(member.role_ids) & LEADERSHIP_ROLE_IDS)):
+    if not member or not any(role_id in LEADERSHIP_ROLE_IDS for role_id in member.role_ids):
         await ctx.interaction.edit_initial_response(
             components=[
                 Container(
