@@ -3,6 +3,8 @@ Staff Dashboard Action Handlers
 Handles all button clicks, dropdowns, and modal submissions
 """
 
+LEADERSHIP_ROLE_IDS: set[int] = {1345174718944383027}
+
 import lightbulb
 import hikari
 from datetime import datetime, timezone
@@ -451,21 +453,6 @@ async def handle_create_submit(
             components=build_success_message("Staff Log Created Successfully", details)
         )
         print(f"[Staff Dashboard] Created new staff log for {user.username}")
-
-        # Auto-refresh the main dashboard to show new staff member
-        try:
-            all_logs_refresh = await get_all_staff_logs(mongo)
-            stats = {
-                'active': sum(1 for log in all_logs_refresh if log.get('employment_status') == 'Active'),
-                'on_leave': sum(1 for log in all_logs_refresh if log.get('employment_status') == 'On Leave'),
-                'inactive': sum(1 for log in all_logs_refresh if log.get('employment_status') in ['Inactive', 'Terminated', 'Staff Banned'])
-            }
-            dashboard_components = build_main_dashboard(ctx.guild_id, stats, all_logs_refresh)
-
-            # Find and update the original dashboard message
-            await ctx.interaction.edit_message(ctx.interaction.message, components=dashboard_components)
-        except Exception as refresh_error:
-            print(f"[Staff Dashboard] Failed to refresh dashboard: {refresh_error}")
 
     except Exception as e:
         print(f"[Staff Dashboard] Error creating staff log: {e}")
@@ -3213,9 +3200,9 @@ async def handle_delete_confirm_submit(
 
     user_id = action_id
 
-    # Authorization check - only specific user can delete staff records
-    authorized_user_id = 505227988229554179
-    if ctx.user.id != authorized_user_id:
+    # Authorization check - only users with specific role(s) can delete staff records
+    member = ctx.member
+    if (member is None) or (not (set(member.role_ids) & LEADERSHIP_ROLE_IDS)):
         await ctx.interaction.edit_initial_response(
             components=[
                 Container(
