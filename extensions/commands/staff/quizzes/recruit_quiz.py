@@ -541,12 +541,12 @@ HARD_MODE_QUESTIONS = [
         "category": "Invited Candidates",
         "question": "If a family member or recruiter invites a player to the server, who gets them?",
         "options": {
-            "A": "Their clan has dibs on them",
+            "A": "First clan to respond",
             "B": "Goes through normal bidding",
-            "C": "First clan to respond",
+            "C": "Their clan has dibs on them",
             "D": "Highest bidding clan"
         },
-        "correct": "A"
+        "correct": "C"
     },
     {
         "category": "Invited Candidates",
@@ -576,7 +576,7 @@ HARD_MODE_QUESTIONS = [
         "options": {
             "A": "Any clan leader",
             "B": "Recruitment Lead and above",
-            "C": "Mentors and Trainers",
+            "C": "Recruitment Chairman only",
             "D": "Any recruiter with proof"
         },
         "correct": "B"
@@ -587,21 +587,21 @@ HARD_MODE_QUESTIONS = [
         "category": "Hierarchy & Leadership",
         "question": "If there is an argument with recruitment staff, who should you contact?",
         "options": {
-            "A": "Other staff",
-            "B": "Ask the recruit",
-            "C": "Recruitment Lead",
-            "D": "Recruitment Chairman"
+            "A": "Directly contact Recruitment Chairman",
+            "B": "Contact any available leadership",
+            "C": "Follow chain of command: contact your direct senior (Lead → Manager → Chairman)",
+            "D": "Handle it yourself"
         },
-        "correct": "D"
+        "correct": "C"
     },
     {
         "category": "Hierarchy & Leadership",
         "question": "What can the Recruitment Chairman do that Leads cannot?",
         "options": {
-            "A": "Interview recruits",
-            "B": "Award points",
-            "C": "Start bidding",
-            "D": "Promote staff to Recruitment Lead and hold final decision weight"
+            "A": "Promote staff to Recruitment Lead",
+            "B": "Hold final decision weight on recruitment matters",
+            "C": "Final authority on disputes and escalations",
+            "D": "All of the above"
         },
         "correct": "D"
     },
@@ -642,10 +642,10 @@ HARD_MODE_QUESTIONS = [
         "category": "Hierarchy & Leadership",
         "question": "Who handles recruitment disputes and enforces penalties?",
         "options": {
-            "A": "Server Owner",
-            "B": "Vote by all recruiters",
-            "C": "Recruitment Chairman",
-            "D": "Recruitment Lead"
+            "A": "Disputes follow chain of command, but Recruitment Lead makes final decision",
+            "B": "Vote by all recruiters determines the outcome",
+            "C": "Disputes escalate through chain of command, but Recruitment Chairman has final authority",
+            "D": "Server Owner must approve all penalties"
         },
         "correct": "C"
     },
