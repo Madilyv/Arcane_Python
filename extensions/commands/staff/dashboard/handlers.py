@@ -43,7 +43,8 @@ from .modals import (
     build_edit_position_date_modal
 )
 
-LEADERSHIP_ROLE_IDS: set[int] = {1345174718944383027}
+# Only Family Lead role can delete staff records
+FAMILY_LEAD_ROLE_ID: int = 1345174718944383027
 
 print("[Staff Dashboard Handlers] Module loaded - registering actions...")
 
@@ -3163,11 +3164,10 @@ async def handle_delete_log_button(
     """Show confirmation modal for deleting staff log"""
     user_id = action_id
 
-    # Authorization check - only specific user can delete staff records
-    authorized_user_id = 505227988229554179
-    if ctx.user.id != authorized_user_id:
+    # Authorization check - only Family Lead can delete staff records
+    if not ctx.member or FAMILY_LEAD_ROLE_ID not in ctx.member.role_ids:
         await ctx.respond(
-            "❌ Only authorized leadership can delete staff records.",
+            "❌ Only Family Lead can delete staff records.",
             flags=hikari.MessageFlag.EPHEMERAL
         )
         print(f"[Staff Dashboard] Blocked {ctx.user} from deleting staff record for user {user_id}")
@@ -3200,9 +3200,8 @@ async def handle_delete_confirm_submit(
 
     user_id = action_id
 
-    # Authorization check - only users with specific role(s) can delete staff records
-    member = ctx.member
-    if not member or not any(role_id in LEADERSHIP_ROLE_IDS for role_id in member.role_ids):
+    # Authorization check - only Family Lead can delete staff records
+    if not ctx.member or FAMILY_LEAD_ROLE_ID not in ctx.member.role_ids:
         await ctx.interaction.edit_initial_response(
             components=[
                 Container(
@@ -3210,7 +3209,7 @@ async def handle_delete_confirm_submit(
                     components=[
                         Text(content="## ❌ Unauthorized"),
                         Separator(divider=True),
-                        Text(content="Only authorized leadership can delete staff records."),
+                        Text(content="Only Family Lead can delete staff records."),
                         Media(items=[MediaItem(media="assets/Red_Footer.png")])
                     ]
                 )
