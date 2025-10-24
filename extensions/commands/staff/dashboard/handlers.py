@@ -3,8 +3,6 @@ Staff Dashboard Action Handlers
 Handles all button clicks, dropdowns, and modal submissions
 """
 
-LEADERSHIP_ROLE_IDS: set[int] = {1345174718944383027}
-
 import lightbulb
 import hikari
 from datetime import datetime, timezone
@@ -44,6 +42,8 @@ from .modals import (
     build_edit_join_date_modal,
     build_edit_position_date_modal
 )
+
+LEADERSHIP_ROLE_IDS: set[int] = {1345174718944383027}
 
 print("[Staff Dashboard Handlers] Module loaded - registering actions...")
 
